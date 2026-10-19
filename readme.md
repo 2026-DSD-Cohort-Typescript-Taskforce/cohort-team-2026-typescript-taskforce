@@ -5,11 +5,11 @@ Our team project uses a TypeScript-based full-stack architecture with React, Nod
 
 ## Tech Stack
 
-- **Frontend:** React, TypeScript, Vite
+-**Frontend:** Next.js, React, TypeScript
 - **Backend:** Node.js, Express, TypeScript
 - **Database:** Supabase (PostgreSQL)
 - **Version control:** Git and GitHub
-- **Deployment:** Vercel for the frontend; backend hosting to be confirmed
+- **Deployment:** Vercel-Supabase 
 
 ## Project Structure
 
@@ -72,7 +72,7 @@ Add the following variables to `server/.env`:
 
 ```env
 PORT=5000
-CLIENT_URL=http://localhost:5173
+CLIENT_URL=http://localhost:3000
 
 SUPABASE_URL=
 SUPABASE_SECRET_KEY=
@@ -101,7 +101,7 @@ Expected local URLs:
 
 | Application | URL |
 |---|---|
-| Frontend | http://localhost:5173 |
+| Frontend | http://localhost:3000 |
 | Backend API | http://localhost:5000 |
 | Backend health check | http://localhost:5000/api/health |
 
@@ -209,7 +209,7 @@ Check that:
 - Both development servers are running.
 - The backend is listening on port `5000`.
 - The frontend is using the correct API URL.
-- `CLIENT_URL` is set to `http://localhost:5173`.
+- `CLIENT_URL` is set to `http://localhost:3000`.
 - The backend health check is available at http://localhost:5000/api/health.
 
 ## Running the Frontend and Backend Concurrently
