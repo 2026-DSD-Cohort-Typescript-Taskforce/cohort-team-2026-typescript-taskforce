@@ -1,0 +1,24 @@
+{
+  "name": "cohort-team-2026-typescript-taskforce",
+  "version": "1.0.0",
+  "description": "Team TypeScript Taskforce",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n CLIENT,SERVER -c blue,green \"npm run dev --prefix client\" \"npm run dev --prefix server\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dallassoftwaredevelopers/cohort-team-2026-typescript-taskforce.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dallassoftwaredevelopers/cohort-team-2026-typescript-taskforce/issues"
+  },
+  "homepage": "https://github.com/dallassoftwaredevelopers/cohort-team-2026-typescript-taskforce#readme",
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
