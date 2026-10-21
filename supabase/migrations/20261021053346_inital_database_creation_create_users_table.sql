@@ -3,7 +3,7 @@ create table users (
   inserted_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   user_name varchar(255) null,
-  user_email varchar(255) null,
+  user_email varchar(255) null unique,
   user_password varchar(255) null unique,
   user_role varchar(255) null
 );
