@@ -19,6 +19,10 @@
   },
   "homepage": "https://github.com/dallassoftwaredevelopers/cohort-team-2026-typescript-taskforce#readme",
   "devDependencies": {
-    "concurrently": "^10.0.6"
+    "concurrently": "^10.0.6",
+    "supabase": "^2.121.0"
+  },
+  "dependencies": {
+    "@supabase/server": "^1.9.2"
   }
 }
