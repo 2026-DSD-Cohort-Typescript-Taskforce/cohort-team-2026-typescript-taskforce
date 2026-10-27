@@ -1,4 +1,3 @@
-
 # Cohort Team 2026 - TypeScript Taskforce
 
 Our team project uses a TypeScript-based full-stack architecture with React, Node.js, Express, and Supabase.
@@ -6,10 +5,11 @@ Our team project uses a TypeScript-based full-stack architecture with React, Nod
 ## Tech Stack
 
 -**Frontend:** Next.js, React, TypeScript
+
 - **Backend:** Node.js, Express, TypeScript
 - **Database:** Supabase (PostgreSQL)
 - **Version control:** Git and GitHub
-- **Deployment:** Vercel-Supabase 
+- **Deployment:** Vercel-Supabase
 
 ## Project Structure
 
@@ -94,15 +94,16 @@ From the project root, start both the frontend and backend:
 ```bash
 npm run dev
 ```
+
 ### Why concurrently?
 
 Without `concurrently`, you would need separate terminal windows to run the frontend and backend. With it, both development servers start together.
 Expected local URLs:
 
-| Application | URL |
-|---|---|
-| Frontend | http://localhost:3000 |
-| Backend API | http://localhost:5000 |
+| Application          | URL                              |
+| -------------------- | -------------------------------- |
+| Frontend             | http://localhost:3000            |
+| Backend API          | http://localhost:5000            |
 | Backend health check | http://localhost:5000/api/health |
 
 Keep the terminal running while developing. Press `Ctrl + C` to stop the development servers.
@@ -123,12 +124,12 @@ npm run dev --prefix server
 
 ## Environment variables
 
-| Variable | Purpose |
-|---|---|
-| `PORT` | Port used by the backend API |
-| `CLIENT_URL` | Frontend origin allowed by the backend's CORS configuration |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SECRET_KEY` | Server-side Supabase secret key; keep private |
+| Variable              | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `PORT`                | Port used by the backend API                                |
+| `CLIENT_URL`          | Frontend origin allowed by the backend's CORS configuration |
+| `SUPABASE_URL`        | Supabase project URL                                        |
+| `SUPABASE_SECRET_KEY` | Server-side Supabase secret key; keep private               |
 
 Production environment variables should be configured in the hosting platform's settings, not committed to GitHub.
 
@@ -186,7 +187,7 @@ Open a pull request on GitHub so the team can review your changes before merging
 
 - **Frontend:** Vercel
 - **Database:** Supabase PostgreSQL
-- **Backend:** Express 
+- **Backend:** Express
 
 Configure production environment variables in the hosting platform. Never commit production credentials to GitHub.
 
@@ -216,8 +217,6 @@ Check that:
 
 We use [`concurrently`](https://www.npmjs.com/package/concurrently) to run the React frontend and Express backend simultaneously with a single command.
 
-
-
 ### Supabase connection issues
 
 Verify that the Supabase project URL and required credentials are set in `server/.env`, and that the variable names match the backend code.
@@ -235,3 +234,5 @@ Stop the process using the port, or configure the application to use a different
 5. Open a pull request for review.
 
 Keep changes focused, write readable TypeScript, and never commit credentials or generated files.
+
+test
