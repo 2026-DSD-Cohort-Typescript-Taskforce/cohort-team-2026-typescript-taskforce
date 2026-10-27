@@ -75,7 +75,7 @@ PORT=5000
 CLIENT_URL=http://localhost:3000
 
 SUPABASE_URL=
-SUPABASE_SECRET_KEY=
+SUPABASE_PUBLISHABLE_KEY=
 ```
 
 Fill in the Supabase values when the team has configured its Supabase project. Make sure the variable names match those used in the backend code.
@@ -128,7 +128,10 @@ npm run dev --prefix server
 | `PORT` | Port used by the backend API |
 | `CLIENT_URL` | Frontend origin allowed by the backend's CORS configuration |
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SECRET_KEY` | Server-side Supabase secret key; keep private |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key; the API acts as the signed-in user, so RLS applies |
+| `NODE_ENV` | Set to `production` on a deployed server so session cookies are `Secure` |
+| `SUPABASE_SECRET_KEY` | Local seed script only (`npm run seed:local-users`); never set on the API server; keep private |
+| `API_URL` (`client/.env.local`) | Express origin that Next.js proxies `/api/*` to; default `http://localhost:5000`; set it before `next build` |
 
 Production environment variables should be configured in the hosting platform's settings, not committed to GitHub.
 
