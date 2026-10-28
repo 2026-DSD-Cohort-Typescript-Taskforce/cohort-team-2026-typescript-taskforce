@@ -4,9 +4,12 @@
 //   SUPABASE_URL=http://127.0.0.1:54321 \
 //   SUPABASE_PUBLISHABLE_KEY=<Publishable key from `supabase status`> \
 //   SEED_USER_PASSWORD=<the password you seeded with> \
+//   MAILPIT_URL=<Mailpit URL from `supabase status`, default http://127.0.0.1:54324> \
 //   npm test
 //
-// One run makes about 10 sign-in/sign-up calls; local Auth allows 30 per 5 minutes per IP.
+// One run makes about 20 sign-in/sign-up calls; local Auth allows 30 per 5 minutes per IP.
+// The email change tests change CHANGE_USER_EMAIL's login and change it back. If a run
+// stops halfway, `supabase db reset` and seed again.
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -18,11 +21,18 @@ import app from "../src/app";
 
 const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SEED_USER_PASSWORD } = process.env;
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? "alex.morgan@example.com";
+// A second seeded login, so changing its email doesn't affect the other tests.
+const CHANGE_USER_EMAIL = "morgan.ellis@example.com";
+const MAILPIT_URL = process.env.MAILPIT_URL ?? "http://127.0.0.1:54324";
+// Same default as src/config/env.ts. Email confirmation links redirect to its /login.
+const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:3000";
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SEED_USER_PASSWORD) {
   throw new Error("Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SEED_USER_PASSWORD.");
 }
-if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(SUPABASE_URL).hostname)) {
-  throw new Error("Refusing to run auth tests against a non-local Supabase.");
+for (const url of [SUPABASE_URL, MAILPIT_URL]) {
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname)) {
+    throw new Error("Refusing to run auth tests against a non-local Supabase.");
+  }
 }
 
 // The cookie names are a contract with client/proxy.ts.
@@ -90,11 +100,46 @@ function login(email: string, password: string) {
   return api("/api/auth/login", { method: "POST", json: { email, password } });
 }
 
-async function signIn() {
-  const res = await login(TEST_USER_EMAIL, SEED_USER_PASSWORD!);
+async function signIn(email = TEST_USER_EMAIL) {
+  const res = await login(email, SEED_USER_PASSWORD!);
   assert.equal(res.status, 200, "seeded login failed; did you run npm run seed:local-users?");
   const cookies = setCookies(res);
   return { [ACCESS]: cookies.get(ACCESS)!.value, [REFRESH]: cookies.get(REFRESH)!.value };
+}
+
+function changeEmail(email: unknown, cookies: Record<string, string>) {
+  return api("/api/auth/email", { method: "PATCH", json: { email }, cookies });
+}
+
+// Local Supabase Auth delivers its emails to Mailpit.
+async function mailIds(to: string): Promise<Set<string>> {
+  const query = encodeURIComponent(`to:"${to}"`);
+  const res = await fetch(`${MAILPIT_URL}/api/v1/search?query=${query}&limit=100`);
+  assert.equal(res.status, 200, `Mailpit is not reachable at ${MAILPIT_URL}`);
+  const { messages } = (await res.json()) as { messages: Array<{ ID: string }> };
+  return new Set(messages.map((message) => message.ID));
+}
+
+/** The link in the first email to `to` that isn't in `seen`, waiting up to 10 s for it. */
+async function nextLink(to: string, seen: Set<string>): Promise<string> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const id = [...(await mailIds(to))].find((messageId) => !seen.has(messageId));
+    if (id) {
+      const { HTML } = (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()) as { HTML: string };
+      const href = HTML.match(/href="([^"]+)"/)?.[1];
+      assert.ok(href, `the email to ${to} has a link`);
+      return href.replaceAll("&amp;", "&");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`No new email to ${to}`);
+}
+
+/** Opens a link from an email the way a browser would, and returns where it redirects. */
+async function follow(link: string) {
+  const res = await fetch(link, { redirect: "manual" });
+  assert.equal(res.status, 303);
+  return res.headers.get("location") ?? "";
 }
 
 describe("POST /api/auth/login", () => {
@@ -175,9 +220,11 @@ describe("POST /api/auth/login", () => {
     const anon = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error } = await anon.auth.signUp({ email, password: SEED_USER_PASSWORD });
+    const { data, error } = await anon.auth.signUp({ email, password: SEED_USER_PASSWORD });
     if (error?.code === "signup_disabled") return t.skip("Auth sign-up is off in this stack");
     assert.ifError(error);
+    // With email confirmations on, the new login can't sign in until its link is opened.
+    if (!data.session) await follow(await nextLink(email, new Set()));
 
     const res = await login(email, SEED_USER_PASSWORD);
     assert.equal(res.status, 403);
@@ -252,6 +299,133 @@ describe("POST /api/auth/logout", () => {
   it("returns 204 when there is no session", async () => {
     const res = await api("/api/auth/logout", { method: "POST" });
     assert.equal(res.status, 204);
+  });
+});
+
+describe("PATCH /api/auth/email", () => {
+  let session: Record<string, string>;
+
+  before(async () => {
+    session = await signIn(CHANGE_USER_EMAIL);
+  });
+
+  it("returns 401 without a session cookie", async () => {
+    const res = await changeEmail("new-address@example.com", {});
+    assert.equal(res.status, 401);
+    assert.equal(typeof (await res.json()).error, "string");
+  });
+
+  it("returns 401 with only an access cookie: Supabase Auth needs the whole session", async () => {
+    const res = await changeEmail("new-address@example.com", { [ACCESS]: session[ACCESS] });
+    assert.equal(res.status, 401);
+    assert.equal(typeof (await res.json()).error, "string");
+  });
+
+  it("returns 400 for a missing or invalid email", async (t) => {
+    const cases: Array<[string, Request]> = [
+      ["no body", {}],
+      ["empty object", { json: {} }],
+      ["empty email", { json: { email: "" } }],
+      ["invalid email", { json: { email: "not-an-email" } }],
+      ["non-string email", { json: { email: 42 } }],
+      ["longer than users.user_email allows", { json: { email: `a@${"b".repeat(60).concat(".").repeat(5)}com` } }],
+      ["array body", { json: ["new-address@example.com"] }],
+      ["malformed JSON", { rawBody: "{not json" }],
+    ];
+    for (const [name, request] of cases) {
+      await t.test(name, async () => {
+        const res = await api("/api/auth/email", { method: "PATCH", cookies: session, ...request });
+        assert.equal(res.status, 400);
+        assert.equal(typeof (await res.json()).error, "string");
+      });
+    }
+  });
+
+  it("returns 400 email_unchanged for the caller's own email, in any case", async () => {
+    for (const email of [CHANGE_USER_EMAIL, CHANGE_USER_EMAIL.toUpperCase()]) {
+      const res = await changeEmail(email, session);
+      assert.equal(res.status, 400);
+      assert.equal((await res.json()).code, "email_unchanged");
+    }
+  });
+
+  it("returns 409 email_in_use for another user's email and sends no email", async () => {
+    const seen = await mailIds(TEST_USER_EMAIL);
+    const res = await changeEmail(TEST_USER_EMAIL, session);
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.code, "email_in_use");
+    assert.equal(typeof body.error, "string");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    assert.deepEqual(await mailIds(TEST_USER_EMAIL), seen);
+  });
+
+  it("returns 409 email_in_use for the email of a login with no profile", async (t) => {
+    const email = `no-profile-${Date.now()}@example.com`;
+    const anon = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error } = await anon.auth.signUp({ email, password: SEED_USER_PASSWORD });
+    if (error?.code === "signup_disabled") return t.skip("Auth sign-up is off in this stack");
+    assert.ifError(error);
+
+    const res = await changeEmail(email, session);
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).code, "email_in_use");
+  });
+
+  it("changes the login email once both addresses confirm, and the profile follows", async () => {
+    const newEmail = `morgan.ellis+${Date.now()}@example.com`;
+    const seenOld = await mailIds(CHANGE_USER_EMAIL);
+
+    const res = await changeEmail(newEmail, session);
+    assert.equal(res.status, 202);
+    assert.match((await res.json()).message, /both/);
+
+    const oldLink = await nextLink(CHANGE_USER_EMAIL, seenOld);
+    const newLink = await nextLink(newEmail, new Set());
+    for (const link of [oldLink, newLink]) {
+      assert.equal(new URL(link).searchParams.get("redirect_to"), `${CLIENT_URL}/login`);
+    }
+
+    // One link isn't enough: the login keeps the old email until the other is opened.
+    let location = await follow(oldLink);
+    assert.ok(location.startsWith(`${CLIENT_URL}/login#`), location);
+    assert.match(location, /message=Confirmation\+link\+accepted/);
+    assert.equal((await login(newEmail, SEED_USER_PASSWORD)).status, 401);
+    assert.equal((await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD)).status, 200);
+
+    location = await follow(newLink);
+    assert.ok(location.startsWith(`${CLIENT_URL}/login#`), location);
+    assert.doesNotMatch(location, /error/);
+
+    const newLogin = await login(newEmail, SEED_USER_PASSWORD);
+    assert.equal(newLogin.status, 200);
+    assert.equal((await newLogin.json()).user.user_email, newEmail);
+    assert.equal((await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD)).status, 401);
+
+    const newCookies = setCookies(newLogin);
+    const me = await api("/api/auth/me", {
+      cookies: { [ACCESS]: newCookies.get(ACCESS)!.value, [REFRESH]: newCookies.get(REFRESH)!.value },
+    });
+    assert.equal((await me.json()).user.user_email, newEmail);
+    // The session from before the change sees the updated profile too.
+    assert.equal((await (await api("/api/auth/me", { cookies: session })).json()).user.user_email, newEmail);
+
+    // Change it back, sending only the refresh cookie as a browser does once the access
+    // cookie expires. That also leaves the seeded login as it was.
+    const seenNew = await mailIds(newEmail);
+    const seenOriginal = await mailIds(CHANGE_USER_EMAIL);
+    // Auth sends a user at most one email per max_frequency (1s in config.toml).
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const back = await changeEmail(CHANGE_USER_EMAIL, { [REFRESH]: newCookies.get(REFRESH)!.value });
+    assert.equal(back.status, 202);
+    assert.ok(setCookies(back).get(ACCESS)?.value, "the refreshed session is set");
+    await follow(await nextLink(newEmail, seenNew));
+    await follow(await nextLink(CHANGE_USER_EMAIL, seenOriginal));
+    const restored = await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD);
+    assert.equal(restored.status, 200);
+    assert.equal((await restored.json()).user.user_email, CHANGE_USER_EMAIL);
   });
 });
 

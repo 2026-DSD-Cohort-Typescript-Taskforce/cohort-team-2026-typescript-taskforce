@@ -8,6 +8,8 @@ import { HttpError } from "./errorHandler";
 export type AuthContext = {
   user: User;
   accessToken: string;
+  /** Missing when the browser sent only the access cookie. */
+  refreshToken?: string;
   /** Acts as the signed-in user, so RLS applies to every query made with it. */
   supabase: UserClient;
 };
@@ -33,7 +35,7 @@ export async function authenticate(req: Request, res: Response): Promise<AuthCon
 
   if (accessToken) {
     const user = await getUser(accessToken);
-    if (user) return { user, accessToken, supabase: createUserClient(accessToken) };
+    if (user) return { user, accessToken, refreshToken, supabase: createUserClient(accessToken) };
   }
   if (refreshToken) {
     const session = await refreshSession(refreshToken);
@@ -42,6 +44,7 @@ export async function authenticate(req: Request, res: Response): Promise<AuthCon
       return {
         user: session.user,
         accessToken: session.access_token,
+        refreshToken: session.refresh_token,
         supabase: createUserClient(session.access_token),
       };
     }

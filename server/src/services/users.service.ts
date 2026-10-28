@@ -18,3 +18,14 @@ export async function getProfileByAuthUserId(supabase: UserClient, authUserId: s
   if (error) throw error;
   return data;
 }
+
+/** True when a profile other than this login's already has the email (user_email is unique). */
+export async function isEmailUsedByAnotherProfile(
+  supabase: UserClient,
+  email: string,
+  authUserId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.from("users").select("auth_user_id").eq("user_email", email);
+  if (error) throw error;
+  return data.some((profile) => profile.auth_user_id !== authUserId);
+}

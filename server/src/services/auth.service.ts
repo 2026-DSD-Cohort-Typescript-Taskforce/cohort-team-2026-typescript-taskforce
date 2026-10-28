@@ -49,3 +49,42 @@ export async function signOut(accessToken: string): Promise<boolean> {
   if (isRejection(error)) return false;
   throw unavailable();
 }
+
+export const emailInUse = () => new HttpError(409, "That email address is already in use.", "email_in_use");
+
+const signInAgain = () => new HttpError(401, "Sign in again to change your email address.");
+
+/**
+ * Asks Supabase Auth to change the signed-in user's email. It emails a link to the current
+ * and the new address, and changes the login once both are opened; each link then
+ * redirects to `redirectTo`. Returns the new session if the old one had to be refreshed.
+ */
+export async function requestEmailChange(
+  accessToken: string,
+  refreshToken: string | undefined,
+  email: string,
+  redirectTo: string,
+): Promise<Session | null> {
+  // updateUser acts on the client's own session, so load the caller's. Without the refresh
+  // token, supabase-js can't hold a session.
+  if (!refreshToken) throw signInAgain();
+  const supabase = createAnonClient();
+  const { error: sessionError } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  if (sessionError) throw isRejection(sessionError) ? signInAgain() : unavailable();
+
+  const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo });
+  if (error) {
+    if (error.code === "email_exists") throw emailInUse();
+    if (error.status === 429) throw new HttpError(429, "Too many email change requests. Try again later.");
+    if (error.status === 400 || error.status === 422) throw new HttpError(400, "Enter a valid email address.");
+    if (isRejection(error)) throw signInAgain();
+    throw unavailable();
+  }
+
+  // updateUser refreshes a session that is about to expire, which rotates the refresh token.
+  const { data } = await supabase.auth.getSession();
+  return data.session && data.session.refresh_token !== refreshToken ? data.session : null;
+}
