@@ -56,7 +56,7 @@ select table_privs_are('public', 'users', 'authenticated', ARRAY['SELECT'], 'aut
 select column_privs_are('public', 'users', 'user_name', 'authenticated', ARRAY['SELECT', 'UPDATE'], 'authenticated can update user_name');
 select column_privs_are('public', 'users', 'user_phone', 'authenticated', ARRAY['SELECT', 'UPDATE'], 'authenticated can update user_phone');
 select column_privs_are('public', 'users', 'user_role', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update user_role');
-select column_privs_are('public', 'users', 'user_email', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update user_email (open item)');
+select column_privs_are('public', 'users', 'user_email', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update user_email (changed through Supabase Auth)');
 select column_privs_are('public', 'users', 'property_id', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update property_id (open item)');
 select sequence_privs_are('public', 'users_id_seq', 'anon', ARRAY[]::text[], 'anon has no privileges on users_id_seq');
 
@@ -90,7 +90,7 @@ select lives_ok(
   'A''s update of B''s row runs (RLS matches no row)'
 );
 select throws_ok($$update public.users set user_role = 'admin' where user_email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own user_role');
-select throws_ok($$update public.users set user_email = 'x@example.test' where user_email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own user_email (open item)');
+select throws_ok($$update public.users set user_email = 'x@example.test' where user_email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own user_email (changed through Supabase Auth)');
 select throws_ok($$update public.users set property_id = null where user_email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own property_id (open item)');
 select throws_ok($$insert into public.users (user_email) values ('dc22-new@example.test')$$, '42501', null, 'A cannot insert users (admin/seed creates them)');
 select throws_ok($$delete from public.users where user_email = 'dc22-a@example.test'$$, '42501', null, 'A cannot delete users');
