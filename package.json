@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Team TypeScript Taskforce",
   "private": true,
-  "scripts": {
+  "scripts": { 
+    "predev": "node scripts/db-start.mjs",
     "dev": "concurrently -n CLIENT,SERVER -c blue,green \"npm run dev --prefix client\" \"npm run dev --prefix server\""
   },
   "repository": {

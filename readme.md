@@ -1,33 +1,63 @@
 
 # Cohort Team 2026 - TypeScript Taskforce
 
-Our team project uses a TypeScript-based full-stack architecture with React, Node.js, Express, and Supabase.
+Our team project uses a TypeScript-based full-stack architecture with Next.js, Node.js, Express, and Supabase.
 
 ## Tech Stack
 
--**Frontend:** Next.js, React, TypeScript
+- **Frontend:** Next.js (App Router), React, TypeScript
 - **Backend:** Node.js, Express, TypeScript
-- **Database:** Supabase (PostgreSQL)
+- **Database:** Supabase (PostgreSQL), run locally with the Supabase CLI and Docker
 - **Version control:** Git and GitHub
-- **Deployment:** Vercel-Supabase 
+- **Deployment:** Vercel (frontend), Supabase (database)
+
+## How the pieces talk to each other
+
+The browser only ever talks to the Next.js app. Next.js API routes call the Express server on the server side, and only Express talks to Supabase.
+
+```mermaid
+flowchart LR
+    Browser -->|"localhost:3000/api/..."| NextApi["Next.js API routes (client/app/api)"]
+    NextApi -->|"API_URL/api/..."| Express["Express API (server)"]
+    Express -->|"SUPABASE_SECRET_KEY"| Supabase["Supabase (localhost:54321)"]
+```
+
+This means:
+
+- The Supabase URL and keys never reach the browser. They live only in `server/.env`.
+- The frontend only knows about our own endpoints (for example `/api/health`), not Express or Supabase.
+- No CORS issues in the browser, because every request goes to the same origin.
 
 ## Project Structure
 
 ```text
 cohort-team-2026-typescript-taskforce/
-├── client/                 # React + TypeScript frontend
-├── server/                 # Express + TypeScript backend
-│   └── src/
-│       ├── routes/         # API routes
-│       ├── controllers/    # Request handlers
-│       ├── services/       # Business logic
-│       ├── middleware/     # Express middleware
-│       ├── config/         # Application configuration
-│       ├── app.ts          # Express application setup
-│       └── server.ts       # Starts the API server
+├── client/                     # Next.js + TypeScript frontend
+│   ├── app/                    # Pages and layouts (App Router, no src/ folder)
+│   │   └── api/                # Our public API endpoints, proxied to Express
+│   │       └── health/route.ts # GET /api/health -> Express /api/health
+│   ├── lib/
+│   │   └── backend.ts          # Server-only helper for calling Express
+│   ├── .env.example            # Client env template
+│   └── next.config.ts
+├── server/                     # Express + TypeScript backend
+│   ├── src/
+│   │   ├── routes/             # API routes (planned)
+│   │   ├── controllers/        # Request handlers (planned)
+│   │   ├── services/           # Business logic and Supabase queries (planned)
+│   │   ├── middleware/         # Express middleware (planned)
+│   │   ├── config/             # Application configuration, e.g. Supabase client (planned)
+│   │   ├── app.ts              # Express application setup
+│   │   └── server.ts           # Starts the API server
+│   └── .env.example            # Server env template
+├── supabase/
+│   ├── config.toml             # Local Supabase configuration
+│   └── migrations/             # Database schema migrations
+├── scripts/
+│   └── db-start.mjs            # Starts local Supabase before `npm run dev`
 ├── .gitignore
-├── package.json            # Root development scripts
-└── README.md
+├── package.json                # Root development scripts
+└── readme.md
 ```
 
 ## Prerequisites
@@ -37,9 +67,12 @@ Install the following before getting started:
 - [Node.js](https://nodejs.org/) (Node.js 24 LTS recommended)
 - npm (included with Node.js)
 - [Git](https://git-scm.com/)
+- [Docker](https://docs.docker.com/get-docker/) (required to run Supabase locally)
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/)
 
 You will also need access to the team's GitHub repository.
+
+You do **not** need to install the Supabase CLI globally. It is installed as a project dependency in the root `package.json`, so everyone uses the same version.
 
 ## Getting Started
 
@@ -52,7 +85,7 @@ cd cohort-team-2026-typescript-taskforce
 
 ### 2. Install dependencies
 
-Run these commands from the project root:
+The project has three separate `package.json` files (root, client, server). Each needs its own install. Run these from the project root:
 
 ```bash
 npm install
@@ -60,52 +93,88 @@ npm install --prefix client
 npm install --prefix server
 ```
 
-### 3. Configure environment variables
+### 3. Start Supabase and get your keys
 
-Create a local environment file for the backend:
+Make sure Docker is running, then from the project root:
 
 ```bash
-touch server/.env
+npx supabase start
+npx supabase status
 ```
 
-Add the following variables to `server/.env`:
+The first start downloads Docker images and can take a few minutes. It also applies the migrations in `supabase/migrations/`.
+
+`supabase status` prints your local URLs and keys. You will need:
+
+- **API URL** (`http://127.0.0.1:54321`) for `SUPABASE_URL`
+- **Secret key** (older CLI versions call it **service_role key**) for `SUPABASE_SECRET_KEY`
+
+### 4. Configure environment variables
+
+Each app has its own env file. Copy the templates:
+
+```bash
+cp server/.env.example server/.env
+cp client/.env.example client/.env
+```
+
+**`server/.env`** (Express):
 
 ```env
 PORT=5000
 CLIENT_URL=http://localhost:3000
 
-SUPABASE_URL=
-SUPABASE_SECRET_KEY=
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SECRET_KEY=<secret key from `npx supabase status`>
 ```
 
-Fill in the Supabase values when the team has configured its Supabase project. Make sure the variable names match those used in the backend code.
+**`client/.env`** (Next.js):
+
+```env
+API_URL=http://localhost:5000
+```
+
+The client only needs to know where Express is. It never gets Supabase values.
 
 **Security notes:**
 
-- Never commit `.env` files or secret keys to GitHub.
-- Keep Supabase secret keys on the server. Never expose them in frontend code.
+- Never commit `.env` files or secret keys to GitHub. Only the `.env.example` templates are committed.
+- Keep Supabase keys in `server/.env` only. Never put them in `client/`.
+- Never prefix client variables with `NEXT_PUBLIC_` unless they are safe to show to everyone. That prefix sends the value to the browser.
+- The secret key bypasses Row Level Security, so Express must control which tables and columns are returned.
 - Each developer should configure their own local environment.
-- Use `server/.env.example` to document required variables without including real credentials.
 
 ## Run the application
 
-From the project root, start both the frontend and backend:
+From the project root:
 
 ```bash
 npm run dev
 ```
-### Why concurrently?
 
-Without `concurrently`, you would need separate terminal windows to run the frontend and backend. With it, both development servers start together.
+This does two things:
+
+1. **`predev`** runs automatically first (`node scripts/db-start.mjs`). It starts local Supabase if Docker is available. If Docker or the Supabase CLI is missing, it prints a warning and continues.
+2. **`dev`** uses [`concurrently`](https://www.npmjs.com/package/concurrently) to start the client and server together in one terminal.
+
 Expected local URLs:
 
 | Application | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| Backend API | http://localhost:5000 |
+| Health check through Next.js | http://localhost:3000/api/health |
+| Backend API (Express) | http://localhost:5000 |
 | Backend health check | http://localhost:5000/api/health |
+| Supabase API | http://127.0.0.1:54321 |
+| Supabase Studio (database dashboard) | http://127.0.0.1:54323 |
 
-Keep the terminal running while developing. Press `Ctrl + C` to stop the development servers.
+If both health check URLs return `{ "status": "success", "message": "API is running!" }`, the client, the proxy, and the server are all working.
+
+Press `Ctrl + C` to stop the client and server. Supabase keeps running in Docker in the background. Stop it with:
+
+```bash
+npx supabase stop
+```
 
 ### Run applications separately
 
@@ -121,16 +190,63 @@ Start only the backend:
 npm run dev --prefix server
 ```
 
+### Useful Supabase commands
+
+```bash
+npx supabase start     # Start local Supabase
+npx supabase stop      # Stop it (data is kept)
+npx supabase status    # Show URLs and keys
+npx supabase db reset  # Wipe the local database and re-run all migrations
+```
+
+## Adding a new API endpoint
+
+Every endpoint the frontend uses has two parts:
+
+1. **Express route** in `server/src/routes/` that does the work (for example, queries Supabase).
+2. **Next.js route** in `client/app/api/<name>/route.ts` that forwards to Express using the `backend()` helper.
+
+Example, mirroring the existing health check:
+
+```ts
+// client/app/api/health/route.ts
+import { backend } from "@/lib/backend";
+
+export async function GET() {
+  try {
+    const res = await backend("/api/health");
+    return Response.json(await res.json(), { status: res.status });
+  } catch {
+    return Response.json(
+      { status: "error", message: "Backend is unreachable" },
+      { status: 502 }
+    );
+  }
+}
+```
+
+Frontend code then calls `fetch("/api/health")`. It never calls Express or Supabase directly.
+
+`client/lib/backend.ts` imports `server-only`, so the build fails if it is ever imported into a `"use client"` component.
+
 ## Environment variables
+
+### Server (`server/.env`)
 
 | Variable | Purpose |
 |---|---|
-| `PORT` | Port used by the backend API |
+| `PORT` | Port used by the Express API (default `5000`) |
 | `CLIENT_URL` | Frontend origin allowed by the backend's CORS configuration |
-| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_URL` | Supabase API URL (local: `http://127.0.0.1:54321`) |
 | `SUPABASE_SECRET_KEY` | Server-side Supabase secret key; keep private |
 
-Production environment variables should be configured in the hosting platform's settings, not committed to GitHub.
+### Client (`client/.env`)
+
+| Variable | Purpose |
+|---|---|
+| `API_URL` | Where the Next.js server reaches Express (default `http://localhost:5000`). Server-side only. |
+
+Production environment variables should be configured in the hosting platform's settings (for example Vercel for `API_URL`), not committed to GitHub.
 
 ## Development workflow
 
@@ -184,17 +300,17 @@ Open a pull request on GitHub so the team can review your changes before merging
 
 ## Deployment
 
-- **Frontend:** Vercel
-- **Database:** Supabase PostgreSQL
-- **Backend:** Express 
+- **Frontend:** Vercel. Set `API_URL` to the hosted Express URL in the Vercel project settings.
+- **Backend:** Express, hosted separately. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` there.
+- **Database:** Supabase PostgreSQL.
 
 Configure production environment variables in the hosting platform. Never commit production credentials to GitHub.
 
 ## Troubleshooting
 
-### Dependencies are missing
+### `tsx: not found` or `next: not found`
 
-From the project root, run:
+That app's dependencies are not installed. From the project root, run:
 
 ```bash
 npm install
@@ -202,29 +318,42 @@ npm install --prefix client
 npm install --prefix server
 ```
 
-### Frontend cannot connect to the backend
+### `failed to parse config ... has invalid keys`
 
-Check that:
+An old, globally installed Supabase CLI is being used instead of the project's version. Run `npm install` at the project root, then check:
 
-- Both development servers are running.
-- The backend is listening on port `5000`.
-- The frontend is using the correct API URL.
-- `CLIENT_URL` is set to `http://localhost:3000`.
-- The backend health check is available at http://localhost:5000/api/health.
+```bash
+npx supabase --version
+```
 
-## Running the Frontend and Backend Concurrently
+It should match the version in the root `package.json`. If you have an old global CLI (for example in `/usr/local/bin/supabase`), remove or update it. Do not delete the "invalid" keys from `supabase/config.toml`.
 
-We use [`concurrently`](https://www.npmjs.com/package/concurrently) to run the React frontend and Express backend simultaneously with a single command.
+### `[db] Docker is not running. Skipping local Supabase.`
 
+Start Docker and run `npm run dev` again. On Linux:
 
+```bash
+sudo systemctl start docker
+```
+
+If you get a permission error on the Docker socket, add your user to the `docker` group (`sudo usermod -aG docker $USER`), then log out and back in.
+
+### `localhost:3000/api/...` returns "Backend is unreachable"
+
+The Next.js route could not reach Express. Check that:
+
+- The server is running and http://localhost:5000/api/health works.
+- `API_URL` in `client/.env` matches the server's `PORT`.
+- You restarted `npm run dev` after editing any `.env` file.
+- If `localhost` fails, try `API_URL=http://127.0.0.1:5000`.
 
 ### Supabase connection issues
 
-Verify that the Supabase project URL and required credentials are set in `server/.env`, and that the variable names match the backend code.
+Verify that Supabase is running (`npx supabase status`), that `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are set in `server/.env`, and that the variable names match the backend code.
 
 ### Port already in use
 
-Stop the process using the port, or configure the application to use a different port.
+Stop the process using the port, or configure the application to use a different port. For Supabase port conflicts, stop the other project with `npx supabase stop --project-id <other-project>`.
 
 ## Contributing
 
