@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { APP_NAME } from "./brand";
 import "./globals.css";
 
 const inter = Inter({
@@ -7,13 +8,12 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-// "AppName123" and the tagline are the wireframe's placeholders, kept until the team picks a name.
 export const metadata: Metadata = {
   title: {
-    default: "AppName123",
-    template: "%s | AppName123",
+    default: APP_NAME,
+    template: `%s | ${APP_NAME}`,
   },
-  description: "Cool tagline goes here.",
+  description: "Every bill, handled.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

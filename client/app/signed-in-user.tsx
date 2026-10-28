@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ErrorAlert, Spinner, secondaryButton } from "./ui";
 
 type Profile = {
   user_name: string | null;
@@ -52,11 +53,9 @@ export function SignedInUser() {
 
   if (!user) {
     return error ? (
-      <p role="alert" className="text-red-700">
-        {error}
-      </p>
+      <ErrorAlert message={error} />
     ) : (
-      <p role="status" className="text-zinc-600">
+      <p role="status" className="text-body text-secondary">
         Loading your account…
       </p>
     );
@@ -64,20 +63,23 @@ export function SignedInUser() {
 
   return (
     <>
-      <p className="text-lg">
-        Signed in as <strong className="font-semibold">{user.user_name || user.user_email}</strong>
+      <p className="text-body-lg text-secondary">
+        Signed in as{" "}
+        <strong className="font-semibold text-foreground">{user.user_name || user.user_email}</strong>
       </p>
-      <button
-        type="button"
-        onClick={logOut}
-        disabled={loggingOut}
-        className="rounded-xl bg-zinc-500 px-6 py-3 text-white hover:bg-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 disabled:cursor-wait disabled:opacity-70"
-      >
-        {loggingOut ? "Logging out…" : "Log out"}
-      </button>
-      <p role="alert" className="min-h-5 text-sm text-red-700">
-        {error}
-      </p>
+      <div className="flex w-full flex-col items-center">
+        <button
+          type="button"
+          onClick={logOut}
+          disabled={loggingOut}
+          data-pending={loggingOut || undefined}
+          className={secondaryButton}
+        >
+          {loggingOut && <Spinner />}
+          {loggingOut ? "Logging out…" : "Log out"}
+        </button>
+        <ErrorAlert message={error} className="mt-4 text-left" />
+      </div>
     </>
   );
 }
