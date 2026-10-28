@@ -35,9 +35,11 @@ cohort-team-2026-typescript-taskforce/
 ├── client/                     # Next.js + TypeScript frontend
 │   ├── app/                    # Pages and layouts (App Router, no src/ folder)
 │   │   └── api/                # Our public API endpoints, proxied to Express
+│   │       ├── auth/*/route.ts # /api/auth/login, logout, me, email -> Express /api/auth/*
 │   │       └── health/route.ts # GET /api/health -> Express /api/health
 │   ├── lib/
-│   │   └── backend.ts          # Server-only helper for calling Express
+│   │   ├── backend.ts          # Server-only helper for calling Express
+│   │   └── forward.ts          # Server-only: backend() plus the session cookies, both ways
 │   ├── .env.example            # Client env template
 │   └── next.config.ts
 ├── server/                     # Express + TypeScript backend
@@ -240,7 +242,20 @@ export async function GET() {
 
 Frontend code then calls `fetch("/api/health")`. It never calls Express or Supabase directly.
 
-`client/lib/backend.ts` imports `server-only`, so the build fails if it is ever imported into a `"use client"` component.
+Endpoints that need the signed-in user (the `/api/auth/*` routes) use `forward()` from `client/lib/forward.ts` instead. It calls `backend()` with the browser's cookies and body, and passes Express's status, body and `Set-Cookie` headers back unchanged, so the httpOnly session cookies reach the browser:
+
+```ts
+// client/app/api/auth/me/route.ts
+import { forward } from "@/lib/forward";
+
+export function GET(request: Request) {
+  return forward(request, "/api/auth/me");
+}
+```
+
+Only paths with a `route.ts` reach Express. Any other `/api/...` path returns 404 from Next.js.
+
+`client/lib/backend.ts` and `client/lib/forward.ts` import `server-only`, so the build fails if either is ever imported into a `"use client"` component.
 
 ## Environment variables
 
@@ -259,7 +274,7 @@ Frontend code then calls `fetch("/api/health")`. It never calls Express or Supab
 
 | Variable | Purpose |
 |---|---|
-| `API_URL` | Where the Next.js server reaches Express (default `http://localhost:5000`). Server-side only. The `/api/*` rewrite in `next.config.ts` also reads it, so set it before `next build`. |
+| `API_URL` | Where the Next.js server reaches Express (default `http://localhost:5000`). Server-side only, and read when the server runs, so `next build` does not need it. |
 
 Production environment variables should be configured in the hosting platform's settings (for example Vercel for `API_URL`), not committed to GitHub.
 
@@ -353,7 +368,7 @@ sudo systemctl start docker
 
 If you get a permission error on the Docker socket, add your user to the `docker` group (`sudo usermod -aG docker $USER`), then log out and back in.
 
-### `localhost:3000/api/...` returns "Backend is unreachable"
+### `localhost:3000/api/...` returns 502 "Backend is unreachable" or "Could not reach the server"
 
 The Next.js route could not reach Express. Check that:
 
