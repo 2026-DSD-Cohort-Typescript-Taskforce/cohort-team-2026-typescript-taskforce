@@ -1,3 +1,5 @@
+-- users table already created - altering to add property id reference
+
 ALTER TABLE users
 ADD COLUMN property_id INTEGER REFERENCES properties(property_id),
 ADD COLUMN user_phone VARCHAR(255);
