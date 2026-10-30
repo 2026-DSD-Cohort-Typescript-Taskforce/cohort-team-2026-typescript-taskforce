@@ -4,6 +4,7 @@
   "description": "Team TypeScript Taskforce",
   "private": true,
   "scripts": {
+    "predev": "node scripts/db-start.mjs",
     "lint": "npm run lint --prefix client && npm run lint --prefix server",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
