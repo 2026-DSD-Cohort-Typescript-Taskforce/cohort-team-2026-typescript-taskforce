@@ -1,4 +1,3 @@
-
 # Cohort Team 2026 - TypeScript Taskforce
 
 Our team project uses a TypeScript-based full-stack architecture with Next.js, Node.js, Express, and Supabase.
@@ -174,14 +173,14 @@ This does two things:
 
 Expected local URLs:
 
-| Application | URL |
-|---|---|
-| Frontend | http://localhost:3000 |
-| Health check through Next.js | http://localhost:3000/api/health |
-| Backend API (Express) | http://localhost:5000 |
-| Backend health check | http://localhost:5000/api/health |
-| Supabase API | http://127.0.0.1:54321 |
-| Supabase Studio (database dashboard) | http://127.0.0.1:54323 |
+| Application                          | URL                              |
+| ------------------------------------ | -------------------------------- |
+| Frontend                             | http://localhost:3000            |
+| Health check through Next.js         | http://localhost:3000/api/health |
+| Backend API (Express)                | http://localhost:5000            |
+| Backend health check                 | http://localhost:5000/api/health |
+| Supabase API                         | http://127.0.0.1:54321           |
+| Supabase Studio (database dashboard) | http://127.0.0.1:54323           |
 
 If both health check URLs return `{ "status": "success", "message": "API is running!" }`, the client, the proxy, and the server are all working.
 
@@ -261,19 +260,19 @@ Only paths with a `route.ts` reach Express. Any other `/api/...` path returns 40
 
 ### Server (`server/.env`)
 
-| Variable | Purpose |
-|---|---|
-| `PORT` | Port used by the Express API (default `5000`) |
-| `CLIENT_URL` | Frontend origin allowed by the backend's CORS configuration |
-| `SUPABASE_URL` | Supabase API URL (local: `http://127.0.0.1:54321`) |
-| `SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key; the API acts as the signed-in user, so RLS applies |
-| `NODE_ENV` | Set to `production` on a deployed server so session cookies are `Secure` |
-| `SUPABASE_SECRET_KEY` | Local seed script only (`npm run seed:local-users`); never set on the API server; keep private |
+| Variable                   | Purpose                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `PORT`                     | Port used by the Express API (default `5000`)                                                  |
+| `CLIENT_URL`               | Frontend origin allowed by the backend's CORS configuration                                    |
+| `SUPABASE_URL`             | Supabase API URL (local: `http://127.0.0.1:54321`)                                             |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase publishable (anon) key; the API acts as the signed-in user, so RLS applies            |
+| `NODE_ENV`                 | Set to `production` on a deployed server so session cookies are `Secure`                       |
+| `SUPABASE_SECRET_KEY`      | Local seed script only (`npm run seed:local-users`); never set on the API server; keep private |
 
 ### Client (`client/.env`)
 
-| Variable | Purpose |
-|---|---|
+| Variable  | Purpose                                                                                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `API_URL` | Where the Next.js server reaches Express (default `http://localhost:5000`). Server-side only, and read when the server runs, so `next build` does not need it. |
 
 Production environment variables should be configured in the hosting platform's settings (for example Vercel for `API_URL`), not committed to GitHub.
