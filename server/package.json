@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit -p test"
+    "typecheck": "tsc --noEmit -p test",
+    "seed:local-users": "tsx scripts/seed-local-users.ts"
   },
   "keywords": [],
   "author": "",
