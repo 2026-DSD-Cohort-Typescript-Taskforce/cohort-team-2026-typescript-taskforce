@@ -4,6 +4,9 @@
   "description": "Team TypeScript Taskforce",
   "private": true,
   "scripts": {
+    "lint": "npm run lint --prefix client && npm run lint --prefix server",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dev": "concurrently -n CLIENT,SERVER -c blue,green \"npm run dev --prefix client\" \"npm run dev --prefix server\""
   },
   "repository": {
@@ -19,8 +22,14 @@
   },
   "homepage": "https://github.com/dallassoftwaredevelopers/cohort-team-2026-typescript-taskforce#readme",
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "concurrently": "^10.0.6",
-    "supabase": "^2.121.0"
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.10",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "supabase": "^2.121.0",
+    "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
     "@supabase/server": "^1.9.2"

@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
- "scripts": {
-  "dev": "tsx watch src/server.ts",
-  "build": "tsc",
-  "start": "node dist/server.js",
-  "seed:local-users": "tsx scripts/seed-local-users.ts"
-},
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "start": "node dist/server.js",
+    "seed:local-users": "tsx scripts/seed-local-users.ts"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
