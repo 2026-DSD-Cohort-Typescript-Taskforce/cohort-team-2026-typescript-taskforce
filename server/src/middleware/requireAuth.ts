@@ -15,6 +15,7 @@ export type AuthContext = {
 };
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- the usual way to add fields to Express's Request type.
   namespace Express {
     interface Request {
       /** Set by requireAuth. */
