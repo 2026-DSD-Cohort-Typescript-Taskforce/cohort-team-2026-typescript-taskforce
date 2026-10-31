@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { colorTransition, focusRing } from "@/app/ui";
+import { useState } from 'react';
+import { colorTransition, focusRing } from '@/app/ui';
 
 export type Column<T> = {
   key: keyof T & string;
@@ -19,24 +19,24 @@ export function DataTable<T extends Record<string, unknown>>({
   rows: T[];
   title?: string;
 }) {
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
 
   const sorted = sort
     ? [...rows].sort((a, b) => {
         const x = a[sort.key];
         const y = b[sort.key];
         const cmp =
-          typeof x === "number" && typeof y === "number"
+          typeof x === 'number' && typeof y === 'number'
             ? x - y
-            : String(x ?? "").localeCompare(String(y ?? ""), undefined, { numeric: true });
-        return sort.dir === "asc" ? cmp : -cmp;
+            : String(x ?? '').localeCompare(String(y ?? ''), undefined, { numeric: true });
+        return sort.dir === 'asc' ? cmp : -cmp;
       })
     : rows;
 
   // Click cycles asc -> desc -> unsorted.
   function toggle(key: string) {
     setSort((s) =>
-      s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null,
+      s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null,
     );
   }
 
@@ -56,16 +56,18 @@ export function DataTable<T extends Record<string, unknown>>({
                   <th
                     key={c.key}
                     scope="col"
-                    aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                    aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
                     className="p-0 font-semibold"
                   >
                     <button
                       type="button"
                       onClick={() => toggle(c.key)}
-                      className={`flex w-full items-center gap-2 px-6 py-4 text-left hover:text-primary ${active ? "text-primary" : "text-foreground"} ${colorTransition} ${focusRing}`}
+                      className={`flex w-full items-center gap-2 px-6 py-4 text-left hover:text-primary ${active ? 'text-primary' : 'text-foreground'} ${colorTransition} ${focusRing}`}
                     >
                       {c.label}
-                      <span aria-hidden="true">{active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                      <span aria-hidden="true">
+                        {active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+                      </span>
                     </button>
                   </th>
                 );
@@ -75,10 +77,10 @@ export function DataTable<T extends Record<string, unknown>>({
         )}
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={i} className="border-t border-subtle first:border-t-0 hover:bg-raised">
+            <tr key={i} className="border-t border-subtle first:border-t-0 hover:bg-primary-hover">
               {columns.map((c) => (
                 <td key={c.key} className="px-6 py-4 text-foreground">
-                  {c.render ? c.render(row) : String(row[c.key] ?? "")}
+                  {c.render ? c.render(row) : String(row[c.key] ?? '')}
                 </td>
               ))}
             </tr>
