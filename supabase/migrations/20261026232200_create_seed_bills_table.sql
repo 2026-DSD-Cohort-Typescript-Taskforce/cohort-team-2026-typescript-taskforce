@@ -19,12 +19,15 @@ CREATE TABLE bills (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_at TIMESTAMP,
 
+    -- This CONSTRAINT means the combination of these two attributes must be unique:
     CONSTRAINT bills_vendor_invoice_unique
         UNIQUE (vendor_id, invoice_number)
 );
 
+-- This means anyone can view the bills table without permission to insert or delete.
 GRANT SELECT ON bills TO anon;
 
+-- This means permissions can apply row-by-row:
 ALTER TABLE bills
 ENABLE ROW LEVEL SECURITY;
 
