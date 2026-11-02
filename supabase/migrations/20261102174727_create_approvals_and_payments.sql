@@ -4,8 +4,11 @@
 -- Ticket:          DC-53 Create "approvals" and "payments" Table, Test Data Rest API endpoints
 -- Description:     As the name implies, this file creates the approvals and payments tables, as seen in the ERD on Figma.
 --                  
--- Misc. Notes:
+-- To do:
+--      - Add permissions specifications to this file.
 --      - Check with ChatGPT if my permissions are correct.
+--      - Validate that everything is accurate to the ERD.
+--      - Add sample data to the tables.
 
 --  QUESTIONS TO ASK THE TEAM:
 --      - What roles have permissions to view these tables?
