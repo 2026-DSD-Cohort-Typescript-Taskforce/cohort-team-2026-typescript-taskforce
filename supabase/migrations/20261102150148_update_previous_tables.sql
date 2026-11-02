@@ -2,17 +2,16 @@
 -- Date Created:    10/30/26
 -- Date Finished:   11/2/26
 -- Ticket:          DC-53 Create "approvals" and "payments" Table, Test Data Rest API endpoints
--- Description:     As the name implies, this file creates the approvals and payments tables, as seen in the ERD on Figma.
---                  This file also makes changes to tables created in prior migrations to get the database in sync with the ERD.
+-- Description:     This file makes changes to tables created in prior migrations to get the database in sync with the ERD.
+--                  
 -- Misc. Notes:
 --      - PostgreSQL doesn't have String. Instead, use TEXT.
---      - Check with ChatGPT if my permissions are correct.
 
 --  QUESTIONS TO ASK THE TEAM:
---      - What roles have permissions to view these tables?
 --      - Should we remove or keep updated_at in users?
 --      - What do the diamonds mean for each column in supabase preview? Does that mean they are primary keys?
 --      - The cards and bank_accounts tables differ from the ERD. Which is the correct version?
+--      - Is the id in users supposed to be a larger int than the rest of the table IDs? If not, should I change all of the ids to int4 or int8?
 
 
 -- Function examples:
@@ -61,26 +60,4 @@ ALTER TABLE audit_logs      ALTER COLUMN name TYPE TEXT;
 
 
 
--- Creating the approvals table:
---CREATE TABLE bills (
---    approval_id SERIAL PRIMARY KEY,
---
---    bill_id INTEGER REFERENCES properties(property_id),
---    approved_by INTEGER REFERENCES users(vendor_id),
---    submitted_by INTEGER REFERENCES users(id),
 
---);
-
-
-
--- Permissions for the approvals table:
-
-
-
-
-
-
--- Creating the payments table:
-
-
--- Permissions for the payments table:
