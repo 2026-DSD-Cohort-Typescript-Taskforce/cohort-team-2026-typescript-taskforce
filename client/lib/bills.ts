@@ -37,6 +37,7 @@ export async function createBill(
 
 export async function fetchBills(): Promise<Bill[]> {
     const result = await fetch(billsUrl, {
+        method: "GET",
         headers: {
             apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
         }
@@ -53,6 +54,7 @@ export async function fetchBillById(id: string): Promise<Bill | null>{
     const billByIdUrl = `${billsUrl}?bill_id=eq.${encodeURIComponent(id)}&limit=1`
 
     const result = await fetch(billByIdUrl, {
+        method: "GET",
         headers: {
             apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
         }

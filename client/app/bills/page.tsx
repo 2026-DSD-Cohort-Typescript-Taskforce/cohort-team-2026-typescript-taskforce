@@ -1,4 +1,3 @@
-// TESTING PURPOSES ONLY - please feel free to delete 
 "use client";
 
 import { useEffect, useState } from "react";
