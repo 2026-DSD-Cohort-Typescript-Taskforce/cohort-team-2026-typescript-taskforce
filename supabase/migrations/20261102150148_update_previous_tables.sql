@@ -24,14 +24,8 @@
 --      - Remove a column:
 --          ALTER TABLE table_name DROP COLUMN column_name;
 
-
--- Updating the users table:
-ALTER TABLE users           RENAME COLUMN id TO user_id;
-ALTER TABLE users           RENAME COLUMN user_name TO name;
-ALTER TABLE users           RENAME COLUMN user_email TO email;
-ALTER TABLE users           RENAME COLUMN user_phone TO phone;
-ALTER TABLE users           RENAME COLUMN user_role TO role;
-ALTER TABLE users           RENAME COLUMN inserted_at TO created_at;
+--Updating the bills table:
+-- ALTER TABLE bills           ALTER COLUMN bill_id TYPE BIGINT;    -- Don't do this unless I also want to update all the foreign key instances. May need to be a separate migration.
 
 -- Updating the properties table:
 ALTER TABLE properties      RENAME COLUMN property_name TO name;
@@ -45,8 +39,13 @@ ALTER TABLE vendors         RENAME COLUMN vendor_address TO address;
 ALTER TABLE vendors         RENAME COLUMN vendor_phone TO phone;
 ALTER TABLE vendors         ALTER COLUMN supported_payment_methods TYPE TEXT;
 
--- Updating the payment_methods table:
-ALTER TABLE payment_methods ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+-- Updating the users table:
+ALTER TABLE users           RENAME COLUMN id TO user_id;
+ALTER TABLE users           RENAME COLUMN user_name TO name;
+ALTER TABLE users           RENAME COLUMN user_email TO email;
+ALTER TABLE users           RENAME COLUMN user_phone TO phone;
+ALTER TABLE users           RENAME COLUMN user_role TO role;
+ALTER TABLE users           RENAME COLUMN inserted_at TO created_at;
 
 -- Updating the audit_logs table:
 ALTER TABLE audit_logs      DROP COLUMN user_id;
@@ -54,7 +53,12 @@ ALTER TABLE audit_logs      DROP COLUMN bill_id;
 ALTER TABLE audit_logs      RENAME COLUMN action TO name;
 ALTER TABLE audit_logs      ALTER COLUMN name TYPE TEXT;
 
+-- Updating the payment_methods table:
+ALTER TABLE payment_methods ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+
 -- Updating the cards table:
+ALTER TABLE cards           ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 -- Updating the bank_accounts table:
 
