@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBillById, fetchBills, createBill, updateBill } from "../../lib/bills";
+import { fetchBillById, fetchBills, createBill, updateBill, fetchLastSubmittedBill } from "../../lib/bills";
 import type { Bill } from "@/types/bill";
 
 export default function BillsPage() {
     const [bills, setBills] = useState<Bill[]>([]);
     const [bill, setBill] = useState<Bill | null>(null);
+    const [lastSubmittedBill, setLastSubmittedBill] = useState<Bill | null>(null);
 
     useEffect(() => {
         fetchBills()
             .then(setBills)
             .catch(console.error);
-        fetchBillById("1")
+        fetchBillById("3")
             .then(setBill)
+            .catch(console.error);
+        fetchLastSubmittedBill("6")
+            .then(setLastSubmittedBill)
             .catch(console.error);
     }, []);
 
@@ -21,6 +25,7 @@ export default function BillsPage() {
         <div>
             {/* rendering all bills */}
             <ul>
+                fetchBills()
                 {bills.map((bill) => (
                     <li key={bill.bill_id}>
                         {bill.bill_id}: ${bill.amount}
@@ -31,6 +36,8 @@ export default function BillsPage() {
             {/* rendering 1 bill */}
             {bill && (
                 <div>
+                    <br></br>
+                    fetchBillById()
                     <p>Invoice: {bill.invoice_number}</p>
                     <p>Amount: {bill.amount}</p>
                     <p>Status: {bill.status}</p>
@@ -38,6 +45,7 @@ export default function BillsPage() {
             )}
 
             {/* create bill  */}
+            <br />
             <button
                 onClick={async () => {
                     try {
@@ -51,8 +59,11 @@ export default function BillsPage() {
                     }
                 }}
             >
-                Create test bill
+                createBill() button 
             </button>
+
+            <br />
+
 
             <button
                 onClick={async () => {
@@ -73,9 +84,17 @@ export default function BillsPage() {
                     }
                 }}
             >
-                Update test bill
+                updateBill() button
             </button>
-                    
+              
+            {lastSubmittedBill && (
+                <section>
+                    <h2>fetchLastSubmittedBill()</h2>
+                    <p>Bill ID: {lastSubmittedBill.bill_id}</p>
+                    <p>Amount: {lastSubmittedBill.amount}</p>
+                    <p>Status: {lastSubmittedBill.status}</p>
+                </section>
+            )}                 
         </div>
 
     
