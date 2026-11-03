@@ -10,7 +10,7 @@ export type Column<T> = {
 };
 
 // Pass `title` to replace the sortable column headers with a title bar.
-export function DataTable<T extends Record<string, unknown>>({
+export function DataTable<T extends object>({
   columns,
   rows,
   title,
@@ -19,7 +19,7 @@ export function DataTable<T extends Record<string, unknown>>({
   rows: T[];
   title?: string;
 }) {
-  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
+  const [sort, setSort] = useState<{ key: keyof T & string; dir: 'asc' | 'desc' } | null>(null);
 
   const sorted = sort
     ? [...rows].sort((a, b) => {
@@ -33,8 +33,7 @@ export function DataTable<T extends Record<string, unknown>>({
       })
     : rows;
 
-  // Click cycles asc -> desc -> unsorted.
-  function toggle(key: string) {
+  function toggle(key: keyof T & string) {
     setSort((s) =>
       s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null,
     );
@@ -77,7 +76,7 @@ export function DataTable<T extends Record<string, unknown>>({
         )}
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={i} className="border-t border-subtle first:border-t-0 hover:bg-primary-hover">
+            <tr key={i} className="border-t border-subtle first:border-t-0 hover:bg-raised">
               {columns.map((c) => (
                 <td key={c.key} className="px-6 py-4 text-foreground">
                   {c.render ? c.render(row) : String(row[c.key] ?? '')}

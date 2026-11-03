@@ -1,5 +1,6 @@
 import { DataTable, type Column } from '@/components/data-table';
 import { SiteFooter } from '../brand';
+import { TanstackDataTable } from '@/components/data-table-tanstack';
 
 type Task = { name: string; owner?: string; status?: string; due?: string };
 
@@ -30,7 +31,8 @@ export default function MainDashboard() {
     <div className="flex flex-1 flex-col">
       <main className="flex w-3xl flex-1 flex-col gap-6 p-4 lg:p-6">
         <h1 className="text-heading">Main Dashboard</h1>
-        <DataTable title="Recent Payments" columns={columns} rows={tasks2} />
+        <TanstackDataTable columns={columns} rows={tasks} />
+        <TanstackDataTable title="Recent Payments (TanStack)" columns={columns} rows={tasks2} />
       </main>
       <SiteFooter />
     </div>
