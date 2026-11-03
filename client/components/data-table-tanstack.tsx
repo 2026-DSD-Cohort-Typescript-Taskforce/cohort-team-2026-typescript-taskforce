@@ -12,7 +12,12 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { colorTransition, focusRing } from '@/app/ui';
-import type { Column } from './data-table';
+
+export type Column<T> = {
+  key: keyof T & string;
+  label: string;
+  render?: (row: T) => React.ReactNode;
+};
 
 // Pass `title` to replace the sortable column headers with a title bar.
 export function TanstackDataTable<T extends object>({

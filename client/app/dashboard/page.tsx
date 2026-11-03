@@ -1,6 +1,5 @@
-import { DataTable, type Column } from '@/components/data-table';
 import { SiteFooter } from '../brand';
-import { TanstackDataTable } from '@/components/data-table-tanstack';
+import { TanstackDataTable, type Column } from '@/components/data-table-tanstack';
 
 type Task = { name: string; owner?: string; status?: string; due?: string };
 
