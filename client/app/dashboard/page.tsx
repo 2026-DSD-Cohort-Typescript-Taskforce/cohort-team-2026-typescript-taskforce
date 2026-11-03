@@ -28,10 +28,12 @@ const tasks2: Task[] = [
 export default function MainDashboard() {
   return (
     <div className="flex flex-1 flex-col">
-      <main className="flex w-3xl flex-1 flex-col gap-6 p-4 lg:p-6">
+      <main className="flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 lg:p-6">
         <h1 className="text-heading">Main Dashboard</h1>
-        <TanstackDataTable columns={columns} rows={tasks} />
-        <TanstackDataTable title="Recent Payments (TanStack)" columns={columns} rows={tasks2} />
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <TanstackDataTable title="Pending Approvals" columns={columns} rows={tasks2} />
+          <TanstackDataTable title="Recent Payments" columns={columns} rows={tasks2} />
+        </div>
       </main>
       <SiteFooter />
     </div>
