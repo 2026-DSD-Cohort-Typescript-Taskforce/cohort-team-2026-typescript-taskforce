@@ -25,7 +25,7 @@
 --          ALTER TABLE table_name DROP COLUMN column_name;
 
 --Updating the bills table:
--- ALTER TABLE bills           ALTER COLUMN bill_id TYPE BIGINT;    -- Don't do this unless I also want to update all the foreign key instances. May need to be a separate migration.
+ALTER TABLE bills           RENAME COLUMN modified_at TO updated_at;
 
 -- Updating the properties table:
 ALTER TABLE properties      RENAME COLUMN property_name TO name;

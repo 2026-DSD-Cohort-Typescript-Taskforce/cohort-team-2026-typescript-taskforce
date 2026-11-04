@@ -11,7 +11,7 @@ ALTER TABLE bills
     ALTER COLUMN date_received  TYPE timestamptz,
     ALTER COLUMN date_paid      TYPE timestamptz,
     ALTER COLUMN created_at     TYPE timestamptz,
-    ALTER COLUMN modified_at    TYPE timestamptz;
+    ALTER COLUMN updated_at     TYPE timestamptz;
 
 ALTER TABLE properties
     ALTER COLUMN created_at     TYPE timestamptz;
