@@ -10,6 +10,7 @@
 
 --  QUESTIONS TO ASK THE TEAM:
 --      - What roles have permissions to view these tables?
+--          - All should be able to view.
 
 
 -- Creating the approvals table:
