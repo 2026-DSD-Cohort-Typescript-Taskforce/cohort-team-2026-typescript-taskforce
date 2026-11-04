@@ -40,6 +40,10 @@ CREATE TABLE approvals (
     )
 );
 -- Permissions for the approvals table:
+
+    -- This means anyone can view the approvals table without permission to insert or delete.
+    GRANT SELECT ON approvals TO anon;
+
     -- This means permissions can apply row-by-row:
     ALTER TABLE approvals ENABLE ROW LEVEL SECURITY;
 
@@ -93,6 +97,8 @@ CREATE TABLE payments (
 );
 
 -- Permissions for the payments table:
+    GRANT SELECT ON payments TO anon;
+    
     ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
     CREATE POLICY "authenticated users can view payments"
