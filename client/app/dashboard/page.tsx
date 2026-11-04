@@ -1,5 +1,5 @@
-import { SiteFooter } from '../brand';
-import { TanstackDataTable, type Column } from '@/components/data-table-tanstack';
+import { SiteFooter } from '../../components/layout/brand';
+import { DataTable, type Column } from '@/components/ui/data-table';
 
 type Task = { name: string; owner?: string; status?: string; due?: string };
 
@@ -31,8 +31,8 @@ export default function MainDashboard() {
       <main className="flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 lg:p-6">
         <h1 className="text-heading">Main Dashboard</h1>
         <div className="grid items-start gap-6 lg:grid-cols-2">
-          <TanstackDataTable title="Pending Approvals" columns={columns} rows={tasks2} />
-          <TanstackDataTable title="Recent Payments" columns={columns} rows={tasks2} />
+          <DataTable title="Pending Approvals" columns={columns} rows={tasks2} />
+          <DataTable title="Recent Payments" columns={columns} rows={tasks2} />
         </div>
       </main>
       <SiteFooter />

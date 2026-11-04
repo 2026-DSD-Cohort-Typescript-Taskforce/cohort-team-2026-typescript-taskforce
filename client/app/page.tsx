@@ -1,8 +1,8 @@
-import { APP_NAME, Logo, SiteFooter } from './brand';
+import { APP_NAME, Logo, SiteFooter } from '../components/layout/brand';
 import { SignedInUser } from './signed-in-user';
 import { Suspense } from 'react';
 import { BillAccountsCard } from './overview/BillAccountsCard';
-import { InfoCard } from './overview/InfoCard';
+import { InfoCard } from '../components/ui/InfoCard';
 import { LastSubmittedCard } from './overview/LastSubmittedCard';
 
 // Placeholder home until the app has real pages. proxy.ts sends signed-out visits to /login.
