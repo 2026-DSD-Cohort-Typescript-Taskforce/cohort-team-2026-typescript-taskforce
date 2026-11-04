@@ -124,25 +124,26 @@ select results_eq(
 );
 select is((select count(*)::int from public.audit_logs where bill_id between 12001 and 12011), 0, 'refused submits write no audit row');
 
--- As operator A: success
+-- As operator A: success. Times are cast to timestamptz so these pass whether the
+-- columns are timestamp or timestamptz.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
 select results_eq(
-  $$select bill_id, status::text, modified_at from public.submit_bill(12001)$$,
-  $$values (12001, 'pending_payment', now() at time zone 'UTC')$$,
+  $$select bill_id, status::text, modified_at::timestamptz from public.submit_bill(12001)$$,
+  $$values (12001, 'pending_payment', now())$$,
   'operator submits a complete draft due yesterday; it returns the bill as pending_payment'
 );
 select is(pg_temp.submit_error(12001), ARRAY['PT409', 'not_draft', 'pending_payment'], 'submitting it again gets not_draft');
 reset role;
 
 select results_eq(
-  $$select status::text, modified_at from public.bills where bill_id = 12001$$,
-  $$values ('pending_payment', now() at time zone 'UTC')$$,
-  'the bill is stored as pending_payment with modified_at = now (UTC)'
+  $$select status::text, modified_at::timestamptz from public.bills where bill_id = 12001$$,
+  $$values ('pending_payment', now())$$,
+  'the bill is stored as pending_payment with modified_at = now'
 );
 select results_eq(
-  $$select user_id, bill_id, action::text, description, created_at from public.audit_logs where bill_id = 12001$$,
-  $$select id, 12001, 'bill_submitted', 'draft → pending_payment', now() at time zone 'UTC'
+  $$select user_id, bill_id, action::text, description, created_at::timestamptz from public.audit_logs where bill_id = 12001$$,
+  $$select id, 12001, 'bill_submitted', 'draft → pending_payment', now()
     from public.users where user_email = 'dc12-a@example.test'$$,
   'exactly one audit row: bill_submitted by A''s profile, for this bill, at now'
 );

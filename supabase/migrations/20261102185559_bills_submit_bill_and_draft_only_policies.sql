@@ -55,9 +55,8 @@ begin
     raise sqlstate 'PT400' using message = 'incomplete_bill', detail = to_json(v_missing)::text;
   end if;
 
-  -- modified_at is stored in UTC, like date_received.
   update public.bills
-    set status = 'pending_payment', modified_at = now() at time zone 'UTC'
+    set status = 'pending_payment', modified_at = now()
     where bill_id = p_bill_id
     returning * into v_bill;
 
