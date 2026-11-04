@@ -1,4 +1,4 @@
-import { InfoCard, StatusLabel } from './InfoCard';
+import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 
 export type BillStatus =
   | 'draft'

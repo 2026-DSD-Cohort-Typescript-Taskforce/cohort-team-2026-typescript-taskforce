@@ -1,5 +1,10 @@
+import { Suspense } from 'react';
 import { SiteFooter } from '../../components/layout/brand';
+import { Sidebar } from '@/components/layout/sidebar';
 import { DataTable, type Column } from '@/components/ui/data-table';
+import { BillAccountsCard } from './BillAccountsCard';
+import { InfoCard } from '@/components/ui/InfoCard';
+import { LastSubmittedCard } from './LastSubmittedCard';
 
 type Task = { name: string; owner?: string; status?: string; due?: string };
 
@@ -27,15 +32,29 @@ const tasks2: Task[] = [
 
 export default function MainDashboard() {
   return (
-    <div className="flex flex-1 flex-col">
-      <main className="flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 lg:p-6">
-        <h1 className="text-heading">Main Dashboard</h1>
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <DataTable title="Pending Approvals" columns={columns} rows={tasks2} />
-          <DataTable title="Recent Payments" columns={columns} rows={tasks2} />
-        </div>
-      </main>
-      <SiteFooter />
+    <div className="flex flex-1">
+      <div className="flex flex-1 flex-col">
+        <main className="flex w-full flex-1 flex-col gap-6 p-4 lg:p-6">
+          <h1 className="text-heading">Overview</h1>
+          <div className="grid gap-14 md:grid-cols-2">
+            <Suspense fallback={<InfoCard title="Last Submitted" />}>
+              <LastSubmittedCard />
+            </Suspense>
+            <Suspense fallback={<InfoCard title="Bill Accounts" />}>
+              <BillAccountsCard />
+            </Suspense>
+          </div>
+          <div className="grid items-start gap-14 lg:grid-cols-2">
+            <Suspense fallback={<p>Loading...</p>}>
+              <DataTable title="Recent Payments" columns={columns} rows={tasks2} />
+            </Suspense>
+            <Suspense fallback={<p>Loading...</p>}>
+              <DataTable title="Pending Approvals" columns={columns} rows={tasks2} />
+            </Suspense>
+          </div>
+        </main>
+        <SiteFooter />
+      </div>
     </div>
   );
 }

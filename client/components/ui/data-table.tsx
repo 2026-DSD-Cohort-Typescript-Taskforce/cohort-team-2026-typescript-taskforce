@@ -86,7 +86,7 @@ export function DataTable<T extends object>({
   );
 
   return (
-    <div className="overflow-hidden rounded-card border border-subtle bg-surface">
+    <div className="overflow-hidden border border-subtle bg-surface">
       <div className="flex items-center justify-between border-b border-subtle bg-raised px-6 py-3 font-semibold text-foreground">
         <span>{title}</span>
         <button
