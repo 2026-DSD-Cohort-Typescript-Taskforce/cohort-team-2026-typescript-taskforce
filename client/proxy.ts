@@ -8,7 +8,8 @@ export function proxy(request: NextRequest) {
   const signedIn = SESSION_COOKIES.some((name) => request.cookies.has(name));
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/" && !signedIn) {
+  // TODO: re-enable /dashboard protection once the table is done (local dev without login).
+  if ((pathname === "/" /* || pathname === "/dashboard" */) && !signedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   if (pathname === "/login" && signedIn) {
@@ -18,5 +19,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login"],
+  matcher: ["/", "/login" /* , "/dashboard" */],
 };
