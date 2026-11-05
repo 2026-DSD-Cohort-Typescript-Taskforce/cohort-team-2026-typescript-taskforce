@@ -9,7 +9,7 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // TODO: re-enable /dashboard protection once the table is done (local dev without login).
-  if ((pathname === "/" || pathname.startsWith("/bills/") /* || pathname === "/dashboard" */) && !signedIn) {
+  if ((pathname === "/" || pathname === "/bills" || pathname.startsWith("/bills/") /* || pathname === "/dashboard" */) && !signedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   if (pathname === "/login" && signedIn) {
@@ -19,5 +19,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/bills/:id" /* , "/dashboard" */],
+  matcher: ["/", "/login", "/bills", "/bills/:id" /* , "/dashboard" */],
 };

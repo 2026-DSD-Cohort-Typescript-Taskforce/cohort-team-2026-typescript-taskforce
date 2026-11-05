@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { APP_NAME, Logo, SiteFooter } from "../../brand";
-import { focusRing } from "../../ui";
+import { APP_NAME, Logo, SiteFooter } from "../brand";
+import { focusRing } from "../ui";
 
-export default function BillLayout({ children }: LayoutProps<"/bills/[id]">) {
+export default function BillsLayout({ children }: LayoutProps<"/bills">) {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-subtle px-4 py-4 lg:px-6">
