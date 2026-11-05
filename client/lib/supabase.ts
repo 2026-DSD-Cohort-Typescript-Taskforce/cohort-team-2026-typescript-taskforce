@@ -1,8 +1,9 @@
 import "server-only";
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-import { SIGNED_OUT, toErrorResponse, type SupabaseError } from "./submit-errors";
+import { NO_PROFILE, SAVE_FAILED, toWriteErrorResponse } from "./bill-errors";
+import { SIGNED_OUT, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors";
 
 // Set by Express at sign-in and on every refresh (server/src/config/cookies.ts).
 const ACCESS_COOKIE = "sb-access-token";
@@ -37,7 +38,45 @@ export function reply({ status = 200, body }: { status?: number; body: unknown }
 
 /** Replies to a Supabase error with a readable message. Unexpected ones are logged here. */
 export function replyWithError(error: SupabaseError, fallback?: string) {
-  const response = toErrorResponse(error, fallback);
+  return replyWithLogged(error, toErrorResponse(error, fallback));
+}
+
+/** As replyWithError, for an insert or update on bills (lib/bill-errors.ts). */
+export function replyWithWriteError(error: SupabaseError, fallback?: string) {
+  return replyWithLogged(error, toWriteErrorResponse(error, fallback));
+}
+
+function replyWithLogged(error: SupabaseError, response: ErrorResponse) {
   if (response.status === 500) console.error("Supabase request failed:", error);
   return reply(response);
+}
+
+/** The request's JSON body when it is an object, else null. */
+export async function readJsonObject(request: Request): Promise<Record<string, unknown> | null> {
+  const body: unknown = await request.json().catch(() => null);
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+}
+
+/**
+ * The caller's profile id (users.id), or a reply to send instead. The Auth user id is read
+ * from the access token without checking it here: the query runs with that same token,
+ * and PostgREST refuses it unless it is valid.
+ */
+export async function getProfileId(request: NextRequest, supabase: SupabaseClient): Promise<number | Response> {
+  const authUserId = tokenSubject(request.cookies.get(ACCESS_COOKIE)?.value);
+  if (!authUserId) return reply(SIGNED_OUT);
+
+  const { data, error } = await supabase.from("users").select("id").eq("auth_user_id", authUserId).maybeSingle();
+  if (error) return replyWithError(error, SAVE_FAILED);
+  return data ? data.id : reply(NO_PROFILE);
+}
+
+// The JWT's sub claim: the Auth user id.
+function tokenSubject(token: string | undefined): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(token?.split(".")[1] ?? "", "base64url").toString());
+    return typeof payload?.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
 }
