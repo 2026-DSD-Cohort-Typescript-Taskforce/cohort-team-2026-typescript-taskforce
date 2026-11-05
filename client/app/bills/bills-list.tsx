@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import { billRow, filterBills, statusOptions } from "@/lib/bill-list-filter";
 import type { Bill } from "@/lib/bill-view";
-import { ErrorAlert, colorTransition, focusRing, secondaryButton } from "../ui";
+import { ErrorAlert, Spinner, colorTransition, focusRing, secondaryButton } from "../ui";
 import { useBills } from "./bills-provider";
 import { StatusChip } from "./status-chip";
 
@@ -12,19 +12,24 @@ const controlClass = `h-12 rounded-input border border-strong bg-background px-4
 
 /** Every bill the user can see, newest first, with a search box and a status filter. */
 export function BillsList() {
-  const { bills, error } = useBills();
+  const { bills, error, loading, refresh } = useBills();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const searchId = useId();
   const statusId = useId();
 
   if (!bills) {
-    return error ? (
-      <ErrorAlert message={error} />
-    ) : (
-      <p role="status" className="text-body text-secondary">
-        Loading the bills…
-      </p>
+    return error ? <LoadError message={error} retrying={loading} onRetry={refresh} /> : <ListSkeleton />;
+  }
+
+  if (bills.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
+        <div className="rounded-card border border-subtle bg-surface p-6 sm:p-8">
+          <p className="text-body-lg font-medium">No bills yet.</p>
+        </div>
+      </div>
     );
   }
 
@@ -75,7 +80,7 @@ export function BillsList() {
         </div>
       </div>
 
-      <ErrorAlert message={error} />
+      {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
 
       <p role="status" className="sr-only">
         {shown.length === bills.length
@@ -98,6 +103,49 @@ export function BillsList() {
         </div>
       )}
     </section>
+  );
+}
+
+/** The load failed: its message and a Retry button. A failed refresh keeps the list shown. */
+function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <ErrorAlert message={message} />
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={retrying}
+        data-pending={retrying || undefined}
+        className={secondaryButton}
+      >
+        {retrying && <Spinner />}
+        {retrying ? "Retrying…" : "Retry"}
+      </button>
+    </div>
+  );
+}
+
+/** Four placeholder rows in the rows' shape while the first load runs. */
+function ListSkeleton() {
+  return (
+    <div role="status" className="flex flex-col gap-3">
+      <span className="sr-only">Loading the bills…</span>
+      {[0, 1, 2, 3].map((row) => (
+        <div
+          key={row}
+          aria-hidden="true"
+          className="flex items-start gap-4 rounded-card border border-subtle bg-surface p-4 motion-safe:animate-pulse sm:p-5"
+        >
+          <span className="size-10 shrink-0 rounded-full bg-raised" />
+          <span className="flex flex-1 flex-col gap-2 pt-1">
+            <span className="h-5 w-1/2 rounded-input bg-raised" />
+            <span className="h-4 w-1/3 rounded-input bg-raised" />
+            <span className="h-4 w-2/5 rounded-input bg-raised" />
+            <span className="h-4 w-1/4 rounded-input bg-raised" />
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
