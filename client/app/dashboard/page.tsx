@@ -33,6 +33,7 @@ const tasks2: Task[] = [
 export default function MainDashboard() {
   return (
     <div className="flex flex-1">
+      {/* <Sidebar /> */}
       <div className="flex flex-1 flex-col">
         <main className="flex w-full flex-1 flex-col gap-6 p-4 lg:p-6">
           <h1 className="text-heading">Overview</h1>
