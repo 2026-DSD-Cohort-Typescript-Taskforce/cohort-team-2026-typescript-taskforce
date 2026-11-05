@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns"],
+    "strict": true
+  },
+  "imports": {
+    "@std/encoding/base64": "jsr:@std/encoding/base64",
+    "zod": "npm:zod@4.6.7"
+  }
+}
