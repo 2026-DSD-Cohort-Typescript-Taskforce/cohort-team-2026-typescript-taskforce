@@ -1,6 +1,8 @@
 import type { Bill, CreateBillInput } from '@/types/bill';
 
 const billsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_DATA_API_BASE_URL}/bills`;
+const LAST_SUBMITTED =
+  'order=created_at.desc&limit=1&status=neq.draft&select=*,vendors(vendor_name)';
 
 export type UpdateBillInput = Partial<CreateBillInput>;
 
@@ -63,15 +65,15 @@ export async function fetchBillById(id: string): Promise<Bill | null> {
   return bills[0] ?? null;
 }
 
-export async function fetchLastSubmittedBill(
-  userId: string,
-): Promise<(Bill & { vendors: { vendor_name: string } | null }) | null> {
-  const billsByUserIdUrl = `${billsUrl}?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=1&status=neq.draft&select=*,vendors(vendor_name)`;
+type BillWithVendor = Bill & { vendors: { vendor_name: string } | null };
 
-  const result = await fetch(billsByUserIdUrl, {
+// GET on the bills table; the token (if any) makes the request run as that user.
+async function getBills(query: string, accessToken?: string) {
+  const result = await fetch(`${billsUrl}?${query}`, {
     method: 'GET',
     headers: {
       apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
     },
   });
 
@@ -79,8 +81,24 @@ export async function fetchLastSubmittedBill(
     throw new Error(`Failed to fetch bills: ${result.status}`);
   }
 
-  const bills = await result.json();
+  return result.json();
+}
 
+// latest non-draft bill across every bill visible to the caller
+export async function fetchLastSubmittedBill(accessToken?: string): Promise<BillWithVendor | null> {
+  const bills: BillWithVendor[] = await getBills(LAST_SUBMITTED, accessToken);
+  return bills[0] ?? null;
+}
+
+// latest non-draft bill for one user
+export async function fetchLastSubmittedBillByUserId(
+  userId: string,
+  accessToken?: string,
+): Promise<BillWithVendor | null> {
+  const bills: BillWithVendor[] = await getBills(
+    `user_id=eq.${encodeURIComponent(userId)}&${LAST_SUBMITTED}`,
+    accessToken,
+  );
   return bills[0] ?? null;
 }
 
@@ -102,21 +120,19 @@ export async function fetchRecentPaidBills(userId: string) {
   return result.json();
 }
 
-export async function getBillStatusCountsByUserId(userId: string) {
-  const billsByUserIdUrl = `${billsUrl}?user_id=eq.${encodeURIComponent(userId)}&select=status`;
+type StatusRow = { status: string };
 
-  const result = await fetch(billsByUserIdUrl, {
-    method: 'GET',
-    headers: {
-      apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    },
-  });
+// one { status } row per bill visible to the caller
+export async function getBillStatusRows(accessToken: string): Promise<StatusRow[]> {
+  return getBills('select=status', accessToken);
+}
 
-  if (!result.ok) {
-    throw new Error(`Failed to fetch bills: ${result.status}`);
-  }
-
-  return result.json();
+// one { status } row per bill for one user
+export async function getBillStatusRowsByUserId(
+  userId: string,
+  accessToken: string,
+): Promise<StatusRow[]> {
+  return getBills(`user_id=eq.${encodeURIComponent(userId)}&select=status`, accessToken);
 }
 
 export async function updateBill(

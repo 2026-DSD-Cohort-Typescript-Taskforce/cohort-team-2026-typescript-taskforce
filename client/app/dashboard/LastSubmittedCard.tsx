@@ -13,9 +13,11 @@ const tone = (status: string) =>
       : 'warning';
 
 async function getLastSubmittedBill() {
-  const c = await cookies();
+  const jar = await cookies();
+  const token = jar.get('sb-access-token')?.value;
+  if (!token) return null;
   const res = await backend('/api/auth/me', {
-    headers: { cookie: (await cookies()).toString() },
+    headers: { cookie: jar.toString() },
   });
 
   if (!res.ok) {
@@ -24,7 +26,7 @@ async function getLastSubmittedBill() {
 
   const { user } = await res.json();
 
-  const bill = await fetchLastSubmittedBill(String(user.id));
+  const bill = await fetchLastSubmittedBill(token);
 
   return bill;
 }
