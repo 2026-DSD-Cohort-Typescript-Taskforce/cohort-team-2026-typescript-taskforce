@@ -5,7 +5,7 @@
  * payment method's type and name embedded.
  */
 export const BILL_SELECT =
-  "bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor_id, property_id, payment_id, vendor:vendors(vendor_name), property:properties(property_name), payment:payment_methods(payment_type, name)";
+  "bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor_id, property_id, payment_id, vendor:vendors(name), property:properties(name), payment:payment_methods(payment_type, name)";
 
 export type Bill = {
   bill_id: number;
@@ -14,14 +14,14 @@ export type Bill = {
   amount: number;
   /** A date, e.g. 2026-11-16. */
   date_due: string | null;
-  /** Timestamps in UTC with no zone, e.g. 2026-11-02T18:55:59.123. */
+  /** Timestamps with a zone (timestamptz since DC-53), e.g. 2026-11-02T18:55:59.123+00:00. */
   date_issued: string | null;
   date_received: string;
   vendor_id: number | null;
   property_id: number | null;
   payment_id: number | null;
-  vendor: { vendor_name: string } | null;
-  property: { property_name: string } | null;
+  vendor: { name: string } | null;
+  property: { name: string } | null;
   /** payment_type is card or bank (payment_methods' valid_payment_type). */
   payment: { payment_type: string; name: string } | null;
 };

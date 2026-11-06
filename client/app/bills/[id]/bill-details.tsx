@@ -84,8 +84,8 @@ export function BillDetails({ id }: { id: string }) {
     );
   }
 
-  const vendor = bill.vendor?.vendor_name ?? null;
-  const property = bill.property?.property_name ?? null;
+  const vendor = bill.vendor?.name ?? null;
+  const property = bill.property?.name ?? null;
   // What submit_bill() requires, as the confirmation lists it.
   const required: [string, string | null][] = [
     ["Vendor", vendor],
