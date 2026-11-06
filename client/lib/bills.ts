@@ -102,22 +102,20 @@ export async function fetchLastSubmittedBillByUserId(
   return bills[0] ?? null;
 }
 
-// fetches last 10 paid bills associated with specified ID
-export async function fetchRecentPaidBills(userId: string) {
-  const billsByUserIdUrl = `${billsUrl}?user_id=eq.${encodeURIComponent(userId)}&order=date_paid.desc&date_paid=not.is.null&limit=10&status=eq.payment_success`;
+// last 10 paid bills visible to the caller
+export async function fetchRecentPaidBills(accessToken: string): Promise<BillWithVendor[]> {
+  return getBills(
+    'status=eq.payment_success&date_paid=not.is.null&order=date_paid.desc&limit=10&select=*,vendors(vendor_name)',
+    accessToken,
+  );
+}
 
-  const result = await fetch(billsByUserIdUrl, {
-    method: 'GET',
-    headers: {
-      apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    },
-  });
-
-  if (!result.ok) {
-    throw new Error(`Failed to fetch bills: ${result.status}`);
-  }
-
-  return result.json();
+// oldest 10 bills awaiting approval visible to the caller
+export async function fetchPendingApprovalBills(accessToken: string): Promise<BillWithVendor[]> {
+  return getBills(
+    'status=eq.pending_approval&order=date_received.asc&limit=10&select=*,vendors(vendor_name)',
+    accessToken,
+  );
 }
 
 type StatusRow = { status: string };
