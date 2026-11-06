@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // Set by the Express server (server/src/config/cookies.ts). These checks are optimistic:
-// they only look for the cookies. Express verifies the session on every /api call.
+// they only look for the cookies. Express and Supabase verify the session on every /api call.
 const SESSION_COOKIES = ["sb-access-token", "sb-refresh-token"];
 
 export function proxy(request: NextRequest) {
@@ -9,7 +9,7 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // TODO: re-enable /dashboard protection once the table is done (local dev without login).
-  if ((pathname === "/" /* || pathname === "/dashboard" */) && !signedIn) {
+  if ((pathname === "/" || pathname === "/bills" || pathname.startsWith("/bills/") /* || pathname === "/dashboard" */) && !signedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   if (pathname === "/login" && signedIn) {
@@ -19,5 +19,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login" /* , "/dashboard" */],
+  matcher: ["/", "/login", "/bills", "/bills/:id" /* , "/dashboard" */],
 };
