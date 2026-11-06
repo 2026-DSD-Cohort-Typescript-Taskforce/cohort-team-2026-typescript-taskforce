@@ -1,26 +1,137 @@
 @import "tailwindcss";
 
+/*
+ * Theme tokens: the team's selected Figma theme, "Emerald dark" (FigJam node 143:1472).
+ * Components use the Tailwind names below (bg-surface, text-secondary, border-strong, …),
+ * never hex values, so a light theme can later redefine these variables.
+ *
+ * The styleguide gives no hex for the danger red, the pressed/disabled button colours or
+ * the alert colours. These were sampled from its screenshot and checked for WCAG AA.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --primary: #10dcb0;
+  --primary-hover: #45e8c4;
+  --primary-pressed: #0db994;
+  --on-primary: #021a15;
+  --accent: #b8ef35;
+
+  --background: #021a15;
+  --surface: #062b23;
+  --raised: #0c3b31;
+  --overlay: #124a3e;
+
+  /* Border is decorative only (under 3:1 on these backgrounds). Inputs use Border strong. */
+  --border: #285047;
+  --border-strong: #5e8a7e;
+
+  --text: #eaf6f0;
+  --text-secondary: #a3bdb2;
+
+  --danger: #f2948a;
+  --disabled: #0c3b31;
+  --disabled-text: #799c90;
+
+  --success-surface: #0f3a27;
+  --success-border: #215d3f;
+  --success-text: #b5eac3;
+  --info-surface: #0e3346;
+  --info-border: #2c5e78;
+  --info-text: #b2d6ee;
+  --warning-surface: #3e3410;
+  --warning-border: #665a21;
+  --warning-text: #f7e29c;
+  --error-surface: #451b1c;
+  --error-border: #6d3530;
+  --error-text: #f8c5be;
+
+  --shadow-color: rgb(0 0 0 / 0.55);
 }
 
 @theme inline {
+  --font-sans: var(--font-inter), Arial, sans-serif;
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-overlay: var(--overlay);
+
+  --color-foreground: var(--text);
+  --text-color-secondary: var(--text-secondary);
+  --border-color-subtle: var(--border);
+  --border-color-strong: var(--border-strong);
+
+  --color-danger: var(--danger);
+  --color-disabled: var(--disabled);
+  --color-disabled-foreground: var(--disabled-text);
+
+  --color-success-surface: var(--success-surface);
+  --color-success-border: var(--success-border);
+  --color-success-foreground: var(--success-text);
+  --color-info-surface: var(--info-surface);
+  --color-info-border: var(--info-border);
+  --color-info-foreground: var(--info-text);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-border: var(--warning-border);
+  --color-warning-foreground: var(--warning-text);
+  --color-error-surface: var(--error-surface);
+  --color-error-border: var(--error-border);
+  --color-error-foreground: var(--error-text);
+
+  /* Elevation: L1 bg-surface + border-subtle, L2 bg-raised + border-subtle,
+     L3 bg-overlay + border-strong, L4 bg-overlay + shadow-l4. */
+  --shadow-l4: 0 16px 32px -8px var(--shadow-color);
+
+  --radius-input: 12px;
+  --radius-button: 14px;
+  --radius-card: 24px;
+
+  /* Type scale. Spacing uses Tailwind's 4px steps: 1, 2, 4, 6, 8, 12, 16. */
+  --text-display: 3.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 700;
+  --text-heading: 1.75rem;
+  --text-heading--line-height: 1.2;
+  --text-heading--letter-spacing: -0.02em;
+  --text-heading--font-weight: 700;
+  --text-subheading: 1.25rem;
+  --text-subheading--line-height: 1.4;
+  --text-subheading--font-weight: 600;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.55;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.45;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.35;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* The brand panel's emerald backdrop: mint light from the top right over Raised → Surface. */
+@utility bg-brand {
+  background-color: var(--raised);
+  background-image:
+    radial-gradient(90% 70% at 100% 0%, color-mix(in oklab, var(--primary) 30%, transparent), transparent 70%),
+    radial-gradient(70% 50% at 0% 100%, color-mix(in oklab, var(--overlay) 80%, transparent), transparent 70%),
+    linear-gradient(165deg, var(--raised), var(--surface));
 }
 
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+}
+
+/* Keep Chrome's autofill from painting the dark fields light blue. */
+input:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: 0 0 0 1000px var(--background) inset;
 }
