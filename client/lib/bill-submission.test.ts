@@ -162,20 +162,20 @@ test("reset goes back to idle with the given bill", () => {
 });
 
 test("checkSubmittable names what a submit still needs", () => {
-  const input = validateBill({ amount: "5", vendor_id: "1" }).input!;
+  const input = validateBill({ amount: "5", vendor_id: "1", property_id: "2", payment_id: "3" }).input!;
   assert.deepEqual(checkSubmittable(input), {
     type: "invalid",
     fieldErrors: {
-      property_id: "Required to submit.",
       invoice_number: "Required to submit.",
       date_due: "Required to submit.",
     },
-    message: "Add property, invoice number and due date to submit.",
+    message: "Add invoice number and due date to submit.",
   });
   const complete = validateBill({
     amount: "5",
     vendor_id: "1",
     property_id: "2",
+    payment_id: "3",
     invoice_number: "A",
     date_due: "2026-12-01",
   }).input!;

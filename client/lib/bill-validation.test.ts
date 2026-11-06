@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { missingForSubmit, submitHint, validateBill } from "./bill-validation.ts";
 
+// The choices every draft needs, as the form's selects hold them.
+const ids = { vendor_id: "3", property_id: "5", payment_id: "2" };
+
 // Values as the bill form holds them: strings from its inputs and selects.
 const form = {
-  vendor_id: "3",
-  property_id: "5",
-  payment_id: "",
+  ...ids,
   invoice_number: "  INV-1001 ",
   amount: "1,234.5",
   date_due: "2026-11-16",
@@ -17,7 +18,7 @@ test("a complete form becomes the details to send", () => {
     input: {
       vendor_id: 3,
       property_id: 5,
-      payment_id: null,
+      payment_id: 2,
       invoice_number: "INV-1001",
       amount: "1234.50",
       date_due: "2026-11-16",
@@ -25,12 +26,19 @@ test("a complete form becomes the details to send", () => {
   });
 });
 
-test("a draft only needs an amount", () => {
+test("a draft needs a vendor, property, payment method and amount", () => {
   assert.deepEqual(validateBill({ amount: "12" }), {
+    errors: {
+      vendor_id: "Choose a vendor from the list.",
+      property_id: "Choose a property from the list.",
+      payment_id: "Choose a payment method from the list.",
+    },
+  });
+  assert.deepEqual(validateBill({ ...ids, amount: "12" }), {
     input: {
-      vendor_id: null,
-      property_id: null,
-      payment_id: null,
+      vendor_id: 3,
+      property_id: 5,
+      payment_id: 2,
       invoice_number: null,
       amount: "12.00",
       date_due: null,
@@ -39,8 +47,8 @@ test("a draft only needs an amount", () => {
 });
 
 test("amounts: at most 2 decimals, above 0, up to 9,999,999,999.99", () => {
-  const amountError = (amount: unknown) => validateBill({ amount }).errors?.amount;
-  const amountValue = (amount: unknown) => validateBill({ amount }).input?.amount;
+  const amountError = (amount: unknown) => validateBill({ ...ids, amount }).errors?.amount;
+  const amountValue = (amount: unknown) => validateBill({ ...ids, amount }).input?.amount;
 
   assert.equal(amountError(""), "Enter an amount.");
   assert.equal(amountError("   "), "Enter an amount.");
@@ -63,40 +71,46 @@ test("amounts: at most 2 decimals, above 0, up to 9,999,999,999.99", () => {
 });
 
 test("invoice numbers are trimmed, blank is none, and 255 characters is the limit", () => {
-  assert.equal(validateBill({ amount: "1", invoice_number: "   " }).input?.invoice_number, null);
-  assert.equal(validateBill({ amount: "1", invoice_number: "x".repeat(255) }).input?.invoice_number, "x".repeat(255));
+  assert.equal(validateBill({ ...ids, amount: "1", invoice_number: "   " }).input?.invoice_number, null);
+  assert.equal(validateBill({ ...ids, amount: "1", invoice_number: "x".repeat(255) }).input?.invoice_number, "x".repeat(255));
   assert.equal(
-    validateBill({ amount: "1", invoice_number: ` ${"x".repeat(255)} ` }).input?.invoice_number,
+    validateBill({ ...ids, amount: "1", invoice_number: ` ${"x".repeat(255)} ` }).input?.invoice_number,
     "x".repeat(255),
   );
   assert.equal(
-    validateBill({ amount: "1", invoice_number: "x".repeat(256) }).errors?.invoice_number,
+    validateBill({ ...ids, amount: "1", invoice_number: "x".repeat(256) }).errors?.invoice_number,
     "Use 255 characters or fewer.",
   );
-  assert.equal(validateBill({ amount: "1", invoice_number: 42 }).errors?.invoice_number, "Enter the invoice number as text.");
+  assert.equal(validateBill({ ...ids, amount: "1", invoice_number: 42 }).errors?.invoice_number, "Enter the invoice number as text.");
 });
 
 test("due dates must be real calendar dates; past dates are fine", () => {
-  const dateError = (date_due: unknown) => validateBill({ amount: "1", date_due }).errors?.date_due;
+  const dateError = (date_due: unknown) => validateBill({ ...ids, amount: "1", date_due }).errors?.date_due;
   for (const bad of ["2026-02-30", "2026-13-01", "2026-1-5", "11/16/2026", "0000-01-01", 20261116]) {
     assert.equal(dateError(bad), "Enter a valid date.", String(bad));
   }
-  assert.equal(validateBill({ amount: "1", date_due: "2028-02-29" }).input?.date_due, "2028-02-29");
-  assert.equal(validateBill({ amount: "1", date_due: "2020-01-01" }).input?.date_due, "2020-01-01");
+  assert.equal(validateBill({ ...ids, amount: "1", date_due: "2028-02-29" }).input?.date_due, "2028-02-29");
+  assert.equal(validateBill({ ...ids, amount: "1", date_due: "2020-01-01" }).input?.date_due, "2020-01-01");
 });
 
 test("ids are positive Postgres integers, from a select's string or a number", () => {
-  assert.equal(validateBill({ amount: "1", vendor_id: 7 }).input?.vendor_id, 7);
-  assert.equal(validateBill({ amount: "1", vendor_id: null }).input?.vendor_id, null);
-  for (const bad of ["0", "-1", "1.5", "abc", 0, 2.5, 2147483648, "2147483648"]) {
-    assert.equal(validateBill({ amount: "1", vendor_id: bad }).errors?.vendor_id, "Choose a vendor from the list.", String(bad));
+  assert.equal(validateBill({ ...ids, amount: "1", vendor_id: 7 }).input?.vendor_id, 7);
+  for (const bad of [null, "", "0", "-1", "1.5", "abc", 0, 2.5, 2147483648, "2147483648"]) {
+    assert.equal(
+      validateBill({ ...ids, amount: "1", vendor_id: bad }).errors?.vendor_id,
+      "Choose a vendor from the list.",
+      String(bad),
+    );
   }
-  assert.equal(validateBill({ amount: "1", property_id: "x" }).errors?.property_id, "Choose a property from the list.");
-  assert.equal(validateBill({ amount: "1", payment_id: "x" }).errors?.payment_id, "Choose a payment method from the list.");
+  assert.equal(validateBill({ ...ids, amount: "1", property_id: "x" }).errors?.property_id, "Choose a property from the list.");
+  assert.equal(
+    validateBill({ ...ids, amount: "1", payment_id: "x" }).errors?.payment_id,
+    "Choose a payment method from the list.",
+  );
 });
 
 test("every failing field gets its own message at once", () => {
-  assert.deepEqual(validateBill({ vendor_id: "x", amount: "0", date_due: "soon" }), {
+  assert.deepEqual(validateBill({ ...ids, vendor_id: "x", amount: "0", date_due: "soon" }), {
     errors: {
       vendor_id: "Choose a vendor from the list.",
       amount: "Enter an amount above 0.",
@@ -111,10 +125,14 @@ test("partial (an edit) checks only the fields it is given", () => {
   });
   assert.deepEqual(validateBill({}, { partial: true }), { input: {} });
   assert.deepEqual(validateBill({ amount: "" }, { partial: true }), { errors: { amount: "Enter an amount." } });
+  // An edit can't clear a choice a draft needs.
+  assert.deepEqual(validateBill({ payment_id: "" }, { partial: true }), {
+    errors: { payment_id: "Choose a payment method from the list." },
+  });
 });
 
 test("anything that isn't a bill field is dropped", () => {
-  const values = { amount: "5", status: "pending_payment", user_id: 1, bill_id: 9 } as Record<string, unknown>;
+  const values = { ...ids, amount: "5", status: "pending_payment", user_id: 1, bill_id: 9 } as Record<string, unknown>;
   assert.deepEqual(Object.keys(validateBill(values).input ?? {}).sort(), [
     "amount",
     "date_due",
@@ -126,8 +144,8 @@ test("anything that isn't a bill field is dropped", () => {
 });
 
 test("missingForSubmit lists what submit_bill() requires, in its order", () => {
-  const draft = validateBill({ amount: "5" }).input!;
-  assert.deepEqual(missingForSubmit(draft), ["vendor_id", "property_id", "invoice_number", "date_due"]);
+  const draft = validateBill({ ...ids, amount: "5" }).input!;
+  assert.deepEqual(missingForSubmit(draft), ["invoice_number", "date_due"]);
   assert.deepEqual(missingForSubmit(validateBill(form).input!), []);
   assert.deepEqual(missingForSubmit({ ...validateBill(form).input!, amount: "0.00" }), ["amount"]);
 });

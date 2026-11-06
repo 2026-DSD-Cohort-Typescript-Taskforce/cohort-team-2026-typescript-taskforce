@@ -12,9 +12,9 @@ export type BillField = (typeof BILL_FIELDS)[number];
 
 /** A bill's details as the API takes them. */
 export type BillInput = {
-  vendor_id: number | null;
-  property_id: number | null;
-  payment_id: number | null;
+  vendor_id: number;
+  property_id: number;
+  payment_id: number;
   invoice_number: string | null;
   /** A decimal string with two places, e.g. "1234.50", so no precision is lost. */
   amount: string;
@@ -41,8 +41,9 @@ const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
  * Checks every field and returns the details to send, or an error per failing field.
- * An amount is always needed, since bills.amount can't be empty. With `partial` (an
- * edit), fields that aren't in `values` are left out instead.
+ * A vendor, property, payment method and amount are always needed, since those bills
+ * columns can't be empty (NOT NULL since DC-53). With `partial` (an edit), fields that
+ * aren't in `values` are left out instead.
  */
 export function validateBill(values: BillValues, options?: { partial?: false }): ValidationResult<BillInput>;
 export function validateBill(values: BillValues, options: { partial: true }): ValidationResult<Partial<BillInput>>;
@@ -65,12 +66,10 @@ export function validateBill(
 
 /**
  * The fields submit_bill() requires that these details leave out, in its order. Saving a
- * draft doesn't need them.
+ * draft doesn't need them. Vendor and property are never missing: a draft needs them.
  */
 export function missingForSubmit(input: Partial<BillInput>): BillField[] {
   const missing: BillField[] = [];
-  if (input.vendor_id == null) missing.push("vendor_id");
-  if (input.property_id == null) missing.push("property_id");
   if (!input.invoice_number) missing.push("invoice_number");
   if (input.amount == null || Number(input.amount) <= 0) missing.push("amount");
   if (!input.date_due) missing.push("date_due");
@@ -96,9 +95,8 @@ const checkers: Record<BillField, (value: unknown) => Checked<unknown>> = {
   date_due: checkDate,
 };
 
-/** "" or null is no choice; otherwise a positive integer, as a number or a select's string. */
-function checkId(value: unknown, error: string): Checked<number | null> {
-  if (value == null || value === "") return { value: null };
+/** A positive integer, as a number or a select's string. "" or null (no choice) fails too. */
+function checkId(value: unknown, error: string): Checked<number> {
   const id = typeof value === "string" && /^[1-9]\d{0,9}$/.test(value) ? Number(value) : value;
   return Number.isInteger(id) && (id as number) > 0 && (id as number) <= MAX_ID ? { value: id as number } : { error };
 }
