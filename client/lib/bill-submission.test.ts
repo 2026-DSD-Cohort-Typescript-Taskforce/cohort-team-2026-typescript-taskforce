@@ -24,8 +24,8 @@ const draft: Bill = {
   vendor_id: 1,
   property_id: 2,
   payment_id: null,
-  vendor: { vendor_name: "Alder Creek Landscaping" },
-  property: { property_name: "Alder Creek Workshop" },
+  vendor: { name: "Alder Creek Landscaping" },
+  property: { name: "Alder Creek Workshop" },
   payment: null,
 };
 

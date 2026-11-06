@@ -28,8 +28,8 @@ const alder = bill({
   invoice_number: "BILL-2001",
   amount: 212.4,
   date_due: "2026-11-16",
-  vendor: { vendor_name: "Alder Creek Landscaping" },
-  property: { property_name: "Alder Creek Workshop" },
+  vendor: { name: "Alder Creek Landscaping" },
+  property: { name: "Alder Creek Workshop" },
   payment: { payment_type: "card", name: "Alder Creek Demo Card" },
 });
 const bright = bill({
@@ -38,8 +38,8 @@ const bright = bill({
   invoice_number: "INV-77",
   amount: 1234.5,
   date_due: "2026-12-01",
-  vendor: { vendor_name: "Brightwater Water & Sewer" },
-  property: { property_name: "Brightwater Print Studio" },
+  vendor: { name: "Brightwater Water & Sewer" },
+  property: { name: "Brightwater Print Studio" },
 });
 const blank = bill({ bill_id: 3 });
 const bills = [alder, bright, blank];
@@ -65,7 +65,7 @@ test("a draft with nothing filled in still reads as a row", () => {
     due: "No due date",
   });
   assert.equal(billRow(bright).initials, "BW");
-  assert.equal(billRow(bill({ vendor: { vendor_name: "Brightwater" } })).initials, "B");
+  assert.equal(billRow(bill({ vendor: { name: "Brightwater" } })).initials, "B");
 });
 
 test("search matches vendor, property, invoice number or the shown due date, ignoring case", () => {

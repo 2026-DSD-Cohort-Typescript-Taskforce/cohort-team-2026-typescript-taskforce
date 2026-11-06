@@ -7,8 +7,8 @@ export async function GET(request: NextRequest) {
   if (supabase instanceof Response) return supabase;
 
   const [vendors, properties, paymentMethods] = await Promise.all([
-    supabase.from("vendors").select("id:vendor_id, name:vendor_name, payment_portal_url").order("vendor_name"),
-    supabase.from("properties").select("id:property_id, name:property_name").order("property_name"),
+    supabase.from("vendors").select("id:vendor_id, name, payment_portal_url").order("name"),
+    supabase.from("properties").select("id:property_id, name").order("name"),
     // Only these three columns are readable (payment_methods_read_for_signed_in_users).
     supabase.from("payment_methods").select("id:payment_id, type:payment_type, name").order("name"),
   ]);

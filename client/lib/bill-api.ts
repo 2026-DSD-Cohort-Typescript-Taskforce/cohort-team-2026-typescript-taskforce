@@ -64,7 +64,7 @@ export function loadFormOptions() {
   );
 }
 
-/** The signed-in user's role (users.user_role), from Express's GET /api/auth/me. */
+/** The signed-in user's role (users.role), which Express's GET /api/auth/me returns as user_role. */
 export function loadUserRole() {
   return call(
     "/api/auth/me",

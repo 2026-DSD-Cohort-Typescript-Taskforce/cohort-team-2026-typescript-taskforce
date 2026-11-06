@@ -16,11 +16,11 @@ const STATUS_ORDER = [
 
 /** The text of one row. payment is null when the bill has no payment method yet. */
 export function billRow(bill: Bill) {
-  const vendor = bill.vendor?.vendor_name ?? null;
+  const vendor = bill.vendor?.name ?? null;
   return {
     vendor: vendor ?? "No vendor",
     initials: initials(vendor),
-    property: bill.property?.property_name ?? "No property",
+    property: bill.property?.name ?? "No property",
     // payment_type is card or bank.
     payment: bill.payment ? `${capitalize(bill.payment.payment_type)} · ${bill.payment.name}` : null,
     amount: formatAmount(bill.amount),
@@ -38,8 +38,8 @@ export function filterBills(bills: Bill[], query: string, status: string): Bill[
     if (status && bill.status !== status) return false;
     if (!needle) return true;
     const haystack = [
-      bill.vendor?.vendor_name,
-      bill.property?.property_name,
+      bill.vendor?.name,
+      bill.property?.name,
       bill.invoice_number,
       bill.date_due && formatDate(bill.date_due),
     ];

@@ -58,7 +58,7 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
 }
 
 /**
- * The caller's profile id (users.id), or a reply to send instead. The Auth user id is read
+ * The caller's profile id (users.user_id), or a reply to send instead. The Auth user id is read
  * from the access token without checking it here: the query runs with that same token,
  * and PostgREST refuses it unless it is valid.
  */
@@ -66,9 +66,9 @@ export async function getProfileId(request: NextRequest, supabase: SupabaseClien
   const authUserId = tokenSubject(request.cookies.get(ACCESS_COOKIE)?.value);
   if (!authUserId) return reply(SIGNED_OUT);
 
-  const { data, error } = await supabase.from("users").select("id").eq("auth_user_id", authUserId).maybeSingle();
+  const { data, error } = await supabase.from("users").select("user_id").eq("auth_user_id", authUserId).maybeSingle();
   if (error) return replyWithError(error, SAVE_FAILED);
-  return data ? data.id : reply(NO_PROFILE);
+  return data ? data.user_id : reply(NO_PROFILE);
 }
 
 // The JWT's sub claim: the Auth user id.

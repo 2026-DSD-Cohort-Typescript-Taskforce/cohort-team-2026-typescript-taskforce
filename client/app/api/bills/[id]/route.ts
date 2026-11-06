@@ -37,8 +37,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/bills/
   // The draft-only update policy makes a bill that left draft match no row.
   const { data, error } = await supabase
     .from("bills")
-    // modified_at is stored in UTC, like date_received; a timestamp column ignores the Z.
-    .update({ ...result.input, modified_at: new Date().toISOString() })
+    .update({ ...result.input, updated_at: new Date().toISOString() })
     .eq("bill_id", billId)
     .select(BILL_SELECT)
     .maybeSingle();
