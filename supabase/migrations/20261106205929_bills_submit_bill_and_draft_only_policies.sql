@@ -7,7 +7,7 @@
 -- supabase-js .rpc('submit_bill', { p_bill_id }) puts the fields in error.code,
 -- error.message and error.details. Checked in this order:
 --   code   HTTP  message          details
---   PT403  403   forbidden        null (no profile for this login, or user_role isn't billing_operator)
+--   PT403  403   forbidden        null (no profile for this login, or role isn't billing_operator)
 --   PT404  404   not_found        null
 --   PT409  409   not_draft        the bill's current status, e.g. pending_payment
 --   PT400  400   incomplete_bill  JSON array of every missing field, e.g. ["invoice_number","date_due"]
@@ -20,13 +20,13 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_user_id bigint;
+  v_user_id integer;
   v_user_role text;
   v_bill public.bills;
   v_missing text[];
 begin
-  -- Signed-in users can't change their own user_role (DC-22 column grants).
-  select id, user_role into v_user_id, v_user_role
+  -- Signed-in users can't change their own role (DC-22 column grants).
+  select user_id, role into v_user_id, v_user_role
     from public.users
     where auth_user_id = (select auth.uid());
   if v_user_role is distinct from 'billing_operator' then
@@ -56,12 +56,13 @@ begin
   end if;
 
   update public.bills
-    set status = 'pending_payment', modified_at = now()
+    set status = 'pending_payment', updated_at = now()
     where bill_id = p_bill_id
     returning * into v_bill;
 
-  insert into public.audit_logs (user_id, bill_id, action, description)
-    values (v_user_id, p_bill_id, 'bill_submitted', 'draft → pending_payment');
+  -- audit_logs has no bill or user column (dropped in DC-53), so the description names both.
+  insert into public.audit_logs (name, description)
+    values ('bill_submitted', format('bill %s: draft → pending_payment, by user %s', p_bill_id, v_user_id));
 
   return v_bill;
 end
