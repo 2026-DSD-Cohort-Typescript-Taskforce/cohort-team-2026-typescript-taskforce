@@ -5,22 +5,24 @@ create extension if not exists pgtap with schema extensions;
 select plan(29);
 
 -- Setup (as postgres): logins A and B have profiles, C has none. Profile U has no login.
+-- Test rows use fixed ids far above the seed data. Every profile needs a property.
+insert into public.properties (property_id, name) values (922101, 'DC-22 sync test property');
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000000e1', 'sync-a@example.test'),
   ('00000000-0000-4000-8000-0000000000e2', 'sync-b@example.test'),
   ('00000000-0000-4000-8000-0000000000e3', 'sync-c@example.test');
-insert into public.users (user_name, user_email, user_role, user_phone, auth_user_id) values
-  ('Profile A', 'sync-a@example.test', 'billing_operator', '555-0001', '00000000-0000-4000-8000-0000000000e1'),
-  ('Profile B', 'sync-b@example.test', 'billing_operator', '555-0002', '00000000-0000-4000-8000-0000000000e2'),
-  ('Profile U', 'sync-u@example.test', 'billing_operator', '555-0003', null);
+insert into public.users (user_id, name, email, role, phone, property_id, auth_user_id) values
+  (922101, 'Profile A', 'sync-a@example.test', 'billing_operator', '555-0001', 922101, '00000000-0000-4000-8000-0000000000e1'),
+  (922102, 'Profile B', 'sync-b@example.test', 'billing_operator', '555-0002', 922101, '00000000-0000-4000-8000-0000000000e2'),
+  (922103, 'Profile U', 'sync-u@example.test', 'billing_operator', '555-0003', 922101, null);
 
 -- Every profile except A, to show that only the linked profile changes.
 create temp table others as
-  select id, user_name, user_email, user_role, user_phone, property_id, auth_user_id
-  from public.users where user_email <> 'sync-a@example.test';
+  select user_id, name, email, role, phone, property_id, auth_user_id
+  from public.users where email <> 'sync-a@example.test';
 create temp view others_now as
-  select id, user_name, user_email, user_role, user_phone, property_id, auth_user_id
-  from public.users where id in (select id from others);
+  select user_id, name, email, role, phone, property_id, auth_user_id
+  from public.users where user_id in (select user_id from others);
 
 -- Schema
 select has_function('public', 'sync_user_email_from_auth', ARRAY[]::name[], 'sync_user_email_from_auth() exists');
@@ -58,12 +60,12 @@ select throws_ok($$select public.sync_user_email_from_auth()$$, '42501', null, '
 reset role;
 
 -- authenticated still cannot write the profile copy directly.
-select column_privs_are('public', 'users', 'user_email', 'authenticated', ARRAY['SELECT'], 'authenticated has no UPDATE on user_email');
+select column_privs_are('public', 'users', 'email', 'authenticated', ARRAY['SELECT'], 'authenticated has no UPDATE on email');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000000e1","role":"authenticated"}';
 select throws_ok(
-  $$update public.users set user_email = 'sync-a-direct@example.test' where auth_user_id = auth.uid()$$,
-  '42501', null, 'A cannot update own user_email directly'
+  $$update public.users set email = 'sync-a-direct@example.test' where auth_user_id = auth.uid()$$,
+  '42501', null, 'A cannot update own email directly'
 );
 reset role;
 
@@ -72,9 +74,9 @@ select lives_ok(
   $$update auth.users set email = 'sync-a-new@example.test' where id = '00000000-0000-4000-8000-0000000000e1'$$,
   'A''s login email changes'
 );
-select is((select user_email::text from public.users where user_name = 'Profile A'), 'sync-a-new@example.test', 'A''s profile has the new email');
+select is((select email::text from public.users where name = 'Profile A'), 'sync-a-new@example.test', 'A''s profile has the new email');
 select results_eq(
-  $$select user_name::text, user_role::text, user_phone::text, auth_user_id from public.users where user_name = 'Profile A'$$,
+  $$select name::text, role::text, phone::text, auth_user_id from public.users where name = 'Profile A'$$,
   $$values ('Profile A', 'billing_operator', '555-0001', '00000000-0000-4000-8000-0000000000e1'::uuid)$$,
   'A''s other profile columns are unchanged'
 );
@@ -89,21 +91,21 @@ select set_eq('select * from others_now', 'select * from others', 'a login with 
 
 -- The trigger fires only when the email changes. Make A's copy differ, then update A's
 -- login without changing its email: the copy is left alone.
-update public.users set user_email = 'sync-a-copy@example.test' where user_name = 'Profile A';
+update public.users set email = 'sync-a-copy@example.test' where name = 'Profile A';
 update auth.users set email = email where id = '00000000-0000-4000-8000-0000000000e1';
 update auth.users set raw_user_meta_data = '{"dc22": true}' where id = '00000000-0000-4000-8000-0000000000e1';
-select is((select user_email::text from public.users where user_name = 'Profile A'), 'sync-a-copy@example.test', 'an update that keeps the email does not touch the profile');
-update public.users set user_email = 'sync-a-new@example.test' where user_name = 'Profile A';
+select is((select email::text from public.users where name = 'Profile A'), 'sync-a-copy@example.test', 'an update that keeps the email does not touch the profile');
+update public.users set email = 'sync-a-new@example.test' where name = 'Profile A';
 
 -- Conflict: A's new login email already belongs to profile U (no login). Copying it would
--- break users.user_email's unique constraint, so the whole login update is refused and
+-- break users.email's unique constraint, so the whole login update is refused and
 -- nothing changes. Supabase Auth reports an error and A keeps the old login email.
 select throws_ok(
   $$update auth.users set email = 'sync-u@example.test' where id = '00000000-0000-4000-8000-0000000000e1'$$,
   '23505', null, 'A cannot take an email that profile U already has'
 );
 select is((select email::text from auth.users where id = '00000000-0000-4000-8000-0000000000e1'), 'sync-a-new@example.test', 'A''s login email is unchanged after the refused update');
-select is((select user_email::text from public.users where user_name = 'Profile A'), 'sync-a-new@example.test', 'A''s profile is unchanged after the refused update');
+select is((select email::text from public.users where name = 'Profile A'), 'sync-a-new@example.test', 'A''s profile is unchanged after the refused update');
 select set_eq('select * from others_now', 'select * from others', 'U and the other profiles are unchanged after the refused update');
 
 -- C has no profile to update, so the same email is not a conflict for C.
@@ -118,14 +120,14 @@ select throws_ok(
   $$update auth.users set email = 'sync-b@example.test' where id = '00000000-0000-4000-8000-0000000000e1'$$,
   '23505', null, 'A cannot take B''s login email'
 );
-select is((select user_email::text from public.users where user_name = 'Profile B'), 'sync-b@example.test', 'B''s profile is unchanged');
+select is((select email::text from public.users where name = 'Profile B'), 'sync-b@example.test', 'B''s profile is unchanged');
 
 -- A changes again: the copy keeps following the login.
 select lives_ok(
   $$update auth.users set email = 'sync-a-again@example.test' where id = '00000000-0000-4000-8000-0000000000e1'$$,
   'A''s login email changes again'
 );
-select is((select user_email::text from public.users where user_name = 'Profile A'), 'sync-a-again@example.test', 'A''s profile follows the second change');
+select is((select email::text from public.users where name = 'Profile A'), 'sync-a-again@example.test', 'A''s profile follows the second change');
 
 select * from finish();
 rollback;
