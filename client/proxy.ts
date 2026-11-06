@@ -9,11 +9,11 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // TODO: re-enable /dashboard protection once the table is done (local dev without login).
-  if (pathname === '/' /* || pathname === "/dashboard" */ && !signedIn) {
+  if (pathname === '/' || (pathname === '/dashboard' && !signedIn)) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   if (pathname === '/login' && signedIn) {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
   return NextResponse.next();
 }
