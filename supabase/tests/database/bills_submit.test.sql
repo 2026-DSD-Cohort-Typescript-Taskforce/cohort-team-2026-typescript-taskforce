@@ -5,29 +5,30 @@ create extension if not exists pgtap with schema extensions;
 select plan(41);
 
 -- Setup (as postgres): login A is a billing operator, B has another role, C has no
--- profile. One vendor and property, and one bill per case (ids 12001+ to stay clear of
--- seeded rows).
+-- profile. One vendor, property and payment method, and one bill per case (ids 12001+,
+-- users 12101+, to stay clear of seeded rows).
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000012a1', 'dc12-a@example.test'),
   ('00000000-0000-4000-8000-0000000012a2', 'dc12-b@example.test'),
   ('00000000-0000-4000-8000-0000000012a3', 'dc12-c@example.test');
-insert into public.users (user_name, user_email, user_role, auth_user_id) values
-  ('Operator A', 'dc12-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000012a1'),
-  ('Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2');
-insert into public.vendors (vendor_id, vendor_name) values (12001, 'DC12 Test Vendor');
-insert into public.properties (property_id, property_name) values (12001, 'DC12 Test Property');
-insert into public.bills (bill_id, status, vendor_id, property_id, invoice_number, amount, date_due) values
-  (12001, 'draft', 12001, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
-  (12002, 'draft', 12001, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete
-  (12003, 'draft', null, 12001, 'DC12-03', 120.00, current_date + 30),   -- no vendor
-  (12004, 'draft', 12001, null, 'DC12-04', 120.00, current_date + 30),   -- no property
-  (12005, 'draft', 12001, 12001, null, 120.00, current_date + 30),       -- no invoice number
-  (12006, 'draft', 12001, 12001, 'DC12-06', 0.00, current_date + 30),    -- amount 0
-  (12007, 'draft', 12001, 12001, 'DC12-07', -5.00, current_date + 30),   -- negative amount
-  (12008, 'draft', 12001, 12001, 'DC12-08', 120.00, null),               -- no due date
-  (12009, 'draft', null, null, null, 0.00, null),                        -- nothing filled in
-  (12010, 'pending_payment', 12001, 12001, 'DC12-10', 120.00, current_date + 30),
-  (12011, 'draft', 12001, 12001, 'DC12-11', 120.00, current_date + 30);  -- for direct edits
+insert into public.vendors (vendor_id, name, payment_portal_url, supported_payment_methods)
+  values (12001, 'DC12 Test Vendor', 'https://vendor.example.test', 'card');
+insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
+insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+  values (12001, 'card', 'DC12 Test Card', '75001');
+insert into public.users (user_id, name, email, role, property_id, auth_user_id) values
+  (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', 12001, '00000000-0000-4000-8000-0000000012a1'),
+  (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', 12001, '00000000-0000-4000-8000-0000000012a2');
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+  (12001, 'draft', 12001, 12001, 12101, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
+  (12002, 'draft', 12001, 12001, 12101, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete
+  (12005, 'draft', 12001, 12001, 12101, 12001, null, 120.00, current_date + 30),       -- no invoice number
+  (12006, 'draft', 12001, 12001, 12101, 12001, 'DC12-06', 0.00, current_date + 30),    -- amount 0
+  (12007, 'draft', 12001, 12001, 12101, 12001, 'DC12-07', -5.00, current_date + 30),   -- negative amount
+  (12008, 'draft', 12001, 12001, 12101, 12001, 'DC12-08', 120.00, null),               -- no due date
+  (12009, 'draft', 12001, 12001, 12101, 12001, null, 0.00, null),                      -- nothing else filled in
+  (12010, 'pending_payment', 12001, 12001, 12101, 12001, 'DC12-10', 120.00, current_date + 30),
+  (12011, 'draft', 12001, 12001, 12101, 12001, 'DC12-11', 120.00, current_date + 30);  -- for direct edits
 
 -- submit_bill's error as {sqlstate, message, detail}, or null if it succeeds.
 create function pg_temp.submit_error(p_bill_id integer) returns text[]
@@ -104,16 +105,17 @@ set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","r
 select throws_ok($$select public.submit_bill(12999)$$, 'PT404', 'not_found', 'refusals are raised as errors with the PostgREST status SQLSTATE');
 select is(pg_temp.submit_error(12999), ARRAY['PT404', 'not_found', null], 'an unknown bill gets not_found');
 select is(pg_temp.submit_error(12010), ARRAY['PT409', 'not_draft', 'pending_payment'], 'a bill that is not a draft gets not_draft with its current status');
-select is(pg_temp.submit_error(12003), ARRAY['PT400', 'incomplete_bill', '["vendor_id"]'], 'no vendor: incomplete_bill lists vendor_id');
-select is(pg_temp.submit_error(12004), ARRAY['PT400', 'incomplete_bill', '["property_id"]'], 'no property: incomplete_bill lists property_id');
+-- A bill can't be missing its vendor or property: the columns are NOT NULL since DC-53.
+select col_not_null('public', 'bills', 'vendor_id', 'bills.vendor_id is NOT NULL, so no bill lacks a vendor');
+select col_not_null('public', 'bills', 'property_id', 'bills.property_id is NOT NULL, so no bill lacks a property');
 select is(pg_temp.submit_error(12005), ARRAY['PT400', 'incomplete_bill', '["invoice_number"]'], 'no invoice number: incomplete_bill lists invoice_number');
 select is(pg_temp.submit_error(12006), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'amount 0: incomplete_bill lists amount');
 select is(pg_temp.submit_error(12007), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'negative amount: incomplete_bill lists amount');
 select is(pg_temp.submit_error(12008), ARRAY['PT400', 'incomplete_bill', '["date_due"]'], 'no due date: incomplete_bill lists date_due');
 select is(
   pg_temp.submit_error(12009),
-  ARRAY['PT400', 'incomplete_bill', '["vendor_id","property_id","invoice_number","amount","date_due"]'],
-  'nothing filled in: incomplete_bill lists every missing field at once'
+  ARRAY['PT400', 'incomplete_bill', '["invoice_number","amount","date_due"]'],
+  'nothing else filled in: incomplete_bill lists every missing field at once'
 );
 reset role;
 
@@ -122,42 +124,44 @@ select results_eq(
   $$select * from bills_before order by bill_id$$,
   'refused submits change no bill'
 );
-select is((select count(*)::int from public.audit_logs where bill_id between 12001 and 12011), 0, 'refused submits write no audit row');
+-- Rows written in this transaction have created_at = now(); seeded rows don't.
+select is((select count(*)::int from public.audit_logs where created_at = now()), 0, 'refused submits write no audit row');
 
--- As operator A: success
+-- As operator A: success. Times are cast to timestamptz so these pass whether the
+-- columns are timestamp or timestamptz.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
 select results_eq(
-  $$select bill_id, status::text, modified_at from public.submit_bill(12001)$$,
-  $$values (12001, 'pending_payment', now() at time zone 'UTC')$$,
+  $$select bill_id, status::text, updated_at::timestamptz from public.submit_bill(12001)$$,
+  $$values (12001, 'pending_payment', now())$$,
   'operator submits a complete draft due yesterday; it returns the bill as pending_payment'
 );
 select is(pg_temp.submit_error(12001), ARRAY['PT409', 'not_draft', 'pending_payment'], 'submitting it again gets not_draft');
 reset role;
 
 select results_eq(
-  $$select status::text, modified_at from public.bills where bill_id = 12001$$,
-  $$values ('pending_payment', now() at time zone 'UTC')$$,
-  'the bill is stored as pending_payment with modified_at = now (UTC)'
+  $$select status::text, updated_at::timestamptz from public.bills where bill_id = 12001$$,
+  $$values ('pending_payment', now())$$,
+  'the bill is stored as pending_payment with updated_at = now'
 );
 select results_eq(
-  $$select user_id, bill_id, action::text, description, created_at from public.audit_logs where bill_id = 12001$$,
-  $$select id, 12001, 'bill_submitted', 'draft → pending_payment', now() at time zone 'UTC'
-    from public.users where user_email = 'dc12-a@example.test'$$,
-  'exactly one audit row: bill_submitted by A''s profile, for this bill, at now'
+  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now()$$,
+  $$values ('bill_submitted', 'bill 12001: draft → pending_payment, by user 12101', now())$$,
+  'exactly one audit row: bill_submitted, naming this bill and A''s profile, at now'
 );
 
 -- Draft-only policies, as operator A
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, invoice_number, amount, date_due, status)
-    values (12001, 12001, 'DC12-20', 120.00, current_date + 30, 'pending_payment')$$,
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due, status)
+    values (12001, 12001, 12101, 12001, 'DC12-20', 120.00, current_date + 30, 'pending_payment')$$,
   '42501', null,
   'inserting a bill that is not a draft is refused'
 );
 select lives_ok(
-  $$insert into public.bills (vendor_id, property_id, invoice_number, amount) values (12001, 12001, 'DC12-21', 120.00)$$,
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+    values (12001, 12001, 12101, 12001, 'DC12-21', 120.00)$$,
   'inserting a bill without a status runs (it defaults to draft)'
 );
 select throws_ok(
