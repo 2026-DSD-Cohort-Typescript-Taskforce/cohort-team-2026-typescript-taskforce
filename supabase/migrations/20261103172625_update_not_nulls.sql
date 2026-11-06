@@ -18,7 +18,7 @@
 
 --The tables in the statement below have null values in columns being modified. 
 --So, their placeholder data (and data in tables they reference) must be cleared before any columns get set to not null:
-TRUNCATE TABLE bills, approvals, payments, users, cards, bank_accounts RESTART IDENTITY;     
+TRUNCATE TABLE bills, approvals, payments, users, cards, bank_accounts RESTART IDENTITY;  
 
 
 -- The original tables:
