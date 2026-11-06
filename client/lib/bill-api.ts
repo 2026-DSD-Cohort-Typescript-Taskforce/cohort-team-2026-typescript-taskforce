@@ -64,12 +64,12 @@ export function loadFormOptions() {
   );
 }
 
-/** The signed-in user's role (users.role), which Express's GET /api/auth/me returns as user_role. */
+/** The signed-in user's role (users.role), from Express's GET /api/auth/me. */
 export function loadUserRole() {
   return call(
     "/api/auth/me",
     undefined,
-    (body: { user: { user_role: string | null } }) => body.user.user_role,
+    (body: { user: { role: string | null } }) => body.user.role,
     "Could not load your account.",
   );
 }
