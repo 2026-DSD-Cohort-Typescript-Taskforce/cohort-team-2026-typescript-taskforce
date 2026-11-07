@@ -32,7 +32,6 @@ export async function RecentPaymentsTable() {
 
 export async function PendingApprovalsTable() {
   const bills = await load(fetchPendingApprovalBills);
-  console.log('Pending Approvals:', bills);
   return (
     <BillTable
       title="Pending Approvals"
