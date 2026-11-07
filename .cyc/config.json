@@ -4,20 +4,20 @@
     "commands": [
       {
         "id": "lint",
-        "command": "cmd",
-        "args": ["/c", "npm", "run", "lint"],
+        "command": "node",
+        "args": ["--run", "lint"],
         "timeoutMs": 300000
       },
       {
         "id": "typecheck",
-        "command": "cmd",
-        "args": ["/c", "npm", "run", "typecheck", "--prefix", "server"],
+        "command": "node",
+        "args": ["--run", "typecheck"],
         "timeoutMs": 300000
       },
       {
         "id": "format",
-        "command": "cmd",
-        "args": ["/c", "npm", "run", "format:check"],
+        "command": "node",
+        "args": ["--run", "format:check"],
         "timeoutMs": 300000
       }
     ]
