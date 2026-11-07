@@ -39,7 +39,7 @@ for (const url of [SUPABASE_URL, MAILPIT_URL]) {
 const ACCESS = 'sb-access-token';
 const REFRESH = 'sb-refresh-token';
 const BAD_CREDENTIALS = { error: 'Incorrect email or password.' };
-const PROFILE_KEYS = ['id', 'property_id', 'user_email', 'user_name', 'user_role'];
+const PROFILE_KEYS = ['email', 'name', 'property_id', 'role', 'user_id'];
 
 let server: Server;
 let baseUrl: string;
@@ -154,7 +154,7 @@ describe('POST /api/auth/login', () => {
     const res = await login(TEST_USER_EMAIL, SEED_USER_PASSWORD);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.user.user_email, TEST_USER_EMAIL);
+    assert.equal(body.user.email, TEST_USER_EMAIL);
 
     const cookies = setCookies(res);
     for (const name of [ACCESS, REFRESH]) {
@@ -252,7 +252,7 @@ describe('GET /api/auth/me', () => {
     assert.equal(res.status, 200);
     const { user } = await res.json();
     assert.deepEqual(Object.keys(user).sort(), PROFILE_KEYS);
-    assert.equal(user.user_email, TEST_USER_EMAIL);
+    assert.equal(user.email, TEST_USER_EMAIL);
   });
 
   it('returns 401 without a session cookie', async () => {
@@ -343,7 +343,7 @@ describe('PATCH /api/auth/email', () => {
       ['invalid email', { json: { email: 'not-an-email' } }],
       ['non-string email', { json: { email: 42 } }],
       [
-        'longer than users.user_email allows',
+        'longer than users.email allows',
         { json: { email: `a@${'b'.repeat(60).concat('.').repeat(5)}com` } },
       ],
       ['array body', { json: ['new-address@example.com'] }],
@@ -418,7 +418,7 @@ describe('PATCH /api/auth/email', () => {
 
     const newLogin = await login(newEmail, SEED_USER_PASSWORD);
     assert.equal(newLogin.status, 200);
-    assert.equal((await newLogin.json()).user.user_email, newEmail);
+    assert.equal((await newLogin.json()).user.email, newEmail);
     assert.equal((await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD)).status, 401);
 
     const newCookies = setCookies(newLogin);
@@ -428,10 +428,10 @@ describe('PATCH /api/auth/email', () => {
         [REFRESH]: newCookies.get(REFRESH)!.value,
       },
     });
-    assert.equal((await me.json()).user.user_email, newEmail);
+    assert.equal((await me.json()).user.email, newEmail);
     // The session from before the change sees the updated profile too.
     assert.equal(
-      (await (await api('/api/auth/me', { cookies: session })).json()).user.user_email,
+      (await (await api('/api/auth/me', { cookies: session })).json()).user.email,
       newEmail,
     );
 
@@ -450,7 +450,7 @@ describe('PATCH /api/auth/email', () => {
     await follow(await nextLink(CHANGE_USER_EMAIL, seenOriginal));
     const restored = await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD);
     assert.equal(restored.status, 200);
-    assert.equal((await restored.json()).user.user_email, CHANGE_USER_EMAIL);
+    assert.equal((await restored.json()).user.email, CHANGE_USER_EMAIL);
   });
 });
 

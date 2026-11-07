@@ -29,10 +29,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
 async function main() {
   const { data: profiles, error } = await supabase
     .from('users')
-    .select('id, user_email')
+    .select('user_id, email')
     .is('auth_user_id', null)
-    .not('user_email', 'is', null)
-    .order('id');
+    .not('email', 'is', null)
+    .order('user_id');
   if (error) throw error;
 
   const { data: logins, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
@@ -40,7 +40,7 @@ async function main() {
   const loginIdByEmail = new Map(logins.users.map((login) => [login.email, login.id]));
 
   for (const profile of profiles) {
-    const email = profile.user_email.toLowerCase();
+    const email = profile.email.toLowerCase();
     let authUserId = loginIdByEmail.get(email);
     if (!authUserId) {
       const { data, error: createError } = await supabase.auth.admin.createUser({
@@ -55,9 +55,9 @@ async function main() {
     const { error: linkError } = await supabase
       .from('users')
       .update({ auth_user_id: authUserId })
-      .eq('id', profile.id);
+      .eq('user_id', profile.user_id);
     if (linkError) throw linkError;
-    console.log(`Linked ${email} to users.id ${profile.id}`);
+    console.log(`Linked ${email} to users.user_id ${profile.user_id}`);
   }
 
   console.log(`${profiles.length} profile(s) linked.`);

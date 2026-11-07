@@ -7,7 +7,7 @@ import {
   createBill,
   updateBill,
   fetchLastSubmittedBillByUserId,
-} from '../../lib/bills';
+} from '@/lib/bills';
 import type { Bill } from '@/types/bill';
 
 export default function BillsPage() {
