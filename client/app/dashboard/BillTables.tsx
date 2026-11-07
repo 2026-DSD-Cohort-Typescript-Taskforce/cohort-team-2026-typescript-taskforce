@@ -9,7 +9,7 @@ type BillRow = Awaited<ReturnType<typeof fetchRecentPaidBills>>[number];
 const when = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
 const toRow = (b: BillRow, sub: string): BillTableRow => ({
-  vendor: b.vendors?.vendor_name ?? '-',
+  vendor: b.vendors?.name ?? '-',
   sub,
   amount: usd.format(b.amount),
 });

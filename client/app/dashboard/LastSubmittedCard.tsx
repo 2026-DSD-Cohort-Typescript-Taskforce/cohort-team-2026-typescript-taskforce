@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
+import { backend } from '@/lib/backend';
 import { fetchLastSubmittedBill } from '@/lib/bills';
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -12,9 +13,22 @@ const tone = (status: string) =>
       : 'warning';
 
 async function getLastSubmittedBill() {
-  const token = (await cookies()).get('sb-access-token')?.value;
+  const jar = await cookies();
+  const token = jar.get('sb-access-token')?.value;
   if (!token) return null;
-  return fetchLastSubmittedBill(token);
+  const res = await backend('/api/auth/me', {
+    headers: { cookie: jar.toString() },
+  });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  const { user } = await res.json();
+
+  const bill = await fetchLastSubmittedBill(token);
+
+  return bill;
 }
 
 export async function LastSubmittedCard() {
@@ -26,7 +40,7 @@ export async function LastSubmittedCard() {
     <InfoCard title="Last Submitted">
       <p className="text-heading">{bill ? usd.format(bill.amount) : '-'}</p>
       <div className="mt-1 flex items-end justify-between gap-4 text-body-sm text-secondary">
-        <span>{bill?.vendors?.vendor_name ?? 'No bills yet'}</span>
+        <span>{bill?.vendors?.name ?? 'No bills yet'}</span>
         {bill && (
           <StatusLabel
             tone={tone(bill.status)}

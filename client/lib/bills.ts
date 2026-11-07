@@ -1,8 +1,7 @@
 import type { Bill, CreateBillInput } from '@/types/bill';
 
 const billsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_DATA_API_BASE_URL}/bills`;
-const LAST_SUBMITTED =
-  'order=created_at.desc&limit=1&status=neq.draft&select=*,vendors(vendor_name)';
+const LAST_SUBMITTED = 'order=created_at.desc&limit=1&status=neq.draft&select=*,vendors(name)';
 
 export type UpdateBillInput = Partial<CreateBillInput>;
 
@@ -40,7 +39,7 @@ export async function fetchBillById(id: string): Promise<Bill | null> {
   return bills[0] ?? null;
 }
 
-type BillWithVendor = Bill & { vendors: { vendor_name: string } | null };
+type BillWithVendor = Bill & { vendors: { name: string } | null };
 
 // GET on the bills table; the token (if any) makes the request run as that user.
 async function getBills(query: string, accessToken?: string) {
@@ -80,7 +79,7 @@ export async function fetchLastSubmittedBillByUserId(
 // last 10 paid bills visible to the caller
 export async function fetchRecentPaidBills(accessToken: string): Promise<BillWithVendor[]> {
   return getBills(
-    'status=eq.payment_success&date_paid=not.is.null&order=date_paid.desc&limit=10&select=*,vendors(vendor_name)',
+    'status=eq.payment_success&date_paid=not.is.null&order=date_paid.desc&limit=10&select=*,vendors(name)',
     accessToken,
   );
 }
@@ -88,7 +87,7 @@ export async function fetchRecentPaidBills(accessToken: string): Promise<BillWit
 // oldest 10 bills awaiting approval visible to the caller
 export async function fetchPendingApprovalBills(accessToken: string): Promise<BillWithVendor[]> {
   return getBills(
-    'status=eq.pending_approval&order=date_received.asc&limit=10&select=*,vendors(vendor_name)',
+    'status=eq.pending_approval&order=date_received.asc&limit=10&select=*,vendors(name)',
     accessToken,
   );
 }
