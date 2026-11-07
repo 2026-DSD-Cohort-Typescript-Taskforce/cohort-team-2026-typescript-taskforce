@@ -36,7 +36,7 @@ export async function PendingApprovalsTable() {
   return (
     <BillTable
       title="Pending Approvals"
-      rows={bills.map((b) => toRow(b, b.status.replaceAll('_', ' ')))}
+      rows={bills.map((b) => toRow(b, `Status: ${b.status.replaceAll('_', ' ')}`))}
     />
   );
 }
