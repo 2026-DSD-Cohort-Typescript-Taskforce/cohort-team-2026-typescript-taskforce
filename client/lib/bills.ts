@@ -31,37 +31,12 @@ export async function createBill(data: CreateBillInput, accessToken: string): Pr
   return bills[0];
 }
 
-export async function fetchBills(): Promise<Bill[]> {
-  const result = await fetch(billsUrl, {
-    method: 'GET',
-    headers: {
-      apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    },
-  });
-
-  if (!result.ok) {
-    throw new Error(`Failed to fetch bills: ${result.status}`);
-  }
-
-  return result.json();
+export function fetchBills(): Promise<Bill[]> {
+  return getBills('');
 }
 
 export async function fetchBillById(id: string): Promise<Bill | null> {
-  const billByIdUrl = `${billsUrl}?bill_id=eq.${encodeURIComponent(id)}&limit=1`;
-
-  const result = await fetch(billByIdUrl, {
-    method: 'GET',
-    headers: {
-      apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    },
-  });
-
-  if (!result.ok) {
-    throw new Error(`Failed to fetch bills: ${result.status}`);
-  }
-
-  const bills: Bill[] = await result.json();
-
+  const bills: Bill[] = await getBills(`bill_id=eq.${encodeURIComponent(id)}&limit=1`);
   return bills[0] ?? null;
 }
 

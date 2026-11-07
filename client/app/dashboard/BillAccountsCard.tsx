@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
-import { backend } from '@/lib/backend';
 import { getBillStatusRows } from '@/lib/bills';
 
 export type BillStatus =
@@ -26,14 +25,13 @@ const EMPTY: BillStatusCounts = {
 
 // count the signed-in user's bills per status
 export async function getBillStatusCounts(): Promise<BillStatusCounts> {
-  const jar = await cookies();
-  const token = jar.get('sb-access-token')?.value;
+  const token = (await cookies()).get('sb-access-token')?.value;
   if (!token) return EMPTY;
-  const res = await backend('/api/auth/me', { headers: { cookie: jar.toString() } });
-  if (!res.ok) return EMPTY;
-  const { user } = await res.json();
 
-  const rows = await getBillStatusRows(token);
+  const rows = await getBillStatusRows(token).catch((error) => {
+    console.error(error);
+    return [];
+  });
   const counts = { ...EMPTY };
   for (const { status } of rows) if (status in counts) counts[status as BillStatus]++;
   return counts;

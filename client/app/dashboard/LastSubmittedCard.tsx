@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
-import { backend } from '@/lib/backend';
 import { fetchLastSubmittedBill } from '@/lib/bills';
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -13,22 +12,9 @@ const tone = (status: string) =>
       : 'warning';
 
 async function getLastSubmittedBill() {
-  const jar = await cookies();
-  const token = jar.get('sb-access-token')?.value;
+  const token = (await cookies()).get('sb-access-token')?.value;
   if (!token) return null;
-  const res = await backend('/api/auth/me', {
-    headers: { cookie: jar.toString() },
-  });
-
-  if (!res.ok) {
-    return null;
-  }
-
-  const { user } = await res.json();
-
-  const bill = await fetchLastSubmittedBill(token);
-
-  return bill;
+  return fetchLastSubmittedBill(token);
 }
 
 export async function LastSubmittedCard() {

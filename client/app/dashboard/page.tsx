@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { SiteFooter } from '../../components/layout/brand';
-import { Sidebar } from '@/components/layout/sidebar';
+// import { Sidebar } from '@/components/layout/sidebar';
 import { BillAccountsCard } from './BillAccountsCard';
 import { PendingApprovalsTable, RecentPaymentsTable } from './BillTables';
 import { InfoCard } from '@/components/ui/InfoCard';
