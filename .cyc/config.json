@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "verification": {
+    "commands": [
+      {
+        "id": "lint",
+        "command": "cmd",
+        "args": ["/c", "npm", "run", "lint"],
+        "timeoutMs": 300000
+      },
+      {
+        "id": "typecheck",
+        "command": "cmd",
+        "args": ["/c", "npm", "run", "typecheck", "--prefix", "server"],
+        "timeoutMs": 300000
+      },
+      {
+        "id": "format",
+        "command": "cmd",
+        "args": ["/c", "npm", "run", "format:check"],
+        "timeoutMs": 300000
+      }
+    ]
+  },
+  "limits": {
+    "maxAttempts": 3,
+    "maxNoProgress": 2
+  }
+}
