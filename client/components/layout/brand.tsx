@@ -1,9 +1,9 @@
 // "AppName123" is the wireframe's placeholder, kept until the team picks a name. The page,
 // the footer and the metadata all read it from here.
-export const APP_NAME = "AppName123";
+export const APP_NAME = 'AppName123';
 
 // Placeholder logo: the app name's first letter on a mint tile.
-export function Logo({ className = "size-10" }: { className?: string }) {
+export function Logo({ className = 'size-10' }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true" className={`shrink-0 ${className}`}>
       <rect width="40" height="40" rx="12" className="fill-primary" />

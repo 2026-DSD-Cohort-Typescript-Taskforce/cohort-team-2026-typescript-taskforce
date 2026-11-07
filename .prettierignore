@@ -7,3 +7,5 @@ package-lock.json
 supabase/
 client/next-env.d.ts
 public
+.cyc/runtime
+.cyc/runs

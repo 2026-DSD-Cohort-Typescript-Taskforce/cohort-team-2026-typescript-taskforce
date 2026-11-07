@@ -1,9 +1,14 @@
-import type { Request, RequestHandler, Response } from "express";
-import type { User } from "@supabase/supabase-js";
-import { ACCESS_COOKIE, REFRESH_COOKIE, clearSessionCookies, setSessionCookies } from "../config/cookies";
-import { createUserClient, type UserClient } from "../config/supabase";
-import { getUser, refreshSession } from "../services/auth.service";
-import { HttpError } from "./errorHandler";
+import type { Request, RequestHandler, Response } from 'express';
+import type { User } from '@supabase/supabase-js';
+import {
+  ACCESS_COOKIE,
+  REFRESH_COOKIE,
+  clearSessionCookies,
+  setSessionCookies,
+} from '../config/cookies';
+import { createUserClient, type UserClient } from '../config/supabase';
+import { getUser, refreshSession } from '../services/auth.service';
+import { HttpError } from './errorHandler';
 
 export type AuthContext = {
   user: User;
@@ -58,7 +63,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   const auth = await authenticate(req, res);
   if (!auth) {
     clearSessionCookies(res);
-    throw new HttpError(401, "You are not signed in.");
+    throw new HttpError(401, 'You are not signed in.');
   }
   req.auth = auth;
   next();
