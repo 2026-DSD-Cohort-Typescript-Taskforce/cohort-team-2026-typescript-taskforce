@@ -1,23 +1,23 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import { APP_NAME, Logo, SiteFooter } from "../brand";
-import { LoginForm } from "./login-form";
+import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
+import { APP_NAME, Logo, SiteFooter } from '../../components/layout/brand';
+import { LoginForm } from './login-form';
 
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: 'Sign in',
 };
 
 const highlights: { label: string; icon: ReactNode }[] = [
   {
-    label: "Capture every bill",
+    label: 'Capture every bill',
     icon: <path d="M6 3.5h12v17l-3-2-3 2-3-2-3 2v-17ZM9 8.5h6M9 12h6M9 15.5h3" />,
   },
   {
-    label: "Approve with a clear trail",
+    label: 'Approve with a clear trail',
     icon: <path d="m3.5 7 2 2 3.5-3.5M12.5 7.5h8M3.5 16l2 2 3.5-3.5M12.5 16.5h8" />,
   },
   {
-    label: "Pay vendors on time",
+    label: 'Pay vendors on time',
     icon: (
       <>
         <rect x="3.5" y="5" width="17" height="15.5" rx="3" />
@@ -102,7 +102,7 @@ function BrandPattern() {
           <stop offset="0" stopColor="currentColor" stopOpacity="0.45" />
           <stop offset="1" stopColor="currentColor" stopOpacity="0" />
         </radialGradient>
-        <mask id="brand-mask" style={{ maskType: "alpha" }}>
+        <mask id="brand-mask" style={{ maskType: 'alpha' }}>
           <rect width="100%" height="100%" fill="url(#brand-fade)" />
         </mask>
       </defs>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBillById, fetchBills, createBill, updateBill, fetchLastSubmittedBill } from "../../lib/bills";
+import { fetchBillById, fetchBills, createBill, updateBill, fetchLastSubmittedBillByUserId } from "../../lib/bills";
 import type { Bill } from "@/types/bill";
 
 export default function BillsPage() {
@@ -16,7 +16,7 @@ export default function BillsPage() {
         fetchBillById("3")
             .then(setBill)
             .catch(console.error);
-        fetchLastSubmittedBill("6")
+        fetchLastSubmittedBillByUserId("6")
             .then(setLastSubmittedBill)
             .catch(console.error);
     }, []);
@@ -89,7 +89,7 @@ export default function BillsPage() {
               
             {lastSubmittedBill && (
                 <section>
-                    <h2>fetchLastSubmittedBill()</h2>
+                    <h2>fetchLastSubmittedBillByUserId()</h2>
                     <p>Bill ID: {lastSubmittedBill.bill_id}</p>
                     <p>Amount: {lastSubmittedBill.amount}</p>
                     <p>Status: {lastSubmittedBill.status}</p>
