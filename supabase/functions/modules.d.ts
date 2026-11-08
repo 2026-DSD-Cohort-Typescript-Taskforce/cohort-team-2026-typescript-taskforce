@@ -8,6 +8,11 @@ declare module "npm:zod@4.6.7" {
   export { z } from "zod";
 }
 
+
+declare module "npm:@supabase/supabase-js@2" {
+  export { createClient } from "@supabase/supabase-js";
+}
+
 declare const Deno: {
   serve(handler: (request: Request) => Response | Promise<Response>): void;
   env: { get(name: string): string | undefined };
