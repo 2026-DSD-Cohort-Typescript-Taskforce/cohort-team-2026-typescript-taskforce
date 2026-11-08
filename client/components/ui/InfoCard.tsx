@@ -4,9 +4,9 @@ type Tone = 'success' | 'warning' | 'danger';
 
 // Dot colors
 const dotTone: Record<Tone, string> = {
-  success: 'bg-success-foreground',
-  warning: 'bg-warning-foreground',
-  danger: 'bg-danger',
+  success: 'bg-success-bright',
+  warning: 'bg-warning-bright',
+  danger: 'bg-danger-bright',
 };
 
 // "● label" row in counts + card footer
