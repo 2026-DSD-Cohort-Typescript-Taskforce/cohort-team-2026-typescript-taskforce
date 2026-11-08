@@ -8,6 +8,9 @@ server/node_modules/
 .env.*
 !.env.example
 
+# Local scratch. Holds access tokens, so it stays untracked.
+temp/
+
 # Build output
 dist/
 client/dist/
