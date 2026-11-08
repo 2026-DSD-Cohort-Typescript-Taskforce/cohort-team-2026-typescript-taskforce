@@ -1,4 +1,6 @@
-import { InfoCard, StatusLabel } from './InfoCard';
+import { cookies } from 'next/headers';
+import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
+import { getBillStatusRows } from '@/lib/bills';
 
 export type BillStatus =
   | 'draft'
@@ -21,10 +23,18 @@ const EMPTY: BillStatusCounts = {
   payment_failed: 0,
 };
 
-// Data Call: to be updated, not currently pulling data
-// count all bills / status
+// count the signed-in user's bills per status
 export async function getBillStatusCounts(): Promise<BillStatusCounts> {
-  return EMPTY;
+  const token = (await cookies()).get('sb-access-token')?.value;
+  if (!token) return EMPTY;
+
+  const rows = await getBillStatusRows(token).catch((error) => {
+    console.error(error);
+    return [];
+  });
+  const counts = { ...EMPTY };
+  for (const { status } of rows) if (status in counts) counts[status as BillStatus]++;
+  return counts;
 }
 
 // helper - bill status buckets
@@ -48,12 +58,12 @@ export async function BillAccountsCard() {
   ] as const;
 
   return (
-    <InfoCard title={`Bill Accounts (${b.total})`}>
+    <InfoCard title={`Bill Status (${b.total})`}>
       <ul className="flex flex-wrap justify-between gap-4">
         {columns.map(({ count, label, tone }) => (
           <li key={label} className="flex flex-col gap-1">
             <span className="text-body">
-              {count} {count === 1 ? 'Account' : 'Accounts'}
+              {count} {count === 1 ? 'Bill' : 'Bills'}
             </span>
             <StatusLabel tone={tone} label={label} />
           </li>
