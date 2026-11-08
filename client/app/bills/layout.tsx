@@ -12,7 +12,7 @@ export default function BillsLayout({ children }: LayoutProps<"/bills">) {
         </Link>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 lg:p-6">{children}</main>
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 lg:p-6">{children}</main>
 
       <SiteFooter />
     </div>
