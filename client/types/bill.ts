@@ -1,10 +1,10 @@
 export interface Bill {
   bill_id: number;
   amount: number;
-  property_id: number | null;
-  vendor_id: number | null;
-  user_id: number | null;
-  payment_id: number | null;
+  property_id: number;
+  vendor_id: number;
+  user_id: number;
+  payment_id: number;
   date_due: string | null;
   invoice_number: string | null;
   date_issued: string | null;
@@ -13,15 +13,15 @@ export interface Bill {
   status: string;
   pdf_path: string | null;
   created_at: string;
-  modified_at: string | null;
+  updated_at: string | null;
 }
 
 export interface CreateBillInput {
   amount: number;
-  property_id?: number | null;
-  vendor_id?: number | null;
-  user_id?: number | null;
-  payment_id?: number | null;
+  property_id: number;
+  vendor_id: number;
+  user_id: number;
+  payment_id: number;
   date_due?: string | null;
   invoice_number?: string | null;
   date_issued?: string | null;
