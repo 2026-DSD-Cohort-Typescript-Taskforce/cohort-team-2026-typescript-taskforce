@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { APP_NAME, Logo, SiteFooter } from "../../brand";
+import { APP_NAME, Logo, SiteFooter } from "@/components/layout/brand";
 import { focusRing } from "../../ui";
 
 export default function BillLayout({ children }: LayoutProps<"/bills/[id]">) {
