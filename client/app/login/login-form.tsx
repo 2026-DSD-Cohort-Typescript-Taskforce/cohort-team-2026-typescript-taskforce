@@ -1,44 +1,44 @@
-"use client";
+'use client';
 
-import { useState, type FormEvent } from "react";
-import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from "../ui";
+import { useState, type FormEvent } from 'react';
+import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '../ui';
 
 const inputClass = `h-12 w-full rounded-input border border-strong bg-background px-4 text-body text-foreground placeholder:text-secondary focus-visible:border-primary aria-invalid:border-danger ${colorTransition} ${focusRing}`;
 
 export function LoginForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
     // Clear first so the same message is announced again on a repeat failure.
-    setError("");
+    setError('');
     setSubmitting(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
         // A full page load, so proxy.ts sees the new session cookies and no page state
         // from before sign-in survives.
-        window.location.replace("/");
+        window.location.replace('/');
         return;
       }
       const body = await res.json().catch(() => null);
-      setError(body?.error ?? "Something went wrong. Try again.");
+      setError(body?.error ?? 'Something went wrong. Try again.');
     } catch {
-      setError("Could not reach the server. Try again.");
+      setError('Could not reach the server. Try again.');
     }
     setSubmitting(false);
   }
 
-  const describedBy = error ? "login-error" : undefined;
+  const describedBy = error ? 'login-error' : undefined;
 
   return (
     <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
@@ -69,7 +69,7 @@ export function LoginForm() {
           <input
             id="password"
             name="password"
-            type={showPassword ? "text" : "password"}
+            type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
             required
             value={password}
@@ -113,7 +113,7 @@ export function LoginForm() {
           className={`w-full ${primaryButton}`}
         >
           {submitting && <Spinner />}
-          {submitting ? "Signing in…" : "Sign in"}
+          {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </div>
     </form>

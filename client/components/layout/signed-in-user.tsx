@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ErrorAlert, Spinner, secondaryButton } from '../../app/ui';
 
 type Profile = {
-  name: string;
+  name: string | null;
   email: string | null;
 };
 
@@ -55,31 +55,40 @@ export function SignedInUser() {
     return error ? (
       <ErrorAlert message={error} />
     ) : (
-      <p role="status" className="text-body text-secondary">
+      <p role="status" className="text-body-sm text-secondary">
         Loading your account…
       </p>
     );
   }
 
+  const name = user.name || user.email || '';
+
   return (
-    <>
-      <p className="text-body-lg text-secondary">
-        Signed in as{' '}
-        <strong className="font-semibold text-foreground">{user.name || user.email}</strong>
-      </p>
-      <div className="flex w-full flex-col items-center">
-        <button
-          type="button"
-          onClick={logOut}
-          disabled={loggingOut}
-          data-pending={loggingOut || undefined}
-          className={secondaryButton}
-        >
-          {loggingOut && <Spinner />}
-          {loggingOut ? 'Logging out…' : 'Log out'}
-        </button>
-        <ErrorAlert message={error} className="mt-4 text-left" />
+    <div className="flex items-center gap-3">
+      <ErrorAlert message={error} />
+      <span
+        aria-hidden="true"
+        className="grid size-10 shrink-0 place-items-center rounded-full bg-primary font-semibold text-on-primary"
+      >
+        {name[0]?.toUpperCase()}
+      </span>
+      <div className="hidden min-w-0 flex-col text-right sm:flex">
+        <span className="truncate text-body-sm font-semibold">{name}</span>
+        {user.name && user.email && (
+          <span className="truncate text-caption text-secondary">{user.email}</span>
+        )}
       </div>
-    </>
+      <span className="sr-only sm:hidden">Signed in as {name}</span>
+      <button
+        type="button"
+        onClick={logOut}
+        disabled={loggingOut}
+        data-pending={loggingOut || undefined}
+        className={`${secondaryButton} h-10! px-4!`}
+      >
+        {loggingOut && <Spinner />}
+        {loggingOut ? 'Logging out…' : 'Log out'}
+      </button>
+    </div>
   );
 }

@@ -224,17 +224,14 @@ Example, mirroring the existing health check:
 
 ```ts
 // client/app/api/health/route.ts
-import { backend } from "@/lib/backend";
+import { backend } from '@/lib/backend';
 
 export async function GET() {
   try {
-    const res = await backend("/api/health");
+    const res = await backend('/api/health');
     return Response.json(await res.json(), { status: res.status });
   } catch {
-    return Response.json(
-      { status: "error", message: "Backend is unreachable" },
-      { status: 502 }
-    );
+    return Response.json({ status: 'error', message: 'Backend is unreachable' }, { status: 502 });
   }
 }
 ```
@@ -245,10 +242,10 @@ Endpoints that need the signed-in user (the `/api/auth/*` routes) use `forward()
 
 ```ts
 // client/app/api/auth/me/route.ts
-import { forward } from "@/lib/forward";
+import { forward } from '@/lib/forward';
 
 export function GET(request: Request) {
-  return forward(request, "/api/auth/me");
+  return forward(request, '/api/auth/me');
 }
 ```
 

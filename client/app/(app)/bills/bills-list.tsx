@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import { billRow, filterBills, statusOptions } from "@/lib/bill-list-filter";
 import type { Bill } from "@/lib/bill-view";
-import { ErrorAlert, Spinner, colorTransition, focusRing, secondaryButton } from "../ui";
+import { ErrorAlert, Spinner, colorTransition, focusRing, secondaryButton } from "@/app/ui";
 import { useBills } from "./bills-provider";
 import { StatusChip } from "./status-chip";
 

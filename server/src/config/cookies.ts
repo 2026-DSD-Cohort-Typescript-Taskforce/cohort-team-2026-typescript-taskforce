@@ -1,17 +1,17 @@
-import type { CookieOptions, Response } from "express";
-import type { Session } from "@supabase/supabase-js";
+import type { CookieOptions, Response } from 'express';
+import type { Session } from '@supabase/supabase-js';
 
 // client/proxy.ts checks for these names to redirect signed-in and signed-out visits.
-export const ACCESS_COOKIE = "sb-access-token";
-export const REFRESH_COOKIE = "sb-refresh-token";
+export const ACCESS_COOKIE = 'sb-access-token';
+export const REFRESH_COOKIE = 'sb-refresh-token';
 
 function baseOptions(): CookieOptions {
   return {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: 'lax',
     // Read per call so a production process always sends Secure cookies.
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
   };
 }
 

@@ -1,5 +1,5 @@
 import type { SubmissionState } from "@/lib/bill-submission";
-import { ErrorAlert, Spinner, SuccessAlert } from "../ui";
+import { ErrorAlert, Spinner, SuccessAlert } from "@/app/ui";
 
 /**
  * The bill form's save and submit feedback (DC-76), from useBillSubmission(): a busy line

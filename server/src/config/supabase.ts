@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-import { env } from "./env";
+import { createClient } from '@supabase/supabase-js';
+import { env } from './env';
 
 // Server-side clients never keep a session or refresh in the background: the session
 // lives in the browser's cookies and requireAuth refreshes it explicitly.

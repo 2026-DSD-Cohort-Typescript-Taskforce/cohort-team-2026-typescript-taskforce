@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-fetch";
 import { FIELD_LABELS, formatAmount, formatDate, type Bill } from "@/lib/bill-view";
-import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from "../../ui";
+import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from "@/app/ui";
 import { StatusChip } from "../status-chip";
 
 const UNREACHABLE = "Could not reach the server. Try again.";
