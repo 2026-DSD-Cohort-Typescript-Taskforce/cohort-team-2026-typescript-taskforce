@@ -61,5 +61,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/login', '/dashboard'],
+  matcher: ["/", "/login", "/bills/:id" /* , "/dashboard" */],
 };
