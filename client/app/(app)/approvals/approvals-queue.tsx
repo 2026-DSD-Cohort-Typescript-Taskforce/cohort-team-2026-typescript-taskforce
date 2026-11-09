@@ -113,7 +113,7 @@ export function ApprovalsQueue() {
     focusHeading();
   }
 
-  function conflicted(message: string) {
+  function gone(message: string) {
     setError(message);
     reload();
     focusHeading();
@@ -186,7 +186,7 @@ export function ApprovalsQueue() {
           canDecide={canDecide}
           onClose={closeReview}
           onDecided={decided}
-          onConflict={conflicted}
+          onGone={gone}
         />
       )}
     </>

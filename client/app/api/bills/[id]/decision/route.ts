@@ -5,9 +5,10 @@ import { BILL_NOT_FOUND } from "@/lib/submit-errors";
 import { createUserClient, readJsonObject, reply, replyWithDecisionError } from "@/lib/supabase";
 
 /**
- * Approves or rejects a bill waiting for approval. This route only checks the body shape;
- * decide_bill() checks the role and status and writes the audit row, and its errors map
- * to replies in lib/approvals.ts.
+ * Records an approver's decision on a bill (approve, send back for revision, or not approve)
+ * through decide_bill(). The body is validated with the database's own rules (decision value,
+ * note up to 500 characters), so a bad request never reaches it. decide_bill() checks the role
+ * and the bill's status and writes the audit row; its errors map to replies in lib/approvals.ts.
  */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/bills/[id]/decision">) {
   const supabase = createUserClient(request);

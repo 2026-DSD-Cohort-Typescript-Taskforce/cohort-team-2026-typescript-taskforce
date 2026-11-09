@@ -39,7 +39,7 @@ values
 
 -- DC-81: an approver profile and three bills waiting for approval, entered by Alex
 -- Morgan, to try the approvals page. Avery has no login yet (auth_user_id is NULL); a
--- separate script links one. Due dates differ from id order on purpose. BILL-2101 also
+-- separate script (npm run seed:local-users --prefix server) links one. Due dates differ from id order on purpose. BILL-2101 also
 -- has a pending approvals row; the other two don't, so decide_bill() inserts one.
 insert into public.users (name, email, role, property_id)
 values (

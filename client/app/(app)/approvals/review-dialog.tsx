@@ -59,15 +59,15 @@ export function ReviewDialog({
   canDecide,
   onClose,
   onDecided,
-  onConflict,
+  onGone,
 }: {
   bill: Bill;
   /** null while the role loads: the form stays disabled, with no notice yet. */
   canDecide: boolean | null;
   onClose: () => void;
   onDecided: (billId: number, decision: Decision) => void;
-  /** 409: someone else decided the bill first. */
-  onConflict: (message: string) => void;
+  /** 409 (someone else decided the bill first) or 404 (it was deleted): it is gone from the queue. */
+  onGone: (message: string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [decision, setDecision] = useState<Decision | "">("");
@@ -99,9 +99,9 @@ export function ReviewDialog({
     if (result.ok) {
       dialogRef.current?.close();
       onDecided(bill.bill_id, decision);
-    } else if (result.status === 409) {
+    } else if (result.status === 404 || result.status === 409) {
       dialogRef.current?.close();
-      onConflict(result.error);
+      onGone(result.error);
     } else {
       setError(result.error);
     }

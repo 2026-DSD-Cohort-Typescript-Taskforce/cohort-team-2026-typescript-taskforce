@@ -64,7 +64,8 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
   }
 }
 
-// submit_bill() sends the missing fields as a JSON array in a string, e.g. '["date_due"]'.
+// submit_bill() and decide_bill() send the invalid fields as a JSON array of names in a string,
+// e.g. '["date_due"]'.
 export function parseFields(details: string | null | undefined): string[] {
   try {
     const fields: unknown = JSON.parse(details ?? "");
