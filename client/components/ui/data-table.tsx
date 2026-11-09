@@ -12,6 +12,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { colorTransition, focusRing } from '@/app/ui';
+import { compareCells } from '@/lib/table-sort';
 
 export type Column<T> = {
   key: keyof T & string;
@@ -19,17 +20,28 @@ export type Column<T> = {
   render?: (row: T) => React.ReactNode;
 };
 
-// Pass `title` to replace the sortable column headers with a title bar.
+// A control at the end of each row, e.g. a button that opens the row. `label` names the
+// column for screen readers.
+export type RowAction<T> = { label: string; render: (row: T) => React.ReactNode };
+
+// Pass `title` to replace the sortable column headers with a title bar. `filterable={false}`
+// drops the Filter button, and the bar with it when there's no title.
 export function DataTable<T extends object>({
   columns,
   rows,
   title,
+  initialSorting = [],
+  filterable = true,
+  rowAction,
 }: {
   columns: Column<T>[];
   rows: T[];
   title?: string;
+  initialSorting?: SortingState;
+  filterable?: boolean;
+  rowAction?: RowAction<T>;
 }) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [filters, setFilters] = useState<ColumnFiltersState>([]);
   const [open, setOpen] = useState(false);
   const filterId = useId();
@@ -41,13 +53,7 @@ export function DataTable<T extends object>({
         accessorKey: c.key,
         header: c.label,
         cell: (ctx) => (c.render ? c.render(ctx.row.original) : String(ctx.getValue() ?? '')),
-        sortingFn: (a, b, id) => {
-          const x = a.getValue(id);
-          const y = b.getValue(id);
-          return typeof x === 'number' && typeof y === 'number'
-            ? x - y
-            : String(x ?? '').localeCompare(String(y ?? ''), undefined, { numeric: true });
-        },
+        sortingFn: (a, b, id) => compareCells(a.getValue(id), b.getValue(id)),
         sortDescFirst: false,
         filterFn: 'includesString' as const, // the 'auto' default treats numbers as ranges
       })),
@@ -82,72 +88,89 @@ export function DataTable<T extends object>({
           )}
         </th>
       ))}
+      {rowAction && <td />}
     </tr>
   );
 
   return (
     <div className="overflow-hidden border border-subtle bg-surface">
-      <div className="flex items-center justify-between border-b border-subtle bg-raised px-6 py-3 font-semibold text-foreground">
-        <span>{title}</span>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={filterId}
-          onClick={() => setOpen((o) => !o)}
-          className={`flex items-center gap-2 rounded-button px-2 py-1 hover:text-primary ${open || filters.length ? 'text-primary' : 'text-foreground'} ${colorTransition} ${focusRing}`}
-        >
-          Filter <span aria-hidden="true">{open ? '▲' : '▼'}</span>
-        </button>
-      </div>
-      <table className="w-full border-collapse text-left text-body">
-        {title ? (
-          <caption className="sr-only">{title}</caption>
-        ) : (
-          <thead className="border-b border-subtle bg-raised">
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => {
-                  const dir = h.column.getIsSorted();
-                  return (
-                    <th
-                      key={h.id}
-                      scope="col"
-                      aria-sort={
-                        dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'
-                      }
-                      className="p-0 font-semibold"
-                    >
-                      <button
-                        type="button"
-                        onClick={h.column.getToggleSortingHandler()}
-                        className={`flex w-full items-center gap-2 px-6 py-4 text-left hover:text-primary ${dir ? 'text-primary' : 'text-foreground'} ${colorTransition} ${focusRing}`}
+      {(title || filterable) && (
+        <div className="flex items-center justify-between border-b border-subtle bg-raised px-6 py-3 font-semibold text-foreground">
+          <span>{title}</span>
+          {filterable && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={filterId}
+              onClick={() => setOpen((o) => !o)}
+              className={`flex items-center gap-2 rounded-button px-2 py-1 hover:text-primary ${open || filters.length ? 'text-primary' : 'text-foreground'} ${colorTransition} ${focusRing}`}
+            >
+              Filter <span aria-hidden="true">{open ? '▲' : '▼'}</span>
+            </button>
+          )}
+        </div>
+      )}
+      {/* Wide tables scroll sideways inside the border instead of widening the page. relative:
+          the clip also has to catch absolutely positioned content such as sr-only labels. */}
+      <div className="relative overflow-x-auto">
+        <table className="w-full border-collapse text-left text-body">
+          {title ? (
+            <caption className="sr-only">{title}</caption>
+          ) : (
+            <thead className="border-b border-subtle bg-raised">
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((h) => {
+                    const dir = h.column.getIsSorted();
+                    return (
+                      <th
+                        key={h.id}
+                        scope="col"
+                        aria-sort={
+                          dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'
+                        }
+                        className="p-0 font-semibold"
                       >
-                        {flexRender(h.column.columnDef.header, h.getContext())}
-                        <span aria-hidden="true">
-                          {dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : '↕'}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={h.column.getToggleSortingHandler()}
+                          className={`flex w-full items-center gap-2 px-6 py-4 text-left hover:text-primary ${dir ? 'text-primary' : 'text-foreground'} ${colorTransition} ${focusRing}`}
+                        >
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                          <span aria-hidden="true">
+                            {dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : '↕'}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
+                  {rowAction && (
+                    <th scope="col" className="p-0">
+                      <span className="sr-only">{rowAction.label}</span>
                     </th>
-                  );
-                })}
+                  )}
+                </tr>
+              ))}
+              {filterRow}
+            </thead>
+          )}
+          {title && open && <thead className="border-b border-subtle bg-raised">{filterRow}</thead>}
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr key={row.id} className="border-t border-subtle first:border-t-0 hover:bg-raised">
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-6 py-4 text-foreground">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+                {rowAction && (
+                  <td className="px-4 py-2 text-right">{rowAction.render(row.original)}</td>
+                )}
               </tr>
             ))}
-            {filterRow}
-          </thead>
-        )}
-        {title && open && <thead className="border-b border-subtle bg-raised">{filterRow}</thead>}
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="border-t border-subtle first:border-t-0 hover:bg-raised">
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="px-6 py-4 text-foreground">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
       {table.getRowModel().rows.length === 0 && (
         <p className="px-6 py-4 text-secondary">No matching rows.</p>
       )}
