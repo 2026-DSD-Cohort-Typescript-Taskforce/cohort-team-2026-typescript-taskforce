@@ -3,7 +3,7 @@
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
 import type { Bill } from "./bill-view.ts";
-import { BILL_NOT_FOUND, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
+import { BILL_NOT_FOUND, parseFields, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
 
 export type Decision = "approved" | "needs_revision" | "denied";
 
@@ -118,15 +118,6 @@ export function toDecisionErrorResponse(error: SupabaseError): ErrorResponse {
     default:
       return toErrorResponse(error, DECISION_FAILED);
   }
-}
-
-// decide_bill() sends the bad fields as a JSON array in a string, e.g. '["note"]'.
-function parseFields(details: string | null | undefined): string[] {
-  try {
-    const fields: unknown = JSON.parse(details ?? "");
-    if (Array.isArray(fields) && fields.every((field) => typeof field === "string")) return fields;
-  } catch {}
-  return [];
 }
 
 /** One line of the approvals table, with the bill kept for the decision modal. */

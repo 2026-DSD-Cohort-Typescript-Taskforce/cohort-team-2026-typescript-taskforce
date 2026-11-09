@@ -65,7 +65,7 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
 }
 
 // submit_bill() sends the missing fields as a JSON array in a string, e.g. '["date_due"]'.
-function parseFields(details: string | null | undefined): string[] {
+export function parseFields(details: string | null | undefined): string[] {
   try {
     const fields: unknown = JSON.parse(details ?? "");
     if (Array.isArray(fields) && fields.every((field) => typeof field === "string")) return fields;
