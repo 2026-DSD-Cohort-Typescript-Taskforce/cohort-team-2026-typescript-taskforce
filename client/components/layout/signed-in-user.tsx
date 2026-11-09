@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { ErrorAlert, Spinner, secondaryButton } from '../../app/ui';
 
 type Profile = {
-  user_name: string | null;
-  user_email: string | null;
+  name: string;
+  email: string | null;
 };
 
 export function SignedInUser() {
@@ -65,9 +65,7 @@ export function SignedInUser() {
     <>
       <p className="text-body-lg text-secondary">
         Signed in as{' '}
-        <strong className="font-semibold text-foreground">
-          {user.user_name || user.user_email}
-        </strong>
+        <strong className="font-semibold text-foreground">{user.name || user.email}</strong>
       </p>
       <div className="flex w-full flex-col items-center">
         <button
