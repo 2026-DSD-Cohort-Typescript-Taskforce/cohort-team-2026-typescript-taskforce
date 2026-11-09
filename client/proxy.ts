@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 const API_URL = process.env.API_URL ?? 'http://localhost:5000';
 
 // Set by the Express server (server/src/config/cookies.ts). These checks are optimistic:
-// they only look for the cookies. Express verifies the session on every /api call.
+// they only look for the cookies. Express and Supabase verify the session on every /api call.
 const ACCESS_COOKIE = 'sb-access-token';
 const REFRESH_COOKIE = 'sb-refresh-token';
 const SESSION_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE];
@@ -46,10 +46,14 @@ export async function proxy(request: NextRequest) {
   }
 
   const signedIn = SESSION_COOKIES.some((name) => jar.has(name));
+  // The /bills pages load their data in the browser through apiFetch, which refreshes an
+  // expired session itself, so they only need the signed-out check.
+  const protectedPage =
+    pathname === '/dashboard' || pathname === '/bills' || pathname.startsWith('/bills/');
 
   let response: NextResponse;
 
-  if (pathname === '/' || (pathname === '/dashboard' && !signedIn)) {
+  if (pathname === '/' || (protectedPage && !signedIn)) {
     response = NextResponse.redirect(new URL('/login', request.url));
   } else if (pathname === '/login' && signedIn) {
     response = NextResponse.redirect(new URL('/dashboard', request.url));
@@ -61,5 +65,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/login', '/dashboard'],
+  matcher: ['/', '/login', '/dashboard', '/bills', '/bills/:id'],
 };

@@ -28,10 +28,7 @@ export async function isEmailUsedByAnotherProfile(
   email: string,
   authUserId: string,
 ): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('auth_user_id')
-    .eq('email', email);
+  const { data, error } = await supabase.from('users').select('auth_user_id').eq('email', email);
   if (error) throw error;
   return data.some((profile) => profile.auth_user_id !== authUserId);
 }

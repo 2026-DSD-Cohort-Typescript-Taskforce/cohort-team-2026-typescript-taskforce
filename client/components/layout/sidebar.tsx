@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { colorTransition, focusRing } from '../../app/ui';
 import { APP_NAME, Logo } from './brand';
 
@@ -40,8 +40,37 @@ function Icon({ d }: { d: string }) {
   );
 }
 
+function ActiveNavLinks({ label }: { label: string }) {
+  return <NavLinks label={label} pathname={usePathname()} />;
+}
+
+function NavLinks({ label, pathname }: { label: string; pathname: string | null }) {
+  return (
+    <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
+      {links.map((l) => {
+        const active = l.href === pathname;
+        return (
+          <Link
+            key={l.label}
+            href={l.href}
+            title={l.label}
+            aria-current={active ? 'page' : undefined}
+            className={`flex items-center gap-3 rounded-input px-3 py-2 text-body-sm whitespace-nowrap ${
+              active
+                ? 'bg-raised font-semibold text-primary'
+                : 'text-secondary hover:bg-raised hover:text-foreground'
+            } ${colorTransition} ${focusRing}`}
+          >
+            <Icon d={l.icon} />
+            <span className={label}>{l.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Sidebar() {
-  const pathname = usePathname();
   // null = not toggled yet: CSS picks an icon rail on small screens and the full sidebar from md up.
   const [collapsed, setCollapsed] = useState<boolean | null>(null);
 
@@ -60,27 +89,10 @@ export function Sidebar() {
         <Logo className="size-8" />
         <span className={`font-semibold whitespace-nowrap ${label}`}>{APP_NAME}</span>
       </div>
-      <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
-        {links.map((l) => {
-          const active = l.href === pathname;
-          return (
-            <Link
-              key={l.label}
-              href={l.href}
-              title={l.label}
-              aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-3 rounded-input px-3 py-2 text-body-sm whitespace-nowrap ${
-                active
-                  ? 'bg-raised font-semibold text-primary'
-                  : 'text-secondary hover:bg-raised hover:text-foreground'
-              } ${colorTransition} ${focusRing}`}
-            >
-              <Icon d={l.icon} />
-              <span className={label}>{l.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {/* usePathname is request-time data, so only the links wait on it (cacheComponents). */}
+      <Suspense fallback={<NavLinks label={label} pathname={null} />}>
+        <ActiveNavLinks label={label} />
+      </Suspense>
       <button
         type="button"
         onClick={toggle}
