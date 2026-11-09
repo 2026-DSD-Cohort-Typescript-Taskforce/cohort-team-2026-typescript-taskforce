@@ -20,7 +20,7 @@ export type Column<T> = {
 };
 
 // Pass `title` to replace the sortable column headers with a title bar.
-export function TanstackDataTable<T extends object>({
+export function DataTable<T extends object>({
   columns,
   rows,
   title,
@@ -86,7 +86,7 @@ export function TanstackDataTable<T extends object>({
   );
 
   return (
-    <div className="overflow-hidden rounded-card border border-subtle bg-surface">
+    <div className="overflow-hidden border border-subtle bg-surface">
       <div className="flex items-center justify-between border-b border-subtle bg-raised px-6 py-3 font-semibold text-foreground">
         <span>{title}</span>
         <button
@@ -155,4 +155,4 @@ export function TanstackDataTable<T extends object>({
   );
 }
 
-export default TanstackDataTable;
+export default DataTable;
