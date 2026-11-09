@@ -6,6 +6,7 @@
   "scripts": {
     "predev": "node scripts/db-start.mjs",
     "lint": "npm run lint --prefix client && npm run lint --prefix server",
+    "typecheck": "npm run typecheck --prefix server",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev": "concurrently -n CLIENT,SERVER -c blue,green \"npm run dev --prefix client\" \"npm run dev --prefix server\""
@@ -34,6 +35,6 @@
   },
   "dependencies": {
     "@supabase/server": "^1.9.2",
-    "typescript": "^6.0.3"
+    "@tanstack/react-table": "^9.3.1"
   }
 }

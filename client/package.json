@@ -6,9 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/*.test.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "@tanstack/react-table": "^8.21.3",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",

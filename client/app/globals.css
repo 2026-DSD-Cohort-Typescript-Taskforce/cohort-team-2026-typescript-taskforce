@@ -30,6 +30,11 @@
   --text-secondary: #a3bdb2;
 
   --danger: #f2948a;
+
+  /* Saturated status colours for dots/indicators (the tokens above are pastel text colours) */
+  --success-bright: #3ddc84;
+  --warning-bright: #ffcc33;
+  --danger-bright: #ff5c4d;
   --disabled: #0c3b31;
   --disabled-text: #799c90;
 
@@ -69,6 +74,9 @@
   --border-color-strong: var(--border-strong);
 
   --color-danger: var(--danger);
+  --color-success-bright: var(--success-bright);
+  --color-warning-bright: var(--warning-bright);
+  --color-danger-bright: var(--danger-bright);
   --color-disabled: var(--disabled);
   --color-disabled-foreground: var(--disabled-text);
 

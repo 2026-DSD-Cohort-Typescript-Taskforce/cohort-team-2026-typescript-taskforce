@@ -60,3 +60,31 @@ export function ErrorAlert({
     </div>
   );
 }
+
+// Mounted the same way as ErrorAlert, but role="status": a success is announced politely.
+export function SuccessAlert({ message, className = "" }: { message: string; className?: string }) {
+  return (
+    <div role="status">
+      {message && (
+        <p
+          className={`flex items-start gap-2 rounded-input border border-success-border bg-success-surface px-4 py-2 text-body-sm text-success-foreground ${className}`}
+        >
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="size-5 shrink-0"
+          >
+            <circle cx="10" cy="10" r="7.5" />
+            <path d="m6.75 10.25 2.25 2.25 4.25-4.5" />
+          </svg>
+          <span>{message}</span>
+        </p>
+      )}
+    </div>
+  );
+}

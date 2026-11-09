@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { APP_NAME, Logo, SiteFooter } from '../brand';
+import { APP_NAME, Logo, SiteFooter } from '../../components/layout/brand';
 import { LoginForm } from './login-form';
 
 export const metadata: Metadata = {

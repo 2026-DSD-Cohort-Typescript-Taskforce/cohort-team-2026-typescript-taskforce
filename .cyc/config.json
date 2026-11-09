@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "verification": {
+    "commands": [
+      {
+        "id": "lint",
+        "command": "node",
+        "args": ["--run", "lint"],
+        "timeoutMs": 300000
+      },
+      {
+        "id": "typecheck",
+        "command": "node",
+        "args": ["--run", "typecheck"],
+        "timeoutMs": 300000
+      },
+      {
+        "id": "format",
+        "command": "node",
+        "args": ["--run", "format:check"],
+        "timeoutMs": 300000
+      }
+    ]
+  },
+  "limits": {
+    "maxAttempts": 3,
+    "maxNoProgress": 2
+  }
+}

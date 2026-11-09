@@ -23,7 +23,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-// 255 is the length of users.user_email.
+// 255 is the length of users.email.
 const changeEmailSchema = z.object({
   email: z.email().max(255),
 });
