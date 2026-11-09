@@ -13,15 +13,14 @@ const SESSION_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE];
 // can't pass those to the browser, and Supabase rotates refresh tokens, so the browser
 // would keep a dead one. Refresh once here instead, where we can change both the
 // request (so this render sees the new tokens) and the response (so the browser stores them).
-async function refreshSession(request: NextRequest): Promise<string[]> {
+async function refreshSession(request: NextRequest): Promise<Response | null> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/me`, {
+    return await fetch(`${API_URL}/api/auth/me`, {
       headers: { cookie: request.headers.get('cookie') ?? '' },
       cache: 'no-store',
     });
-    return res.headers.getSetCookie();
   } catch {
-    return []; // Express unreachable: carry on, the page handles being signed out.
+    return null;
   }
 }
 
@@ -31,8 +30,17 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const setCookies: string[] = [];
 
-  if (pathname === '/dashboard' && !jar.has(ACCESS_COOKIE) && jar.has(REFRESH_COOKIE)) {
-    for (const raw of await refreshSession(request)) {
+  let dashboardSignedIn = false;
+  if (pathname === '/dashboard' && SESSION_COOKIES.some((name) => jar.has(name))) {
+    const session = await refreshSession(request);
+    if (!session || (!session.ok && session.status !== 401 && session.status !== 403)) {
+      return new NextResponse('Could not verify your session. Try again.', {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+    dashboardSignedIn = session.ok;
+    for (const raw of session.headers.getSetCookie()) {
       const pair = raw.split(';')[0];
       const eq = pair.indexOf('=');
       const name = pair.slice(0, eq).trim();
@@ -41,6 +49,12 @@ export async function proxy(request: NextRequest) {
       if (value) jar.set(name, value);
       else jar.delete(name);
       setCookies.push(raw);
+    }
+    if (!session.ok) {
+      for (const name of SESSION_COOKIES) {
+        jar.delete(name);
+        setCookies.push(`${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+      }
     }
     requestHeaders.set('cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '));
   }
@@ -53,7 +67,7 @@ export async function proxy(request: NextRequest) {
 
   let response: NextResponse;
 
-  if (pathname === '/' || (protectedPage && !signedIn)) {
+  if (pathname === '/' || (pathname === '/dashboard' && !dashboardSignedIn) || (protectedPage && !signedIn)) {
     response = NextResponse.redirect(new URL('/login', request.url));
   } else if (pathname === '/login' && signedIn) {
     response = NextResponse.redirect(new URL('/dashboard', request.url));

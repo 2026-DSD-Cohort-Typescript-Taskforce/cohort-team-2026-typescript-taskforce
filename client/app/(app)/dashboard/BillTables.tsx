@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { fetchPendingApprovalBills, fetchRecentPaidBills } from '@/lib/bills';
 import { BillTable, type BillTableRow } from './BillTable';
 
@@ -14,10 +13,8 @@ const toRow = (b: BillRow, sub: string): BillTableRow => ({
   amount: usd.format(b.amount),
 });
 
-// RLS scopes the query to the signed-in user; no token means no rows.
-async function load(fetcher: (token: string) => Promise<BillRow[]>) {
-  const token = (await cookies()).get('sb-access-token')?.value;
-  return token ? fetcher(token).catch((e) => (console.error(e), [])) : [];
+async function load(fetcher: () => Promise<BillRow[]>) {
+  return fetcher().catch((e) => (console.error(e), []));
 }
 
 export async function RecentPaymentsTable() {
