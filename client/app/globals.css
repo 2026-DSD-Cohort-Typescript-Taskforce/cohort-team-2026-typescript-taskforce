@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /*
  * Theme tokens: the team's selected Figma theme, "Emerald dark" (FigJam node 143:1472).
@@ -119,8 +119,16 @@
 @utility bg-brand {
   background-color: var(--raised);
   background-image:
-    radial-gradient(90% 70% at 100% 0%, color-mix(in oklab, var(--primary) 30%, transparent), transparent 70%),
-    radial-gradient(70% 50% at 0% 100%, color-mix(in oklab, var(--overlay) 80%, transparent), transparent 70%),
+    radial-gradient(
+      90% 70% at 100% 0%,
+      color-mix(in oklab, var(--primary) 30%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      70% 50% at 0% 100%,
+      color-mix(in oklab, var(--overlay) 80%, transparent),
+      transparent 70%
+    ),
     linear-gradient(165deg, var(--raised), var(--surface));
 }
 

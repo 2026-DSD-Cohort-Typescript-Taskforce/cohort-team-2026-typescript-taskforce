@@ -1,5 +1,5 @@
-import { forward } from "@/lib/forward";
+import { forward } from '@/lib/forward';
 
 export function PATCH(request: Request) {
-  return forward(request, "/api/auth/email");
+  return forward(request, '/api/auth/email');
 }
