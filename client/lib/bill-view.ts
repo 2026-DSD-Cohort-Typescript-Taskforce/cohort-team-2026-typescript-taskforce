@@ -1,8 +1,11 @@
 // Bills as the /api/bills route handlers return them and the View Bill page shows them.
 
-/** The columns both GET routes select, with the vendor and property names embedded. */
+/**
+ * The columns the routes select and return, with the vendor and property names and the
+ * payment method's type and name embedded.
+ */
 export const BILL_SELECT =
-  "bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor:vendors(name), property:properties(name)";
+  "bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor_id, property_id, payment_id, vendor:vendors(name), property:properties(name), payment:payment_methods(payment_type, name)";
 
 export type Bill = {
   bill_id: number;
@@ -14,8 +17,20 @@ export type Bill = {
   /** Timestamps with a zone (timestamptz since DC-53), e.g. 2026-11-02T18:55:59.123+00:00. */
   date_issued: string | null;
   date_received: string;
+  vendor_id: number | null;
+  property_id: number | null;
+  payment_id: number | null;
   vendor: { name: string } | null;
   property: { name: string } | null;
+  /** payment_type is card or bank (payment_methods' valid_payment_type). */
+  payment: { payment_type: string; name: string } | null;
+};
+
+/** The bill form's choices, as GET /api/bills/form-options returns them. */
+export type FormOptions = {
+  vendors: { id: number; name: string; payment_portal_url: string | null }[];
+  properties: { id: number; name: string }[];
+  paymentMethods: { id: number; type: string; name: string }[];
 };
 
 // bills.bill_id is a Postgres integer.

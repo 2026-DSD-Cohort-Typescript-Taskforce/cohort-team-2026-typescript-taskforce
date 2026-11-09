@@ -1,8 +1,8 @@
-import Link from "next/link";
-import { APP_NAME, Logo, SiteFooter } from "@/components/layout/brand";
-import { focusRing } from "../../ui";
+import Link from 'next/link';
+import { APP_NAME, Logo, SiteFooter } from '@/components/layout/brand';
+import { focusRing } from '@/app/ui';
 
-export default function BillLayout({ children }: LayoutProps<"/bills/[id]">) {
+export default function BillsLayout({ children }: LayoutProps<'/bills'>) {
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-subtle px-4 py-4 lg:px-6">
@@ -12,7 +12,9 @@ export default function BillLayout({ children }: LayoutProps<"/bills/[id]">) {
         </Link>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 lg:p-6">{children}</main>
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 lg:p-6">
+        {children}
+      </main>
 
       <SiteFooter />
     </div>
