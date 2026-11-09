@@ -18,9 +18,13 @@ export function BillsList() {
   const searchId = useId();
   const statusId = useId();
 
-  if (!bills) {
-    return error ? <LoadError message={error} retrying={loading} onRetry={refresh} /> : <ListSkeleton />;
-  }
+if (!bills) {
+  return (
+    <div className="h-full min-h-0 overflow-y-auto">
+      {error ? <LoadError message={error} retrying={loading} onRetry={refresh} /> : <ListSkeleton />}
+    </div>
+  );
+}
 
   if (bills.length === 0) {
     return (
@@ -44,8 +48,8 @@ export function BillsList() {
   }
 
   return (
-    <section aria-label="Bills list" className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row">
+<section aria-label="Bills list" className="flex h-full min-h-0 flex-col gap-4"> 
+       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="flex flex-1 flex-col gap-1">
           <label htmlFor={searchId} className="text-body-sm text-secondary">
             Search
@@ -80,7 +84,10 @@ export function BillsList() {
         </div>
       </div>
 
-      {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
+
+      </div>
 
       <p role="status" className="sr-only">
         {shown.length === bills.length

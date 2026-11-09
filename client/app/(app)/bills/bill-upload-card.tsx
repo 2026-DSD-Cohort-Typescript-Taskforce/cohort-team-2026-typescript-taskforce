@@ -64,8 +64,8 @@ export function BillUploadCard() {
   }
 
   return (
-    <section aria-label="Add or upload a bill" className="flex flex-col rounded-card border border-subtle bg-surface">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-subtle px-6 py-4">
+        <section aria-label="Add or upload a bill" className="flex h-full min-h-0 flex-col rounded-card border border-subtle bg-surface">      
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-subtle px-6 py-4">
         <p className={`${actionClass} underline underline-offset-4`}>+ Add a Bill</p>
         <button
           type="button"
