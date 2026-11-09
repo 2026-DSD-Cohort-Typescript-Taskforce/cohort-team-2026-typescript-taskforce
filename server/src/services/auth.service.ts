@@ -4,11 +4,12 @@ import {
   type AuthError,
   type Session,
   type User,
-} from "@supabase/supabase-js";
-import { createAnonClient } from "../config/supabase";
-import { HttpError } from "../middleware/errorHandler";
+} from '@supabase/supabase-js';
+import { createAnonClient } from '../config/supabase';
+import { HttpError } from '../middleware/errorHandler';
 
-const unavailable = () => new HttpError(503, "The sign-in service is unavailable. Try again shortly.");
+const unavailable = () =>
+  new HttpError(503, 'The sign-in service is unavailable. Try again shortly.');
 
 /** True when Supabase Auth refused the request (bad password, expired token, signed out, ...). */
 function isRejection(error: AuthError) {
@@ -20,9 +21,9 @@ function isRejection(error: AuthError) {
 export async function signIn(email: string, password: string): Promise<Session> {
   const { data, error } = await createAnonClient().auth.signInWithPassword({ email, password });
   if (!error) return data.session;
-  if (error.status === 429) throw new HttpError(429, "Too many sign-in attempts. Try again later.");
+  if (error.status === 429) throw new HttpError(429, 'Too many sign-in attempts. Try again later.');
   // One message for every refusal, so the response never says whether the email exists.
-  if (isRejection(error)) throw new HttpError(401, "Incorrect email or password.");
+  if (isRejection(error)) throw new HttpError(401, 'Incorrect email or password.');
   throw unavailable();
 }
 
@@ -36,7 +37,9 @@ export async function getUser(accessToken: string): Promise<User | null> {
 
 /** A new session for a refresh token, or null if it was revoked or already used. */
 export async function refreshSession(refreshToken: string): Promise<Session | null> {
-  const { data, error } = await createAnonClient().auth.refreshSession({ refresh_token: refreshToken });
+  const { data, error } = await createAnonClient().auth.refreshSession({
+    refresh_token: refreshToken,
+  });
   if (!error) return data.session;
   if (isRejection(error)) return null;
   throw unavailable();
@@ -44,15 +47,16 @@ export async function refreshSession(refreshToken: string): Promise<Session | nu
 
 /** Revokes this session's refresh tokens. Returns false if the access token is no longer valid. */
 export async function signOut(accessToken: string): Promise<boolean> {
-  const { error } = await createAnonClient().auth.admin.signOut(accessToken, "local");
+  const { error } = await createAnonClient().auth.admin.signOut(accessToken, 'local');
   if (!error) return true;
   if (isRejection(error)) return false;
   throw unavailable();
 }
 
-export const emailInUse = () => new HttpError(409, "That email address is already in use.", "email_in_use");
+export const emailInUse = () =>
+  new HttpError(409, 'That email address is already in use.', 'email_in_use');
 
-const signInAgain = () => new HttpError(401, "Sign in again to change your email address.");
+const signInAgain = () => new HttpError(401, 'Sign in again to change your email address.');
 
 /**
  * Asks Supabase Auth to change the signed-in user's email. It emails a link to the current
@@ -77,9 +81,11 @@ export async function requestEmailChange(
 
   const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo });
   if (error) {
-    if (error.code === "email_exists") throw emailInUse();
-    if (error.status === 429) throw new HttpError(429, "Too many email change requests. Try again later.");
-    if (error.status === 400 || error.status === 422) throw new HttpError(400, "Enter a valid email address.");
+    if (error.code === 'email_exists') throw emailInUse();
+    if (error.status === 429)
+      throw new HttpError(429, 'Too many email change requests. Try again later.');
+    if (error.status === 400 || error.status === 422)
+      throw new HttpError(400, 'Enter a valid email address.');
     if (isRejection(error)) throw signInAgain();
     throw unavailable();
   }
