@@ -48,8 +48,8 @@ if (!bills) {
   }
 
   return (
-<section aria-label="Bills list" className="flex h-full min-h-0 flex-col gap-4"> 
-       <div className="flex flex-col gap-3 sm:flex-row">
+    <section aria-label="Bills list" className="flex h-[32rem] min-h-0 flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="flex flex-1 flex-col gap-1">
           <label htmlFor={searchId} className="text-body-sm text-secondary">
             Search
@@ -87,28 +87,27 @@ if (!bills) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
 
+        <p role="status" className="sr-only">
+          {shown.length === bills.length
+            ? `${bills.length} ${bills.length === 1 ? "bill" : "bills"}`
+            : `Showing ${shown.length} of ${bills.length} bills`}
+        </p>
+
+        {shown.length > 0 ? (
+          <ul aria-label="Bills" className="flex flex-col gap-3">
+            {shown.map((bill) => (
+              <BillRow key={bill.bill_id} bill={bill} />
+            ))}
+          </ul>
+        ) : (
+          <div className="flex flex-col items-start gap-4 rounded-card border border-subtle bg-surface p-6">
+            <p className="text-body text-secondary">No bills match your search.</p>
+            <button type="button" onClick={clearFilters} className={secondaryButton}>
+              Clear search
+            </button>
+          </div>
+        )}
       </div>
-
-      <p role="status" className="sr-only">
-        {shown.length === bills.length
-          ? `${bills.length} ${bills.length === 1 ? "bill" : "bills"}`
-          : `Showing ${shown.length} of ${bills.length} bills`}
-      </p>
-
-      {shown.length > 0 ? (
-        <ul aria-label="Bills" className="flex flex-col gap-3">
-          {shown.map((bill) => (
-            <BillRow key={bill.bill_id} bill={bill} />
-          ))}
-        </ul>
-      ) : (
-        <div className="flex flex-col items-start gap-4 rounded-card border border-subtle bg-surface p-6">
-          <p className="text-body text-secondary">No bills match your search.</p>
-          <button type="button" onClick={clearFilters} className={secondaryButton}>
-            Clear search
-          </button>
-        </div>
-      )}
     </section>
   );
 }

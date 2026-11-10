@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BillUploadCard } from "./bill-upload-card";
 import { BillsList } from "./bills-list";
 import { BillsProvider } from "./bills-provider";
+import { FailedExtractions } from "./failed-extractions";
 
 export const metadata: Metadata = {
   title: "Bills",
@@ -14,11 +15,14 @@ export default function BillsPage() {
     <div className="grid items-start gap-6 lg:grid-cols-2">
       <h1 className="text-heading lg:col-span-2">Bills</h1>
       <BillUploadCard />
-      <section aria-label="Bills" className="min-w-0">
-        <BillsProvider>
-          <BillsList />
-        </BillsProvider>
-      </section>
+      <div className="flex min-w-0 flex-col gap-6">
+        <section aria-label="Bills" className="min-h-0">
+          <BillsProvider>
+            <BillsList />
+          </BillsProvider>
+        </section>
+        <FailedExtractions issues={[]} />
+      </div>
     </div>
   );
 }
