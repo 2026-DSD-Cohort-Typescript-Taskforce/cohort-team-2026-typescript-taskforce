@@ -4,7 +4,6 @@
 -- Ticket:          DC-86 Update the foreign keys in the users table to be a list of ids in each row.
 -- Description:     This file makes the following changes to the database:
 --                      _X_ Create the tables user_properties and vendor_properties.
---                      ___ ADD RESTRICTIONS to user_properties and vendor_properties!
 --                      _X_ Remove the foreign keys property_id and vendor_id from users (read below for reason why).
 --                      _X_ Constrain the role attribute in the users table to the following 3 values:
 --                          - billing_operator,
