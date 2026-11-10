@@ -8,7 +8,8 @@ const dangerButton = `inline-flex h-12 items-center justify-center gap-2 rounded
 
 /**
  * "Delete {name}?", stacked over the edit dialog. It opens when mounted and the parent
- * unmounts it on onClose. The parent runs the delete.
+ * unmounts it on onClose. The parent runs the delete and keeps this dialog open while it
+ * runs: it stops Esc at keydown, and shows the dialog again if it closes anyway.
  */
 export function DeleteVendorDialog({
   name,
@@ -22,6 +23,7 @@ export function DeleteVendorDialog({
   /** Shared with the parent, which closes the dialog when the delete ends. */
   dialogRef: RefObject<HTMLDialogElement | null>;
   onConfirm: () => void;
+  /** Called each time it closes, including a close the parent undoes while deleting. */
   onClose: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -41,7 +43,7 @@ export function DeleteVendorDialog({
       role="alertdialog"
       aria-labelledby={titleId}
       aria-describedby={textId}
-      // Esc can't close it while the delete is in flight.
+      // A first close request that isn't Esc (the parent stops Esc while deleting).
       onCancel={(event) => {
         if (deleting) event.preventDefault();
       }}

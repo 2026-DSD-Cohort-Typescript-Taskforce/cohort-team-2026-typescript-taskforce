@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import type { ApiFailure } from "@/lib/bill-api";
 import { createVendor, deleteVendor, removeVendorLogo, updateVendor, uploadVendorLogo } from "@/lib/vendor-api";
 import {
@@ -42,7 +43,8 @@ function sameDetails(input: VendorInput, vendor: Vendor): boolean {
 
 /**
  * The Edit vendor / Add vendor modal, with the stacked delete confirm. It opens when
- * mounted; the parent unmounts it on onClose. Only managers open it; the routes check again.
+ * mounted; the parent unmounts it on onClose, which never comes while a save or delete runs.
+ * Only managers open it; the routes check again.
  */
 export function VendorDialog({
   vendor,
@@ -85,6 +87,11 @@ export function VendorDialog({
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  // busy as a ref too, set at once: the close guards read it, and a dialog closed straight
+  // after a save or delete ends must not see the value from the last render.
+  const busyRef = useRef(false);
+  /** The edit dialog's focused element, for when the dialog has to be shown again. */
+  const lastFocusRef = useRef<HTMLElement | null>(null);
   const id = useId();
   const fieldId = (field: VendorField) => `${id}-${field}`;
   const titleId = `${id}-title`;
@@ -95,6 +102,17 @@ export function VendorDialog({
     dialogRef.current?.showModal();
   }, []);
 
+  // Neither dialog can close while a save or delete runs. Chrome honours one cancel
+  // preventDefault per user activation, so a second Esc would close it: Esc is stopped at
+  // keydown instead, before it becomes a close request, wherever focus is.
+  useEffect(() => {
+    function holdEsc(event: KeyboardEvent) {
+      if (event.key === "Escape" && busyRef.current) event.preventDefault();
+    }
+    window.addEventListener("keydown", holdEsc, true);
+    return () => window.removeEventListener("keydown", holdEsc, true);
+  }, []);
+
   // Frees a preview once another logo replaces it, or the dialog closes.
   useEffect(() => {
     if (logo.kind !== "file") return;
@@ -103,6 +121,20 @@ export function VendorDialog({
   }, [logo]);
 
   const shownLogo = logo.kind === "file" ? logo.preview : logo.kind === "remove" ? null : (saved?.logo_url ?? null);
+
+  function setBusy(set: (value: boolean) => void, value: boolean) {
+    busyRef.current = value;
+    set(value);
+  }
+
+  // Another kind of close request (a back gesture) can still close a busy dialog. It is
+  // shown again, with focus where it was, and the parent isn't told.
+  function showAgain() {
+    const dialog = dialogRef.current;
+    if (!dialog?.isConnected) return;
+    dialog.showModal();
+    lastFocusRef.current?.focus();
+  }
 
   function change(field: VendorField, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -150,17 +182,19 @@ export function VendorDialog({
   // Fields first, then the logo. The routes check the role and the details again.
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busyRef.current) return;
     const checked = validateVendorInput(values);
     if ("errors" in checked) {
       setErrors(checked.errors);
+      // An earlier reply's message (a 403, offline) would read as part of these.
+      setError("");
       const first = VENDOR_FIELDS.find((field) => checked.errors[field]);
       if (first) document.getElementById(fieldId(first))?.focus();
       return;
     }
     setErrors({});
     setError("");
-    setSaving(true);
+    setBusy(setSaving, true);
 
     let current: Vendor;
     let fieldsSaved = false;
@@ -173,7 +207,7 @@ export function VendorDialog({
       // null: apiFetch is sending the user to /login.
       if (!result) return;
       if (!result.ok) {
-        setSaving(false);
+        setBusy(setSaving, false);
         refused(result);
         return;
       }
@@ -190,7 +224,7 @@ export function VendorDialog({
           : await removeVendorLogo(current.vendor_id);
       if (!result) return;
       if (!result.ok) {
-        setSaving(false);
+        setBusy(setSaving, false);
         if (result.status === 404) {
           gone();
           return;
@@ -205,18 +239,20 @@ export function VendorDialog({
       current = result.data;
     }
 
-    setSaving(false);
+    setBusy(setSaving, false);
     dialogRef.current?.close();
     onSaved(current, action, true);
   }
 
   async function remove() {
-    if (!saved || deleting) return;
+    if (!saved || busyRef.current) return;
     setError("");
-    setDeleting(true);
+    setBusy(setDeleting, true);
     const result = await deleteVendor(saved.vendor_id);
     if (!result) return;
-    setDeleting(false);
+    // Rendered at once, so the trash button is enabled when the confirm closes and hands
+    // focus back to it.
+    flushSync(() => setBusy(setDeleting, false));
     if (result.ok) {
       confirmRef.current?.close();
       dialogRef.current?.close();
@@ -231,6 +267,12 @@ export function VendorDialog({
   }
 
   function confirmClosed() {
+    // Closed by a close request while deleting (see showAgain): shown again, which focuses
+    // Delete vendor, as Cancel is disabled.
+    if (busyRef.current) {
+      if (confirmRef.current?.isConnected) confirmRef.current.showModal();
+      return;
+    }
     setConfirming(false);
     // Back on the trash button, unless the edit dialog closed as well.
     if (dialogRef.current?.open) trashRef.current?.focus();
@@ -241,11 +283,17 @@ export function VendorDialog({
       <dialog
         ref={dialogRef}
         aria-labelledby={titleId}
-        // Esc can't close it while a save or delete is in flight.
-        onCancel={(event) => {
-          if (busy) event.preventDefault();
+        onFocus={(event) => {
+          lastFocusRef.current = event.target;
         }}
-        onClose={onClose}
+        // A first close request of another kind; Esc is already stopped at keydown.
+        onCancel={(event) => {
+          if (busyRef.current) event.preventDefault();
+        }}
+        onClose={() => {
+          if (busyRef.current) showAgain();
+          else onClose();
+        }}
         className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-card border border-strong bg-overlay p-6 text-foreground shadow-l4 backdrop:bg-background/80 sm:p-8"
       >
         <div className="flex items-center justify-between gap-4">
@@ -292,9 +340,10 @@ export function VendorDialog({
         </h2>
 
         <form noValidate onSubmit={save} className="mt-6 flex flex-col gap-5">
-          <div className="flex flex-col gap-2">
+          {/* Margins, not gap: the empty alert below then adds no space. */}
+          <div className="flex flex-col">
             <p className="text-body-sm text-secondary">Logo (optional)</p>
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="mt-2 flex flex-wrap items-center gap-4">
               <button
                 ref={logoButtonRef}
                 type="button"
@@ -338,11 +387,14 @@ export function VendorDialog({
               hidden
               onChange={chooseLogo}
             />
-            {logoError && (
-              <p id={logoErrorId} className="text-body-sm text-danger">
-                {logoError}
-              </p>
-            )}
+            {/* Mounted while empty, like ErrorAlert, so the message is announced. */}
+            <div role="alert">
+              {logoError && (
+                <p id={logoErrorId} className="mt-2 text-body-sm text-danger">
+                  {logoError}
+                </p>
+              )}
+            </div>
           </div>
 
           {FIELDS.map(({ field, label, type, maxLength }) => {
