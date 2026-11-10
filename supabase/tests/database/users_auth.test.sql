@@ -8,8 +8,8 @@ select plan(53);
 -- Test rows use fixed ids far above the seed data. Every profile needs a property, and a
 -- bill also needs a vendor and a payment method.
 insert into public.properties (property_id, name) values (922001, 'DC-22 test property');
-insert into public.vendors (vendor_id, name, payment_portal_url, supported_payment_methods)
-  values (922001, 'DC-22 test vendor', 'https://vendor.example.test', 'card');
+insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
+  values (922001, 'DC-22 test vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (922001, 'card', 'DC-22 test card', '00000');
 insert into auth.users (id, email) values
