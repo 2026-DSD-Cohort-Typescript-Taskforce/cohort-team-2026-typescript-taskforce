@@ -110,10 +110,16 @@ export function invalidVendor(fields: string[]): ErrorResponse {
   return { status: 400, body: { error: "Some of the vendor's details aren't valid.", code: "invalid_vendor", fields } };
 }
 
+// The unique index on lower(name) (supabase/migrations/20261109230000_vendors_manage.sql).
+const NAME_INDEX = "vendors_name_lower_key";
+
 export function toVendorErrorResponse(error: SupabaseError, fallback = SAVE_VENDOR_FAILED): ErrorResponse {
   switch (error.code) {
     case "23505":
-      return DUPLICATE_VENDOR_NAME;
+      // Only a clash on the name index is a duplicate name; any other key (vendors_pkey)
+      // falls through to the 500.
+      if (error.message?.includes(NAME_INDEX) || error.details?.includes(NAME_INDEX)) return DUPLICATE_VENDOR_NAME;
+      break;
     case "23503":
       return VENDOR_HAS_BILLS;
     case "42501":

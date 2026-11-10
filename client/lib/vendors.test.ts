@@ -153,12 +153,35 @@ test("fixed replies and messages", () => {
 });
 
 test("toVendorErrorResponse maps database codes", () => {
-  assert.deepEqual(toVendorErrorResponse({ code: "23505" }), DUPLICATE_VENDOR_NAME);
+  // As PostgREST reports a clash on the name index.
+  assert.deepEqual(
+    toVendorErrorResponse({
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "vendors_name_lower_key"',
+      details: "Key (lower(name::text))=(acme) already exists.",
+    }),
+    DUPLICATE_VENDOR_NAME,
+  );
   assert.deepEqual(toVendorErrorResponse({ code: "23503" }), VENDOR_HAS_BILLS);
   assert.deepEqual(toVendorErrorResponse({ code: "42501" }), VENDOR_FORBIDDEN);
   assert.deepEqual(toVendorErrorResponse({ code: "23514" }), invalidVendor([]));
   assert.deepEqual(toVendorErrorResponse({ code: "22001" }), invalidVendor([]));
   assert.deepEqual(toVendorErrorResponse({ code: "PGRST303" }), SIGNED_OUT);
+});
+
+test("a unique violation on any other key is a 500 with the fallback", () => {
+  assert.deepEqual(
+    toVendorErrorResponse({
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "vendors_pkey"',
+      details: "Key (vendor_id)=(12) already exists.",
+    }),
+    { status: 500, body: { error: SAVE_VENDOR_FAILED } },
+  );
+  assert.deepEqual(toVendorErrorResponse({ code: "23505" }, DELETE_VENDOR_FAILED), {
+    status: 500,
+    body: { error: DELETE_VENDOR_FAILED },
+  });
 });
 
 test("an unknown error is a 500 with the fallback and no database text", () => {

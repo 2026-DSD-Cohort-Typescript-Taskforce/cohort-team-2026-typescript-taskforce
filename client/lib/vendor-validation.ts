@@ -12,7 +12,8 @@ export type VendorInput = Record<VendorField, string>;
 /** One readable message per field that failed. */
 export type VendorErrors = Partial<Record<VendorField, string>>;
 
-// vendors.name is VARCHAR(255), email VARCHAR(254), address VARCHAR(500).
+// The app's limits, not the database's: vendors.name and address are varchar with no
+// length, and email is text.
 export const NAME_MAX = 255;
 export const EMAIL_MAX = 254;
 export const ADDRESS_MAX = 500;

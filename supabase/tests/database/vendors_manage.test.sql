@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(53);
+select plan(54);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. One property, payment method and bill, so vendor 84001 has a
@@ -93,6 +93,7 @@ select throws_ok($$insert into public.vendors (name, email, address, phone) valu
 select ok(
   exists (select 1 from public.vendors where email is null and vendor_id < 84000),
   'seeded vendors without an email are still there and readable');
+select throws_ok($$update public.vendors set contact_name = 'x' where name = 'Maple Junction Storage'$$, '23514', null, 'a legacy vendor with no email, address or phone can''t be updated until they are filled in');
 
 -- anon
 set local role anon;

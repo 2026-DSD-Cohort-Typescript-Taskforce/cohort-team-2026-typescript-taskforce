@@ -26,8 +26,9 @@ alter table public.vendors add constraint vendors_phone_present
 
 create unique index vendors_name_lower_key on public.vendors (lower(name));
 
--- Who can write vendors. Runs as the table owner so it can read users, which signed-in
--- users can't fully read (DC-22).
+-- Who can write vendors. Security definer, so the role check reads users as the owner and
+-- keeps working whatever RLS policies and grants users has; search_path is pinned to ''
+-- so a caller's search_path can't change which users table it reads.
 create function public.is_vendor_manager()
 returns boolean
 language sql

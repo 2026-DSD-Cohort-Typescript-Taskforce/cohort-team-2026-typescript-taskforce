@@ -40,7 +40,9 @@ values
 -- DC-84: vendor contact details and a system admin to manage them. Sam Rivera is a
 -- profile only; the Auth login is added by a separate script. Maple Junction Storage and
 -- Summit Trail Equipment Rental keep no contact details, like the legacy vendors, and
--- Juniper Office Supply is new, complete and has no bills (so it can be deleted).
+-- Juniper Office Supply is new, complete and has no bills (so it can be deleted). The
+-- phones are 555-01xx numbers (set aside for fiction) with an area code, so they have the
+-- 10 digits the vendor form needs and a seeded vendor can be saved as it is.
 insert into public.users (name, email, role, property_id)
 values (
   'Sam Rivera',
@@ -52,14 +54,14 @@ values (
 update public.vendors v
 set email = c.email, address = c.address, phone = c.phone
 from (values
-  ('Alder Creek Landscaping',       'billing@aldercreek.example.com',   '210 Meadow Lane, Dallas, TX 75201',      '555-0101'),
-  ('Brightwater Water & Sewer',     'accounts@brightwater.example.com', '48 Riverside Drive, Dallas, TX 75202',   '555-0102'),
-  ('Copper Ridge Waste Services',   'billing@copperridge.example.com',  '902 Quarry Road, Dallas, TX 75203',      '555-0103'),
-  ('Northline Business Internet',   'support@northline.example.com',    '77 Fiber Court, Dallas, TX 75204',       '555-0104'),
-  ('Sunmeadow Cleaning',            'office@sunmeadow.example.com',     '15 Sunrise Boulevard, Dallas, TX 75205', '555-0105'),
-  ('Cedar Valley Pest Control',     'billing@cedarvalley.example.com',  '330 Cedar Street, Dallas, TX 75206',     '555-0106'),
-  ('Harborlight Security',          'accounts@harborlight.example.com', '8 Lantern Pier, Dallas, TX 75207',       '555-0107'),
-  ('Prairie Grid HVAC Services',    'service@prairiegrid.example.com',  '564 Prairie Avenue, Dallas, TX 75208',   '555-0108')
+  ('Alder Creek Landscaping',       'billing@aldercreek.example.com',   '210 Meadow Lane, Dallas, TX 75201',      '214-555-0101'),
+  ('Brightwater Water & Sewer',     'accounts@brightwater.example.com', '48 Riverside Drive, Dallas, TX 75202',   '214-555-0102'),
+  ('Copper Ridge Waste Services',   'billing@copperridge.example.com',  '902 Quarry Road, Dallas, TX 75203',      '214-555-0103'),
+  ('Northline Business Internet',   'support@northline.example.com',    '77 Fiber Court, Dallas, TX 75204',       '214-555-0104'),
+  ('Sunmeadow Cleaning',            'office@sunmeadow.example.com',     '15 Sunrise Boulevard, Dallas, TX 75205', '214-555-0105'),
+  ('Cedar Valley Pest Control',     'billing@cedarvalley.example.com',  '330 Cedar Street, Dallas, TX 75206',     '214-555-0106'),
+  ('Harborlight Security',          'accounts@harborlight.example.com', '8 Lantern Pier, Dallas, TX 75207',       '214-555-0107'),
+  ('Prairie Grid HVAC Services',    'service@prairiegrid.example.com',  '564 Prairie Avenue, Dallas, TX 75208',   '214-555-0108')
 ) as c(name, email, address, phone)
 where v.name = c.name;
 
@@ -68,7 +70,7 @@ values (
   'Juniper Office Supply',
   'orders@juniper.example.com',
   '61 Juniper Way, Dallas, TX 75209',
-  '555-0109',
+  '214-555-0109',
   'https://juniper-utility-demo.vercel.app',
   'Card, ACH'
 );
