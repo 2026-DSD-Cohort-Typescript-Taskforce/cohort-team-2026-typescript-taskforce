@@ -17,9 +17,9 @@ export type Bill = {
   /** Timestamps with a zone (timestamptz since DC-53), e.g. 2026-11-02T18:55:59.123+00:00. */
   date_issued: string | null;
   date_received: string;
-  vendor_id: number | null;
-  property_id: number | null;
-  payment_id: number | null;
+  vendor_id: number;
+  property_id: number;
+  payment_id: number;
   vendor: { name: string } | null;
   property: { name: string } | null;
   /** payment_type is card or bank (payment_methods' valid_payment_type). */
