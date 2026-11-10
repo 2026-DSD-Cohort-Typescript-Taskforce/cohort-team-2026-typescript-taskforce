@@ -12,8 +12,7 @@ const tone = (status: string) =>
       ? 'danger'
       : 'warning';
 
-async function getLastSubmittedBill() {
-  const jar = await cookies();
+async function getLastSubmittedBill(jar: Awaited<ReturnType<typeof cookies>>) {
   const token = jar.get('sb-access-token')?.value;
   if (!token) return null;
   const res = await backend('/api/auth/me', {
@@ -24,15 +23,13 @@ async function getLastSubmittedBill() {
     return null;
   }
 
-  const { user } = await res.json();
-
-  const bill = await fetchLastSubmittedBill(token);
-
-  return bill;
+  return fetchLastSubmittedBill(token);
 }
 
 export async function LastSubmittedCard() {
-  const bill = await getLastSubmittedBill().catch((error) => {
+  // await cookies() outside the catch so Next can handle its prerender rejection
+  const jar = await cookies();
+  const bill = await getLastSubmittedBill(jar).catch((error) => {
     console.error(error);
     return null;
   });
