@@ -39,11 +39,18 @@ export const MESSAGES = {
   created: "Draft saved.",
   updated: "Bill updated.",
   submitted: "Bill submitted for payment.",
+  resubmitted: "Bill resubmitted for approval.",
   invalid: "Some of the bill's details aren't valid.",
   notDraft: "This bill was submitted and can't be edited anymore.",
   notFound: "This bill no longer exists.",
   required: "Required to submit.",
 };
+
+// submit_bill() sends a bill the approver sent back for revision to approval again, and
+// any other draft to payment; the returned status says which.
+export function submittedMessage(status: string): string {
+  return status === "pending_approval" ? MESSAGES.resubmitted : MESSAGES.submitted;
+}
 
 export function initialSubmission(bill: Bill | null = null): Submission {
   return { state: "idle", message: "", fieldErrors: {}, errorCode: null, bill };
@@ -70,7 +77,7 @@ export function submissionReducer(current: Submission, event: SubmissionEvent): 
       return {
         ...current,
         state: "submitted",
-        message: MESSAGES.submitted,
+        message: submittedMessage(event.status),
         bill: current.bill && { ...current.bill, status: event.status },
       };
     case "failed": {
