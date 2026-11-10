@@ -52,13 +52,13 @@ test("malformed emails fail", () => {
 });
 
 test("phones with 10 to 15 digits and common punctuation pass", () => {
-  for (const phone of ["(555) 010-1234", "+1 555.010.1234", "555-0101-234", "1".repeat(15)]) {
+  for (const phone of ["(555) 010-1234", "+1 555.010.1234", "555-0101-234", "(+1) 555 010 1234", "1".repeat(15)]) {
     assert.deepEqual(validateVendorInput({ ...good, phone }), { input: { ...good, phone } }, phone);
   }
 });
 
 test("other phones fail", () => {
-  for (const phone of ["555-010-123", "1".repeat(16), "555-010-ABCD", "555/010/1234"]) {
+  for (const phone of ["555-010-123", "1".repeat(16), "555-010-ABCD", "555/010/1234", "555\t010 1234"]) {
     assert.deepEqual(validateVendorInput({ ...good, phone }), { errors: { phone: "Enter a valid phone number." } }, phone);
   }
 });

@@ -72,6 +72,12 @@ test("a query with letters does not match on phone digits", () => {
   assert.equal(matchesVendor(v, "oak 12"), false);
 });
 
+test("a digit query still matches text, and a symbol-only query is a plain substring", () => {
+  assert.equal(matchesVendor(vendor(1, "Route 66", { phone: "555-010-1234" }), "66"), true);
+  assert.equal(matchesVendor(vendor(1, "Acme", { phone: "555-010-1234" }), "-"), true);
+  assert.equal(matchesVendor(vendor(1, "Acme"), "-"), false);
+});
+
 test("null fields don't throw", () => {
   const v = vendor(1, "Acme");
   assert.equal(matchesVendor(v, "555"), false);

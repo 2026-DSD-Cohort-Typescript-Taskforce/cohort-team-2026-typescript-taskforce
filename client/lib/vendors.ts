@@ -27,7 +27,7 @@ export function parseVendorId(raw: string): number | null {
   return id >= 1 && id <= MAX_ID ? id : null;
 }
 
-const PHONE_QUERY = /^[\d\s+().-]+$/;
+const PHONE_QUERY = /^[\d +().-]+$/;
 const digitsOf = (value: string) => value.replace(/\D/g, "");
 
 /**

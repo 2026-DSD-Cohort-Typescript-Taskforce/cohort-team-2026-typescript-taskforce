@@ -24,7 +24,7 @@ const WORDS: Record<VendorField, string> = { name: "name", email: "email", addre
 
 // local@domain, where the domain has at least two non-empty dot-separated labels.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
-const PHONE_PATTERN = /^\+?[\d\s().-]+$/;
+const PHONE_PATTERN = /^[\d +().-]+$/;
 
 const length = (value: string) => [...value].length;
 
