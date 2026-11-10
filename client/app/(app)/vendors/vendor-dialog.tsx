@@ -16,7 +16,7 @@ import {
   type VendorField,
   type VendorInput,
 } from "@/lib/vendor-validation";
-import { LOGO_FAILED, type Vendor } from "@/lib/vendors";
+import { LOGO_FAILED, type Vendor } from "@/lib/vendor-directory";
 import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from "@/app/ui";
 import { DeleteVendorDialog } from "./delete-vendor-dialog";
 import { VendorAvatar } from "./vendor-card";

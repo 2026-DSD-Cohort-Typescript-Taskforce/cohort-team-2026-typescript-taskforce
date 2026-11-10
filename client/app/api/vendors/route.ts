@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { createUserClient, readJsonObject, reply } from "@/lib/supabase";
 import { replyWithVendorError, requireVendorManager, toVendor, VENDOR_SELECT, type VendorRow } from "@/lib/vendor-routes";
 import { VENDOR_FIELDS, validateVendorInput } from "@/lib/vendor-validation";
-import { invalidVendor, LOAD_VENDORS_FAILED } from "@/lib/vendors";
+import { invalidVendor, LOAD_VENDORS_FAILED } from "@/lib/vendor-directory";
 
 /** Every vendor, by name. */
 export async function GET(request: NextRequest) {

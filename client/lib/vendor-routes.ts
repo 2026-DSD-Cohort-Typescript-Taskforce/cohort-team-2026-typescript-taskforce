@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reply } from "@/lib/supabase";
 import type { SupabaseError } from "@/lib/submit-errors";
-import { INVALID_LOGO_REPLY, LOGO_FAILED, toVendorErrorResponse, VENDOR_FORBIDDEN, type Vendor } from "@/lib/vendors";
+import { INVALID_LOGO_REPLY, LOGO_FAILED, toVendorErrorResponse, VENDOR_FORBIDDEN, type Vendor } from "@/lib/vendor-directory";
 
 export const VENDOR_SELECT = "vendor_id, name, email, address, phone, logo_path";
 export const LOGO_BUCKET = "vendor-logos";

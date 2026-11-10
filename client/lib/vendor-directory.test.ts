@@ -22,7 +22,7 @@ import {
   upsertVendor,
   vendorBanner,
   type Vendor,
-} from "./vendors.ts";
+} from "./vendor-directory.ts";
 import { SIGNED_OUT } from "./submit-errors.ts";
 
 const vendor = (vendor_id: number, name: string, rest: Partial<Vendor> = {}): Vendor => ({

@@ -13,7 +13,7 @@ import {
   upsertVendor,
   vendorBanner,
   type Vendor,
-} from "@/lib/vendors";
+} from "@/lib/vendor-directory";
 import {
   ErrorAlert,
   Spinner,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { displayValue, type Vendor } from "@/lib/vendors";
+import { displayValue, type Vendor } from "@/lib/vendor-directory";
 import { colorTransition, focusRing } from "@/app/ui";
 
 /** The vendor's logo, or a generic avatar when it has none or the image doesn't load. */

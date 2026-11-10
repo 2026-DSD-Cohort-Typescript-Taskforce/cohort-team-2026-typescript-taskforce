@@ -8,7 +8,7 @@ import {
   LOAD_VENDORS_FAILED,
   SAVE_VENDOR_FAILED,
   type Vendor,
-} from "./vendors";
+} from "./vendor-directory";
 import type { VendorInput } from "./vendor-validation";
 
 const readVendor = (body: { vendor: Vendor }) => body.vendor;

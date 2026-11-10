@@ -11,7 +11,7 @@ import {
   type VendorRow,
 } from "@/lib/vendor-routes";
 import { logoExtension } from "@/lib/vendor-validation";
-import { INVALID_LOGO_REPLY, LOGO_FAILED, parseVendorId, VENDOR_NOT_FOUND } from "@/lib/vendors";
+import { INVALID_LOGO_REPLY, LOGO_FAILED, parseVendorId, VENDOR_NOT_FOUND } from "@/lib/vendor-directory";
 
 /** Sets a vendor's logo from the multipart `logo` field, then removes the old file. */
 export async function PUT(request: NextRequest, ctx: RouteContext<"/api/vendors/[id]/logo">) {

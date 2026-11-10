@@ -9,7 +9,7 @@ import {
   type VendorRow,
 } from "@/lib/vendor-routes";
 import { VENDOR_FIELDS, validateVendorInput } from "@/lib/vendor-validation";
-import { DELETE_VENDOR_FAILED, invalidVendor, parseVendorId, VENDOR_NOT_FOUND } from "@/lib/vendors";
+import { DELETE_VENDOR_FAILED, invalidVendor, parseVendorId, VENDOR_NOT_FOUND } from "@/lib/vendor-directory";
 
 /** Saves a vendor's details. The logo has its own route. */
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/vendors/[id]">) {
