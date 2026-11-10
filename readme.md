@@ -273,6 +273,21 @@ Run session/helper tests from the repo root (Node 24; no database calls):
 node --conditions=react-server --import ./server/node_modules/tsx/dist/loader.mjs --test client/tests/*.test.ts
 ```
 
+## User helpers (DC-34)
+
+`client/lib/users.ts` provides server-only profile list/read/create/update/delete
+helpers using the current session. These operate on `public.users`, not Auth accounts.
+Current policies allow reading profiles and editing only the caller's name/phone;
+create/delete return 403. Updating another profile may return null because RLS hides
+it from updates. Role, property, email, and Auth links cannot be edited by these helpers.
+Email changes use `/api/auth/email`. No service-role key or policy changes are included.
+
+Run mocked tests from the repo root:
+
+```bash
+node --conditions=react-server --import ./server/node_modules/tsx/dist/loader.mjs --test client/tests/users.test.ts
+```
+
 ## Environment variables
 
 ### Server (`server/.env`)
