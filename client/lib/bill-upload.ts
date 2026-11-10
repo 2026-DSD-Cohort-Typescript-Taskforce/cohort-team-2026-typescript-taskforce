@@ -3,20 +3,22 @@
 
 export const BILL_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
-const KINDS: Record<string, "pdf" | "image"> = {
+// leaving optional code for later imporovements of other images !  
+
+const KINDS: Record<string, "pdf" > = {
   "application/pdf": "pdf",
-  "image/png": "image",
-  "image/jpeg": "image",
+  // "image/png": "image",
+  // "image/jpeg": "image",
 };
 
-const EXTENSIONS: Record<string, "pdf" | "image"> = {
+const EXTENSIONS: Record<string, "pdf" > = {
   pdf: "pdf",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
+  // png: "image",
+  // jpg: "image",
+  // jpeg: "image",
 };
 
-export type BillUploadKind = "pdf" | "image";
+export type BillUploadKind = "pdf";
 
 /** pdf, image, or null when the file is not a bill the intake screen can show. */
 export function billUploadKind(file: { type: string; name: string }): BillUploadKind | null {
