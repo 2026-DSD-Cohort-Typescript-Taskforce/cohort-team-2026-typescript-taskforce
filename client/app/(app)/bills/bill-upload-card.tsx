@@ -93,7 +93,7 @@ export function BillUploadCard() {
             setDragging(false);
           }}
           onDrop={onDrop}
-          className={`flex min-h-80 cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-input border border-strong bg-background px-6 py-10 text-center hover:border-primary hover:bg-raised focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary data-dragging:border-primary data-dragging:bg-raised ${colorTransition}`}
+          className={`flex min-h-0 flex-1 cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-input border border-strong bg-background px-6 py-10 text-center hover:border-primary hover:bg-raised focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary data-dragging:border-primary data-dragging:bg-raised ${colorTransition}`}
         >
           {previewUrl && chosen ? (
             <BillPreview url={previewUrl} chosen={chosen} />
@@ -125,9 +125,9 @@ function BillPreview({ url, chosen }: { url: string; chosen: Chosen }) {
       {chosen.kind === "image" ? (
         // Blob previews are local and short-lived, so next/image cannot optimize them.
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="max-h-80 w-full object-contain" />
+        <img src={url} alt="" className="max-h-full w-full object-contain" />
       ) : (
-        <iframe title={chosen.name} src={url} className="h-80 w-full bg-background" />
+        <iframe title={chosen.name} src={url} className="h-full min-h-0 w-full bg-background" />
       )}
       <span className="text-body-sm text-secondary">
         {chosen.name} · {formatFileSize(chosen.size)}

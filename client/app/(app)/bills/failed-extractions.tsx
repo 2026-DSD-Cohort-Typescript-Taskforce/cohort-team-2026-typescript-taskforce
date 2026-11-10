@@ -17,7 +17,7 @@ const seeMore = `inline-flex h-10 shrink-0 items-center justify-center rounded-b
  */
 export function FailedExtractions({ issues }: { issues: FailedExtraction[] }) {
   return (
-    <section aria-label="Failed extractions" className="rounded-card border border-subtle bg-surface">
+    <section aria-label="Failed extractions" className="shrink-0 rounded-card border border-subtle bg-surface">
       <h2 className="flex items-center gap-2 border-b border-subtle px-5 py-4 text-body-lg font-semibold">
         Current issues
         <WarningMark />

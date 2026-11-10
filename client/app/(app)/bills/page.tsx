@@ -12,11 +12,11 @@ export const metadata: Metadata = {
 // bills list sits on the right. proxy.ts sends signed-out visits to /login.
 export default function BillsPage() {
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-2">
-      <h1 className="text-heading lg:col-span-2">Bills</h1>
+<div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">      
+  <h1 className="text-heading lg:col-span-2">Bills</h1>
       <BillUploadCard />
-      <div className="flex min-w-0 flex-col gap-6">
-        <section aria-label="Bills" className="min-h-0">
+      <div className="flex min-h-0 min-w-0 flex-col gap-6 lg:overflow-hidden">
+        <section aria-label="Bills" className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <BillsProvider>
             <BillsList />
           </BillsProvider>

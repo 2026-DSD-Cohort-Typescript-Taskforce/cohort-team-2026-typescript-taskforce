@@ -20,7 +20,7 @@ export function BillsList() {
 
 if (!bills) {
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
+    <div className="h-full min-h-0 ">
       {error ? <LoadError message={error} retrying={loading} onRetry={refresh} /> : <ListSkeleton />}
     </div>
   );
@@ -48,10 +48,10 @@ if (!bills) {
   }
 
   return (
-    <section aria-label="Bills list" className="flex h-[32rem] min-h-0 flex-col gap-4">
+    <section aria-label="Bills list" className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="flex flex-1 flex-col gap-1">
-          <label htmlFor={searchId} className="text-body-sm text-secondary">
+<div className="flex min-w-0 flex-1 flex-col gap-1">          
+  <label htmlFor={searchId} className="text-body-sm text-secondary">
             Search
           </label>
           <input
@@ -84,8 +84,8 @@ if (!bills) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
+<div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">       
+   {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
 
         <p role="status" className="sr-only">
           {shown.length === bills.length
