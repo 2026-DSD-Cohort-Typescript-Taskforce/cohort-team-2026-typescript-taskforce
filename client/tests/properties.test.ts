@@ -26,6 +26,14 @@ test('property helpers use the signed-in session', async (t) => {
   let rows: Property[] = [property];
   const calls: { url: URL; method: string; headers: Headers; body?: BodyInit | null }[] = [];
 
+  t.beforeEach(() => {
+    token = 'session-jwt';
+    authStatus = 200;
+    propertyStatus = 200;
+    rows = [property];
+    calls.length = 0;
+  });
+
   globalThis.fetch = async (url, init) => {
     const call = {
       url: new URL(String(url)), method: init?.method ?? 'GET',
@@ -55,12 +63,10 @@ test('property helpers use the signed-in session', async (t) => {
 
   try {
     await t.test('reads validate the session before querying properties', async () => {
-      calls.length = 0;
       assert.deepEqual(await request(fetchProperties), [property]);
       assert.deepEqual(calls.map((call) => call.url.pathname), ['/api/auth/me', '/rest/v1/properties']);
       assert.deepEqual(await request(() => fetchPropertyById('7')), property);
-      assert.equal(calls.at(-1)?.url.searchParams.get('property_id'), 'eq.7');
-      assert.equal(calls.at(-1)?.url.searchParams.get('limit'), '1');
+      assert.equal(calls.at(-1)?.url.search, '?property_id=eq.7&limit=1');
     });
     await t.test('empty reads return an empty list or null', async () => {
       rows = [];
@@ -85,8 +91,7 @@ test('property helpers use the signed-in session', async (t) => {
       assert.deepEqual(await request(() => updateProperty('7', { name: 'Renamed' })), property);
       const call = calls.at(-1)!;
       assert.equal(call.method, 'PATCH');
-      assert.equal(call.url.searchParams.get('property_id'), 'eq.7');
-      assert.equal(call.url.searchParams.has('bill_id'), false);
+      assert.equal(call.url.search, '?property_id=eq.7');
       assert.equal(call.headers.get('prefer'), 'return=representation');
       assert.deepEqual(JSON.parse(String(call.body)), { name: 'Renamed' });
       rows = [];
@@ -98,8 +103,7 @@ test('property helpers use the signed-in session', async (t) => {
       assert.equal(await request(() => deleteProperty('7')), 204);
       const call = calls.at(-1)!;
       assert.equal(call.method, 'DELETE');
-      assert.equal(call.url.searchParams.get('property_id'), 'eq.7');
-      assert.equal(call.url.searchParams.has('bill_id'), false);
+      assert.equal(call.url.search, '?property_id=eq.7');
       assert.equal(call.body, undefined);
       propertyStatus = 200;
     });
