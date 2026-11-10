@@ -253,6 +253,26 @@ Only paths with a `route.ts` reach Express. Any other `/api/...` path returns 40
 
 `client/lib/backend.ts` and `client/lib/forward.ts` import `server-only`, so the build fails if either is ever imported into a `"use client"` component.
 
+## Bill helper sessions (DC-79)
+
+`client/lib/bills.ts` is server-only. Helpers read and validate the login token through
+`accessToken.ts`; callers do not pass tokens:
+
+```ts
+const bills = await fetchRecentPaidBills();
+const bill = await updateBill('1', { amount: 125 });
+```
+
+Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` in `client/.env` to the same project
+as Express. Browser components use `/api/bills`. The dashboard proxy handles refresh;
+helpers reject missing/invalid sessions, and RLS controls database access.
+
+Run session/helper tests from the repo root (Node 24; no database calls):
+
+```bash
+node --conditions=react-server --import ./server/node_modules/tsx/dist/loader.mjs --test client/tests/*.test.ts
+```
+
 ## Environment variables
 
 ### Server (`server/.env`)
