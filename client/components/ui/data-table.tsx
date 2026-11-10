@@ -12,7 +12,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { colorTransition, focusRing } from '@/app/ui';
-import { compareCells } from '@/lib/table-sort';
+import { sortColumn } from '@/lib/table-sort';
 
 export type Column<T> = {
   key: keyof T & string;
@@ -50,11 +50,9 @@ export function DataTable<T extends object>({
     () =>
       columns.map((c) => ({
         id: c.key,
-        accessorKey: c.key,
+        ...sortColumn<T>(c.key),
         header: c.label,
         cell: (ctx) => (c.render ? c.render(ctx.row.original) : String(ctx.getValue() ?? '')),
-        sortingFn: (a, b, id) => compareCells(a.getValue(id), b.getValue(id)),
-        sortDescFirst: false,
         filterFn: 'includesString' as const, // the 'auto' default treats numbers as ranges
       })),
     [columns],
