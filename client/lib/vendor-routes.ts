@@ -3,7 +3,15 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { reply } from "@/lib/supabase";
 import type { SupabaseError } from "@/lib/submit-errors";
-import { INVALID_LOGO_REPLY, LOGO_FAILED, toVendorErrorResponse, VENDOR_FORBIDDEN, type Vendor } from "@/lib/vendor-directory";
+import {
+  INVALID_LOGO_REPLY,
+  LOGO_FAILED,
+  toVendorErrorResponse,
+  VENDOR_FORBIDDEN,
+  VENDOR_NOT_FOUND,
+  type Vendor,
+} from "@/lib/vendor-directory";
+import type { LogoStore, LogoSwap } from "@/lib/vendor-queries";
 
 export const VENDOR_SELECT = "vendor_id, name, email, address, phone, logo_path";
 export const LOGO_BUCKET = "vendor-logos";
@@ -44,6 +52,29 @@ export function replyWithStorageError(error: StorageError): Response {
   if (status === 413 || status === 415) return reply(INVALID_LOGO_REPLY);
   if (status === 400 && /mime|size|too large|exceed/i.test(error.message ?? "")) return reply(INVALID_LOGO_REPLY);
   console.error("Logo upload failed:", error);
+  return reply({ status: 500, body: { error: LOGO_FAILED, code: "logo_failed" } });
+}
+
+/** One vendor's logo_path for replaceLogoPath (lib/vendor-queries.ts), as the signed-in user. */
+export function logoStore(supabase: SupabaseClient, id: number): LogoStore<VendorRow, SupabaseError> {
+  return {
+    read: () => supabase.from("vendors").select("logo_path").eq("vendor_id", id).maybeSingle(),
+    swap: (expected, next) => {
+      const update = supabase
+        .from("vendors")
+        .update({ logo_path: next, updated_at: new Date().toISOString() })
+        .eq("vendor_id", id);
+      const unchanged = expected === null ? update.is("logo_path", null) : update.eq("logo_path", expected);
+      return unchanged.select(VENDOR_SELECT).maybeSingle();
+    },
+  };
+}
+
+/** Replies to a logo change that didn't save: 404, a Supabase error, or a logged 500. */
+export function replyWithLogoSwapFailure(swap: Exclude<LogoSwap<VendorRow, SupabaseError>, { kind: "saved" }>): Response {
+  if (swap.kind === "missing") return reply(VENDOR_NOT_FOUND);
+  if (swap.kind === "error") return replyWithVendorError(swap.error, LOGO_FAILED);
+  console.error("Logo not changed: other requests kept changing it.");
   return reply({ status: 500, body: { error: LOGO_FAILED, code: "logo_failed" } });
 }
 

@@ -49,14 +49,11 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/vendo
   const id = parseVendorId((await ctx.params).id);
   if (id === null) return reply(VENDOR_NOT_FOUND);
 
-  const found = await supabase.from("vendors").select("logo_path").eq("vendor_id", id).maybeSingle();
-  if (found.error) return replyWithVendorError(found.error, DELETE_VENDOR_FAILED);
-  if (!found.data) return reply(VENDOR_NOT_FOUND);
-
-  const { data, error } = await supabase.from("vendors").delete().eq("vendor_id", id).select("vendor_id");
+  const { data, error } = await supabase.from("vendors").delete().eq("vendor_id", id).select("logo_path");
   if (error) return replyWithVendorError(error, DELETE_VENDOR_FAILED);
   if (!data?.length) return reply(VENDOR_NOT_FOUND);
 
-  await removeLogoFile(supabase, found.data.logo_path);
+  // The deleted row's own logo_path, so a logo set just before the delete goes too.
+  await removeLogoFile(supabase, data[0].logo_path);
   return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }
