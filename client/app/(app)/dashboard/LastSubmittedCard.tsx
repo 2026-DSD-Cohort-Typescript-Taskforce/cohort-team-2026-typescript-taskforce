@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
-import { backend } from '@/lib/backend';
 import { fetchLastSubmittedBill } from '@/lib/bills';
+
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -12,24 +12,10 @@ const tone = (status: string) =>
       ? 'danger'
       : 'warning';
 
-async function getLastSubmittedBill(jar: Awaited<ReturnType<typeof cookies>>) {
-  const token = jar.get('sb-access-token')?.value;
-  if (!token) return null;
-  const res = await backend('/api/auth/me', {
-    headers: { cookie: jar.toString() },
-  });
-
-  if (!res.ok) {
-    return null;
-  }
-
-  return fetchLastSubmittedBill(token);
-}
-
 export async function LastSubmittedCard() {
   // await cookies() outside the catch so Next can handle its prerender rejection
-  const jar = await cookies();
-  const bill = await getLastSubmittedBill(jar).catch((error) => {
+  await cookies();
+  const bill = await fetchLastSubmittedBill().catch((error) => {
     console.error(error);
     return null;
   });
