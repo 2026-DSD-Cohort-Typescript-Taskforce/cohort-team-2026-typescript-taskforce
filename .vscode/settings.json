@@ -1,0 +1,5 @@
+{
+  "deno.enablePaths": ["./supabase/functions"],
+  "deno.path": "/home/batz-j/.local/bin/deno",
+  "deno.config": "./supabase/functions/deno.json"
+}
