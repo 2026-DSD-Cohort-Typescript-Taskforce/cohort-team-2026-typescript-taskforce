@@ -13,9 +13,9 @@ export const VENDOR_POLICY_SELECT =
  * A 403 reply unless the caller may change policies. RLS also blocks other roles, but an
  * update it blocks matches 0 rows, so every write asks first (is_policy_manager()).
  */
-export async function requirePolicyManager(supabase: SupabaseClient): Promise<Response | null> {
+export async function requirePolicyManager(supabase: SupabaseClient, fallback?: string): Promise<Response | null> {
   const { data, error } = await supabase.rpc("is_policy_manager");
-  if (error) return replyWithPolicyError(error);
+  if (error) return replyWithPolicyError(error, fallback);
   return data === true ? null : reply(POLICY_FORBIDDEN);
 }
 

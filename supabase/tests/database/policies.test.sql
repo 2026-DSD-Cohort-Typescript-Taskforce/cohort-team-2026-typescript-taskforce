@@ -6,7 +6,8 @@ select plan(57);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. Test vendors are seeded ones (fixtures insert no vendors):
--- Alder Creek Landscaping and Brightwater Water & Sewer, neither with a seeded policy.
+-- Alder Creek Landscaping, Brightwater Water & Sewer and Summit Trail Equipment Rental. The
+-- file adds its own policy for Summit Trail, so it does not depend on seeded policies.
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000085a1', 'dc85-a@example.test'),
   ('00000000-0000-4000-8000-0000000085a2', 'dc85-b@example.test'),
@@ -17,6 +18,10 @@ insert into public.users (user_id, name, email, role, property_id, auth_user_id)
   (85101, 'Operator A', 'dc85-a@example.test', 'billing_operator', 85001, '00000000-0000-4000-8000-0000000085a1'),
   (85102, 'Approver B', 'dc85-b@example.test', 'financial_approver', 85001, '00000000-0000-4000-8000-0000000085a2'),
   (85103, 'Admin C', 'dc85-c@example.test', 'system_admin', 85001, '00000000-0000-4000-8000-0000000085a3');
+
+insert into public.policies (vendor_id, name, description, is_active)
+select vendor_id, 'DC85 fixture policy', 'Fixture policy for the read and write checks.', true
+from public.vendors where name = 'Summit Trail Equipment Rental';
 
 -- How many rows a statement changed (RLS can make an UPDATE or DELETE match none).
 create function pg_temp.rows_changed(p_sql text) returns integer
@@ -108,12 +113,12 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000085a1","role":"authenticated"}';
 select is(
-  (select name from public.policies where vendor_id = (select vendor_id from public.vendors where name = 'Sunmeadow Cleaning')),
-  'Automatic approval for payments', 'operator can read the seeded Sunmeadow policy');
+  (select name from public.policies where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')),
+  'DC85 fixture policy', 'operator can read a policy');
 select is(public.is_policy_manager(), false, 'operator is not a policy manager');
 select throws_ok($$insert into public.policies (vendor_id, name, description) values ((select vendor_id from public.vendors where name = 'Alder Creek Landscaping'), 'x', 'x')$$, '42501', null, 'operator cannot insert policies');
-select is(pg_temp.rows_changed($$update public.policies set is_active = false where vendor_id = (select vendor_id from public.vendors where name = 'Sunmeadow Cleaning')$$), 0, 'operator update changes 0 rows');
-select throws_ok($$delete from public.policies where vendor_id = (select vendor_id from public.vendors where name = 'Sunmeadow Cleaning')$$, '42501', null, 'operator cannot delete policies');
+select is(pg_temp.rows_changed($$update public.policies set is_active = false where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')$$), 0, 'operator update changes 0 rows');
+select throws_ok($$delete from public.policies where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')$$, '42501', null, 'operator cannot delete policies');
 reset role;
 
 -- Login D: no profile

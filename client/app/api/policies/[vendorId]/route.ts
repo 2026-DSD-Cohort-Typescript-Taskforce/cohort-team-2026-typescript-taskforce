@@ -17,7 +17,7 @@ export async function PUT(request: NextRequest, ctx: RouteContext<"/api/policies
   const supabase = createUserClient(request);
   if (supabase instanceof Response) return supabase;
 
-  const forbidden = await requirePolicyManager(supabase);
+  const forbidden = await requirePolicyManager(supabase, SAVE_POLICY_FAILED);
   if (forbidden) return forbidden;
 
   const vendorId = parseVendorId((await ctx.params).vendorId);
@@ -61,7 +61,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/polici
   const supabase = createUserClient(request);
   if (supabase instanceof Response) return supabase;
 
-  const forbidden = await requirePolicyManager(supabase);
+  const forbidden = await requirePolicyManager(supabase, TOGGLE_POLICY_FAILED);
   if (forbidden) return forbidden;
 
   const vendorId = parseVendorId((await ctx.params).vendorId);

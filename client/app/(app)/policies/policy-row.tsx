@@ -74,10 +74,14 @@ export function PolicyRow({
       <input
         type="checkbox"
         checked={policy?.is_active ?? false}
-        disabled={!policy || !roleKnown || !canManage || saving}
+        disabled={!policy || !roleKnown || !canManage}
+        // aria-disabled, not disabled, while saving: disabled would drop focus to the body.
+        aria-disabled={saving || undefined}
         aria-label={checkboxLabel(vendor)}
-        onChange={(event) => onToggle(vendor, event.target.checked)}
-        className="mt-1 size-5 shrink-0 accent-primary disabled:cursor-not-allowed"
+        onChange={(event) => {
+          if (!saving) onToggle(vendor, event.target.checked);
+        }}
+        className="mt-1 size-5 shrink-0 accent-primary disabled:cursor-not-allowed aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
       />
       <h3 className="mt-0.5 min-w-0 text-body-lg font-semibold break-words">{vendor.name}</h3>
       <div className="col-span-3 row-start-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-3 sm:row-start-1">
