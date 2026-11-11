@@ -1,51 +1,102 @@
-import Link from "next/link";
-import { focusRing, colorTransition } from "@/app/ui";
+'use client';
 
-export type FailedExtraction = {
-  id: string;
-  title: string;
-  message: string;
-  severity: "warning" | "error";
-  href?: string;
-};
+// The Current issues card under My Bills. It lists every draft that's missing details,
+// built from the loaded bills so it survives a reload, then this session's notices
+// (duplicate, needs review, rejected, failed). Choosing a draft opens its fix form in
+// place of the list.
 
-const seeMore = `inline-flex h-10 shrink-0 items-center justify-center rounded-button border border-strong px-4 text-body-sm font-semibold text-foreground hover:border-primary hover:bg-raised ${colorTransition} ${focusRing}`;
+import Link from 'next/link';
+import { currentIssues } from '@/lib/current-issues';
+import { colorTransition, focusRing } from '@/app/ui';
+import { useBills } from './bills-provider';
+import { FixBillForm } from './fix-bill-form';
+import { useIntake } from './intake-provider';
+
+const rowButton = `flex w-full items-center gap-4 border-b border-subtle px-5 py-4 text-left last:border-b-0 hover:bg-raised ${colorTransition} ${focusRing}`;
+const smallButton = `inline-flex h-10 shrink-0 items-center justify-center rounded-button border border-strong px-4 text-body-sm font-semibold text-foreground hover:border-primary hover:bg-raised ${colorTransition} ${focusRing}`;
 
 /**
- * Sits under the bills list (FigJam "Current Issues"). Each row is one extraction that
- * did not finish, with the status message and a way to open it.
+ * Under the bills list (FigJam "Current Issues"): drafts missing details, then this
+ * session's notices. Choosing a draft opens its fix form here.
  */
-export function FailedExtractions({ issues }: { issues: FailedExtraction[] }) {
+export function CurrentIssues() {
+  const { bills } = useBills();
+  const { panel, setPanel, notices, dismissNotice } = useIntake();
+  const issues = currentIssues(bills ?? []);
+
   return (
-    <section aria-label="Failed extractions" className="shrink-0 rounded-card border border-subtle bg-surface">
+    <section
+      aria-label="Current issues"
+      className="flex shrink-0 flex-col overflow-hidden rounded-card border border-subtle bg-surface lg:min-h-0 lg:flex-1 lg:shrink lg:basis-0"
+    >
       <h2 className="flex items-center gap-2 border-b border-subtle px-5 py-4 text-body-lg font-semibold">
         Current issues
         <WarningMark />
       </h2>
-      {issues.length === 0 ? (
-        <p className="px-5 py-6 text-body text-secondary">No failed extractions.</p>
+
+      {panel.kind === 'fix' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <FixBillForm key={panel.billId} billId={panel.billId} />
+        </div>
+      ) : issues.length === 0 && notices.length === 0 ? (
+        <p className="px-5 py-6 text-body text-secondary">No current issues.</p>
       ) : (
-        <ul className="flex flex-col">
+        <ul className="flex max-h-72 flex-col overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1">
           {issues.map((issue) => (
-            <li key={issue.id} className="flex items-center gap-4 border-b border-subtle px-5 py-4 last:border-b-0">
-              <span
-                aria-hidden="true"
-                className={`size-2.5 shrink-0 rounded-full ${issue.severity === "error" ? "bg-danger-bright" : "bg-warning-bright"}`}
-              />
+            <li key={`bill-${issue.billId}`}>
+              <button
+                type="button"
+                onClick={() => setPanel({ kind: 'fix', billId: issue.billId })}
+                className={rowButton}
+              >
+                <Dot severity={issue.severity} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body font-semibold break-words">{issue.title}</span>
+                  <span className="block text-body-sm break-words text-secondary">
+                    Status message: {issue.message}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+          {notices.map((notice) => (
+            <li
+              key={notice.id}
+              className="flex items-center gap-4 border-b border-subtle px-5 py-4 last:border-b-0"
+            >
+              <Dot severity={notice.severity} />
               <span className="min-w-0 flex-1">
-                <span className="block text-body font-semibold break-words">{issue.title}</span>
-                <span className="block text-body-sm text-secondary break-words">Status message: {issue.message}</span>
+                <span className="block text-body font-semibold break-words">{notice.title}</span>
+                <span className="block text-body-sm break-words text-secondary">
+                  Status message: {notice.message}
+                </span>
               </span>
-              {issue.href ? (
-                <Link href={issue.href} className={seeMore}>
+              {notice.billId && (
+                <Link href={`/bills/${notice.billId}`} className={smallButton}>
                   See more
                 </Link>
-              ) : null}
+              )}
+              <button
+                type="button"
+                onClick={() => dismissNotice(notice.id)}
+                className={smallButton}
+              >
+                Dismiss
+              </button>
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function Dot({ severity }: { severity: 'warning' | 'error' }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`size-2.5 shrink-0 rounded-full ${severity === 'error' ? 'bg-danger-bright' : 'bg-warning-bright'}`}
+    />
   );
 }
 
