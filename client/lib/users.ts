@@ -1,12 +1,15 @@
 import 'server-only';
 
 import { getSessionAccessToken } from './accessToken';
-import type { User, CreateUserInput, UpdateUserInput } from '@/types/users';
+import type { User, UpdateUserInput } from '@/types/users';
 
 export type { UpdateUserInput } from '@/types/users';
 
 export class UserRequestError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'UserRequestError';
   }
@@ -25,16 +28,16 @@ async function requestUsers(query: string, init?: RequestInit): Promise<Response
   headers.set('apikey', SUPABASE_PUBLISHABLE_KEY);
   headers.set('Authorization', `Bearer ${accessToken}`);
 
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/users${query ? `?${query}` : ''}`, {
-    ...init,
-    cache: 'no-store',
-    headers,
-  });
+  const response = await fetch(
+    `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/users${query ? `?${query}` : ''}`,
+    {
+      ...init,
+      cache: 'no-store',
+      headers,
+    },
+  );
   if (!response.ok) {
-    const message = response.status === 403
-      ? 'This user operation is not permitted. Signed-in users can read profiles and update only their own name and phone.'
-      : `User request failed: ${response.status}`;
-    throw new UserRequestError(response.status, message);
+    throw new UserRequestError(response.status, `User request failed: ${response.status}`);
   }
   return response;
 }
@@ -50,36 +53,28 @@ export async function fetchUserById(id: string): Promise<User | null> {
   return users[0] ?? null;
 }
 
-export async function createUser(data: CreateUserInput): Promise<User> {
-  const response = await requestUsers('', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify(data),
-  });
-  const users: User[] = await response.json();
-  if (!users[0]) throw new Error('No created user was returned.');
-  return users[0];
-}
-
 export async function updateUser(id: string, data: UpdateUserInput): Promise<User | null> {
-  const keys = Object.keys(data);
+  const changes = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  );
+  const keys = Object.keys(changes);
   if (keys.length === 0 || keys.some((key) => key !== 'name' && key !== 'phone')) {
     throw new UserRequestError(400, 'Only name and phone may be updated.');
   }
-  if (('name' in data && (typeof data.name !== 'string' || data.name.length > 255)) ||
-      ('phone' in data && data.phone !== null && (typeof data.phone !== 'string' || data.phone.length > 255))) {
+  const name = changes.name;
+  const phone = changes.phone;
+  if (
+    ('name' in changes &&
+      (typeof name !== 'string' || name.trim().length === 0 || [...name].length > 255)) ||
+    ('phone' in changes && phone !== null && (typeof phone !== 'string' || [...phone].length > 255))
+  ) {
     throw new UserRequestError(400, 'Enter a valid name and phone (at most 255 characters each).');
   }
   const response = await requestUsers(`user_id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify(data),
+    body: JSON.stringify(changes),
   });
   const users: User[] = await response.json();
   return users[0] ?? null;
-}
-
-export async function deleteUser(id: string): Promise<number> {
-  const response = await requestUsers(`user_id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
-  return response.status;
 }
