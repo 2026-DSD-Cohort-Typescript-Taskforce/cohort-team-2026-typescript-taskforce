@@ -77,8 +77,8 @@ select is(
 select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
 select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
 select policies_are('public', 'bills',
-  ARRAY['bills table is public', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete bills'],
-  'bills has the public read policy, the two draft-only write policies and the delete policy');
+  ARRAY['authenticated users can view bills', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete draft bills'],
+  'bills has the signed-in read policy and the three draft-only write policies (DC-21)');
 select policy_cmd_is('public', 'bills', 'authenticated users can insert draft bills', 'insert', 'draft insert policy covers INSERT');
 select policy_roles_are('public', 'bills', 'authenticated users can insert draft bills', ARRAY['authenticated'], 'draft insert policy is for authenticated only');
 select policy_cmd_is('public', 'bills', 'authenticated users can update draft bills', 'update', 'draft update policy covers UPDATE');
