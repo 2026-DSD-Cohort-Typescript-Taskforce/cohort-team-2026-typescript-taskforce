@@ -53,7 +53,7 @@ test("parseVendorId accepts positive integers up to the Postgres limit", () => {
 
 test("toPolicyVendor unwraps the embedded policy", () => {
   const p = policy(1, "A");
-  const { policies: _, ...base } = { ...vendor(1, "V"), policies: null };
+  const base = { vendor_id: 1, name: "V", supported_payment_methods: null, payment_portal_url: null };
   assert.deepEqual(toPolicyVendor({ ...base, policies: p }), vendor(1, "V", p));
   assert.deepEqual(toPolicyVendor({ ...base, policies: [p] }), vendor(1, "V", p));
   assert.equal(toPolicyVendor({ ...base, policies: [] }).policy, null);
