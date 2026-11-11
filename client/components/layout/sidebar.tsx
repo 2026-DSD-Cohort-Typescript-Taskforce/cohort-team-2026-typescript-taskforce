@@ -16,6 +16,7 @@ const links = [
   },
   { href: '#', label: 'Accounts', icon: 'M3 9l9-5 9 5M5 9v9M10 9v9M14 9v9M19 9v9M3 20h18' },
   { href: '#', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
+  { href: '/policies', label: 'Policies', icon: 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z' },
   {
     href: '#',
     label: 'Settings',
