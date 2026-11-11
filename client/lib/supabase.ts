@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
+import { toDecisionErrorResponse } from "./approvals";
 import { NO_PROFILE, SAVE_FAILED, toWriteErrorResponse } from "./bill-errors";
 import { SIGNED_OUT, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors";
 
@@ -44,6 +45,11 @@ export function replyWithError(error: SupabaseError, fallback?: string) {
 /** As replyWithError, for an insert or update on bills (lib/bill-errors.ts). */
 export function replyWithWriteError(error: SupabaseError, fallback?: string) {
   return replyWithLogged(error, toWriteErrorResponse(error, fallback));
+}
+
+/** As replyWithError, for deciding a bill (lib/approvals.ts). */
+export function replyWithDecisionError(error: SupabaseError) {
+  return replyWithLogged(error, toDecisionErrorResponse(error));
 }
 
 function replyWithLogged(error: SupabaseError, response: ErrorResponse) {
