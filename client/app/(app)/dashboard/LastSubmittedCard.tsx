@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { fetchLastSubmittedBill } from '@/lib/bills';
 
@@ -12,6 +13,8 @@ const tone = (status: string) =>
       : 'warning';
 
 export async function LastSubmittedCard() {
+  // await cookies() outside the catch so Next can handle its prerender rejection
+  await cookies();
   const bill = await fetchLastSubmittedBill().catch((error) => {
     console.error(error);
     return null;

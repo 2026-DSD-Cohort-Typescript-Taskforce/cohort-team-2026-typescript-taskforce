@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { fetchPendingApprovalBills, fetchRecentPaidBills } from '@/lib/bills';
 import { BillTable, type BillTableRow } from './BillTable';
 
@@ -14,6 +15,8 @@ const toRow = (b: BillRow, sub: string): BillTableRow => ({
 });
 
 async function load(fetcher: () => Promise<BillRow[]>) {
+  // await cookies() outside the catch so Next can handle its prerender rejection
+  await cookies();
   return fetcher().catch((e) => (console.error(e), []));
 }
 
