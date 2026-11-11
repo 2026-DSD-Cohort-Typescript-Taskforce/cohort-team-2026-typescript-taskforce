@@ -25,10 +25,7 @@ const EMPTY: BillStatusCounts = {
 
 // count the signed-in user's bills per status
 export async function getBillStatusCounts(): Promise<BillStatusCounts> {
-  const token = (await cookies()).get('sb-access-token')?.value;
-  if (!token) return EMPTY;
-
-  const rows = await getBillStatusRows(token).catch((error) => {
+  const rows = await getBillStatusRows().catch((error) => {
     console.error(error);
     return [];
   });
@@ -49,6 +46,8 @@ function toBuckets(c: BillStatusCounts) {
 }
 
 export async function BillAccountsCard() {
+  // await cookies() outside the catch so Next can handle its prerender rejection
+  await cookies();
   const counts = await getBillStatusCounts().catch(() => EMPTY);
   const b = toBuckets(counts);
   const columns = [

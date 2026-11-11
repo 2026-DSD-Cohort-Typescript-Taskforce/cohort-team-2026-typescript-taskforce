@@ -107,7 +107,7 @@ export function BillsList() {
 }
 
 /** The load failed: its message and a Retry button. A failed refresh keeps the list shown. */
-function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+export function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-start gap-3">
       <ErrorAlert message={message} />

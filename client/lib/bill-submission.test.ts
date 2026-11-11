@@ -7,6 +7,7 @@ import {
   describeFailure,
   initialSubmission,
   submissionReducer,
+  submittedMessage,
   type Submission,
   type SubmissionEvent,
 } from "./bill-submission.ts";
@@ -23,7 +24,7 @@ const draft: Bill = {
   date_received: "2026-11-05T15:00:00",
   vendor_id: 1,
   property_id: 2,
-  payment_id: null,
+  payment_id: 1,
   vendor: { name: "Alder Creek Landscaping" },
   property: { name: "Alder Creek Workshop" },
   payment: null,
@@ -81,6 +82,19 @@ test("submitting: the draft is stored, then the bill is submitted for payment", 
   assert.equal(submitted.message, "Bill submitted for payment.");
   assert.equal(submitted.bill?.status, "pending_payment");
   assert.equal(submitted.bill?.bill_id, 41);
+});
+
+test("resubmitting a bill the approver sent back for revision says it went back for approval", () => {
+  const resubmitted = run([
+    { type: "start", action: "submit" },
+    { type: "stored", bill: draft },
+    { type: "submitted", status: "pending_approval" },
+  ]);
+  assert.equal(resubmitted.state, "submitted");
+  assert.equal(resubmitted.message, "Bill resubmitted for approval.");
+  assert.equal(resubmitted.bill?.status, "pending_approval");
+  assert.equal(submittedMessage("pending_approval"), "Bill resubmitted for approval.");
+  assert.equal(submittedMessage("pending_payment"), "Bill submitted for payment.");
 });
 
 test("a refused submit after the draft saved is partial: the draft is kept", () => {
