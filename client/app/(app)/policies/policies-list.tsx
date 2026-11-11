@@ -229,10 +229,9 @@ export function PoliciesList() {
     content = (
       <div className="flex flex-col gap-6">
         {loadError && <LoadError message={loadError} retrying={loading} onRetry={reload} />}
-        <section
-          aria-labelledby={headingId}
-          className="overflow-hidden rounded-card border border-subtle bg-surface"
-        >
+        {/* No overflow-hidden: it would clip a row's ⋮ menu. Nothing inside paints its own
+            background, so the panel's rounded corners hold without it. */}
+        <section aria-labelledby={headingId} className="rounded-card border border-subtle bg-surface">
           <div className="flex flex-col gap-4 border-b border-subtle p-4 sm:p-5">
             {/* tabIndex -1: takes focus when the row whose ⋮ had it goes away. */}
             <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-subheading outline-none">
