@@ -23,7 +23,7 @@ const draft: Bill = {
   date_received: "2026-11-05T15:00:00",
   vendor_id: 1,
   property_id: 2,
-  payment_id: null,
+  payment_id: 1,
   vendor: { name: "Alder Creek Landscaping" },
   property: { name: "Alder Creek Workshop" },
   payment: null,

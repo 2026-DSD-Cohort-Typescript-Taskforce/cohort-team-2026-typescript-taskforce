@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { getBillStatusRows } from '@/lib/bills';
 
@@ -25,10 +24,7 @@ const EMPTY: BillStatusCounts = {
 
 // count the signed-in user's bills per status
 export async function getBillStatusCounts(): Promise<BillStatusCounts> {
-  const token = (await cookies()).get('sb-access-token')?.value;
-  if (!token) return EMPTY;
-
-  const rows = await getBillStatusRows(token).catch((error) => {
+  const rows = await getBillStatusRows().catch((error) => {
     console.error(error);
     return [];
   });

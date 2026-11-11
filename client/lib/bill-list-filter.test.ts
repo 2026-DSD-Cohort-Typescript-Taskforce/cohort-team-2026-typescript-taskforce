@@ -12,9 +12,9 @@ function bill(overrides: Partial<Bill>): Bill {
     date_due: null,
     date_issued: null,
     date_received: "2026-11-01T12:00:00",
-    vendor_id: null,
-    property_id: null,
-    payment_id: null,
+    vendor_id: 1,
+    property_id: 1,
+    payment_id: 1,
     vendor: null,
     property: null,
     payment: null,
@@ -55,7 +55,7 @@ test("a row shows vendor, property, payment, amount and due date", () => {
   });
 });
 
-test("a draft with nothing filled in still reads as a row", () => {
+test("a draft with hidden related rows and no due date still reads as a row", () => {
   assert.deepEqual(billRow(blank), {
     vendor: "No vendor",
     initials: "?",
