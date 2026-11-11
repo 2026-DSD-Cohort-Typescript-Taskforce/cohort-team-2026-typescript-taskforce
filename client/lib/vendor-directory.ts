@@ -110,7 +110,7 @@ export function invalidVendor(fields: string[]): ErrorResponse {
   return { status: 400, body: { error: "Some of the vendor's details aren't valid.", code: "invalid_vendor", fields } };
 }
 
-// The unique index on lower(name) (supabase/migrations/20261109230000_vendors_manage.sql).
+// The unique index on lower(name) (supabase/migrations/20261111170000_vendors_manage.sql).
 const NAME_INDEX = "vendors_name_lower_key";
 
 export function toVendorErrorResponse(error: SupabaseError, fallback = SAVE_VENDOR_FAILED): ErrorResponse {
