@@ -36,3 +36,25 @@ values
     345.00,
     null
   );
+
+-- Synthetic vendor policies (DC-85). Every other vendor stays without one.
+insert into public.policies (vendor_id, name, description, is_active)
+values
+  (
+    (select vendor_id from public.vendors where name = 'Sunmeadow Cleaning'),
+    'Automatic approval for payments',
+    'Pay this vendor''s bills automatically by card through the vendor portal.',
+    true
+  ),
+  (
+    (select vendor_id from public.vendors where name = 'Harborlight Security'),
+    'Manager review for payments',
+    'A financial approver reviews each bill from this vendor before it is paid.',
+    false
+  ),
+  (
+    (select vendor_id from public.vendors where name = 'Maple Junction Storage'),
+    'Automatic approval for payments',
+    'Pay this vendor''s bills automatically by ACH through the vendor portal.',
+    true
+  );
