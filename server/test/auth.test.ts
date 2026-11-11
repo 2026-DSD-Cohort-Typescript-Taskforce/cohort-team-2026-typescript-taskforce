@@ -39,7 +39,7 @@ for (const url of [SUPABASE_URL, MAILPIT_URL]) {
 const ACCESS = 'sb-access-token';
 const REFRESH = 'sb-refresh-token';
 const BAD_CREDENTIALS = { error: 'Incorrect email or password.' };
-const PROFILE_KEYS = ['email', 'name', 'property_id', 'role', 'user_id'];
+const PROFILE_KEYS = ['email', 'name', 'property_id', 'role', 'user_id'];     //<- Does this need to be updated after removing property_id?
 
 let server: Server;
 let baseUrl: string;
