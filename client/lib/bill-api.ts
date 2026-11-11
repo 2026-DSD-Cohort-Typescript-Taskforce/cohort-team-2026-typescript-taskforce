@@ -1,10 +1,11 @@
 // The browser's calls to the app's bill routes (DC-71), through apiFetch: loading and
-// saving bills, running extraction, attaching and viewing bill documents, and adding a
-// vendor or property from the bill form. Each returns the data, a failure with a readable
+// saving bills, running extraction, attaching and viewing bill documents, adding a vendor
+// or property from the bill form, and the approvals queue. Each returns the data, a failure with a readable
 // message, or null while apiFetch sends the user to /login (the caller then does nothing
 // more).
 
 import { apiFetch } from './api-fetch';
+import { DECISION_FAILED, type Decision } from './approvals';
 import { SAVE_FAILED } from './bill-errors';
 import type { BillInput } from './bill-validation';
 import type { Bill, FormOptions } from './bill-view';
@@ -159,5 +160,24 @@ export function addProperty(name: string) {
     sendJson('POST', { name }),
     (body: { property: { id: number } }) => body.property,
     "Couldn't add the property. Try again.",
+  );
+}
+
+export function loadApprovals() {
+  return call(
+    '/api/approvals',
+    undefined,
+    (body: { bills: Bill[] }) => body.bills,
+    "Couldn't load the bills. Try again.",
+  );
+}
+
+/** decide_bill() returns the bills row, without the embedded names. */
+export function decideBill(billId: number, decision: Decision, note: string) {
+  return call(
+    `/api/bills/${billId}/decision`,
+    sendJson('POST', { decision, note }),
+    (body: { bill: { status: string } }) => ({ status: body.bill.status }),
+    DECISION_FAILED,
   );
 }

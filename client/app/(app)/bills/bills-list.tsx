@@ -122,7 +122,7 @@ export function BillsList() {
 }
 
 /** The load failed: its message and a Retry button. A failed refresh keeps the list shown. */
-function LoadError({
+export function LoadError({
   message,
   retrying,
   onRetry,
