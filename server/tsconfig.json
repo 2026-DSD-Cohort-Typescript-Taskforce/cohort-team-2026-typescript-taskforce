@@ -7,6 +7,7 @@
     "outDir": "dist",
     "types": ["node"],
     "strict": true,
+    "typeRoots": ["./node_modules/@types"],
     "esModuleInterop": true,
     "skipLibCheck": true
   },
