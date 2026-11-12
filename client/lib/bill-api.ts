@@ -24,7 +24,7 @@ export type ApiFailure = {
 
 export type ApiResult<T> = { ok: true; data: T } | ({ ok: false } & ApiFailure);
 
-async function call<T>(
+export async function call<T>(
   path: string,
   init: RequestInit | undefined,
   read: (body: never) => T,
@@ -48,7 +48,7 @@ async function call<T>(
   }
 }
 
-function sendJson(method: "POST" | "PATCH", body: unknown): RequestInit {
+export function sendJson(method: "POST" | "PATCH", body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
