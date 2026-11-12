@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-fetch";
+import { submittedMessage } from "@/lib/bill-submission";
 import { FIELD_LABELS, formatAmount, formatDate, type Bill } from "@/lib/bill-view";
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from "@/app/ui";
 import { StatusChip } from "../status-chip";
@@ -54,7 +55,7 @@ export function BillDetails({ id }: { id: string }) {
       const body = await res.json().catch(() => null);
       if (res.ok) {
         setBill({ ...bill, status: body.bill.status });
-        setSuccess("Bill submitted for payment.");
+        setSuccess(submittedMessage(body.bill.status));
       } else if (body?.code === "incomplete_bill" && body.fields.length > 0) {
         const labels = body.fields.map((field: string) => FIELD_LABELS[field] ?? field);
         setError(`This bill is missing: ${labels.join(", ")}.`);

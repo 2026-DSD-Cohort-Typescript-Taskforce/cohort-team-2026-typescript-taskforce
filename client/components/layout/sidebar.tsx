@@ -15,7 +15,7 @@ const links = [
     icon: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
   },
   { href: '#', label: 'Accounts', icon: 'M3 9l9-5 9 5M5 9v9M10 9v9M14 9v9M19 9v9M3 20h18' },
-  { href: '#', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
+  { href: '/approvals', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
   {
     href: '#',
     label: 'Settings',
