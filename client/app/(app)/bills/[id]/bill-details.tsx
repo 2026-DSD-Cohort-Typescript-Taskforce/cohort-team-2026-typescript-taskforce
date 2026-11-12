@@ -6,6 +6,7 @@ import { submittedMessage } from "@/lib/bill-submission";
 import { FIELD_LABELS, formatAmount, formatDate, type Bill } from "@/lib/bill-view";
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from "@/app/ui";
 import { StatusChip } from "../status-chip";
+import { BillEditForm } from "./bill-edit-form";
 
 const UNREACHABLE = "Could not reach the server. Try again.";
 
@@ -28,6 +29,7 @@ export function BillDetails({ id }: { id: string }) {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -85,6 +87,21 @@ export function BillDetails({ id }: { id: string }) {
     );
   }
 
+  if (editing) {
+    return (
+      <BillEditForm
+        bill={bill}
+        onCancel={() => setEditing(false)}
+        onSaved={(updated) => {
+          setBill(updated);
+          setError("");
+          setSuccess("Bill changes saved.");
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
   const vendor = bill.vendor?.name ?? null;
   const property = bill.property?.name ?? null;
   // What submit_bill() requires, as the confirmation lists it.
@@ -116,13 +133,16 @@ export function BillDetails({ id }: { id: string }) {
             )}
           </div>
           {bill.status === "draft" && (
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.showModal()}
-              className={`shrink-0 ${primaryButton}`}
-            >
-              Submit for payment
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={() => setEditing(true)} className={secondaryButton}>Edit bill</button>
+              <button
+                type="button"
+                onClick={() => dialogRef.current?.showModal()}
+                className={`shrink-0 ${primaryButton}`}
+              >
+                Submit for payment
+              </button>
+            </div>
           )}
         </div>
 
