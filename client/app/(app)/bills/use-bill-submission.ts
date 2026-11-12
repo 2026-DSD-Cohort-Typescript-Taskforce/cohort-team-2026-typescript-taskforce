@@ -122,13 +122,16 @@ export function useBillSubmission({
   }
 
   /** Saves the values as changes to the draft `billId`. */
-  async function update(billId: number, values: BillValues) {
-    if (running.current) return;
+  async function update(billId: number, values: BillValues): Promise<Bill | null> {
+    if (running.current) return null;
     const input = check(values);
-    if (!input) return;
+    if (!input) return null;
+    let updated: Bill | null = null;
     await run('save', async () => {
-      if (await save(input, billId)) dispatch({ type: 'saved', step: 'update' });
+      updated = await save(input, billId);
+      if (updated) dispatch({ type: 'saved', step: 'update' });
     });
+    return updated;
   }
 
   /** Back to idle, e.g. for "Add another". */

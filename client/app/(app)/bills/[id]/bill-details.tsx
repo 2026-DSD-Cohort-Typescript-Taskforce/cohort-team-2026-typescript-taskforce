@@ -1,8 +1,9 @@
 'use client';
 
-// The View Bill page's content: one bill's details and status. A complete draft can be
-// submitted for payment from here after a confirmation; a draft that's still missing
-// details offers "Finish this bill" instead, which opens its fix form on the Bills page.
+// The View Bill page's content: one bill's details and status. A draft can be edited
+// here. A complete draft can be submitted for payment after a confirmation; a draft
+// that's still missing details offers "Finish this bill" instead, which opens its
+// fix form on the Bills page.
 
 import Link from 'next/link';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -12,6 +13,7 @@ import { billMissing } from '@/lib/current-issues';
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from '@/app/ui';
 import { StatusChip } from '../status-chip';
 import { submittedMessage } from '@/lib/bill-submission';
+import { BillEditForm } from './bill-edit-form';
 
 const UNREACHABLE = 'Could not reach the server. Try again.';
 
@@ -34,6 +36,7 @@ export function BillDetails({ id }: { id: string }) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -91,6 +94,21 @@ export function BillDetails({ id }: { id: string }) {
     );
   }
 
+  if (editing) {
+    return (
+      <BillEditForm
+        bill={bill}
+        onCancel={() => setEditing(false)}
+        onSaved={(updated) => {
+          setBill(updated);
+          setError('');
+          setSuccess('Bill changes saved.');
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
   const missing = billMissing(bill);
   const vendor = bill.vendor?.name ?? null;
   const property = bill.property?.name ?? null;
@@ -123,20 +141,26 @@ export function BillDetails({ id }: { id: string }) {
               <p className="text-body text-secondary">Invoice {bill.invoice_number}</p>
             )}
           </div>
-          {bill.status === 'draft' &&
-            (missing.length > 0 ? (
-              <Link href={`/bills?fix=${bill.bill_id}`} className={`shrink-0 ${primaryButton}`}>
-                Finish this bill
-              </Link>
-            ) : (
-              <button
-                type="button"
-                onClick={() => dialogRef.current?.showModal()}
-                className={`shrink-0 ${primaryButton}`}
-              >
-                Submit for payment
+          {bill.status === 'draft' && (
+            <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={() => setEditing(true)} className={secondaryButton}>
+                Edit bill
               </button>
-            ))}
+              {missing.length > 0 ? (
+                <Link href={`/bills?fix=${bill.bill_id}`} className={primaryButton}>
+                  Finish this bill
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => dialogRef.current?.showModal()}
+                  className={primaryButton}
+                >
+                  Submit for payment
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <SuccessAlert message={success} className="mb-6" />

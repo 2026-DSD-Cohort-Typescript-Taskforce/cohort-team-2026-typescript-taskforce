@@ -10,8 +10,8 @@ select plan(15);
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000081b1', 'dc81-resubmit-a@example.test'),
   ('00000000-0000-4000-8000-0000000081b2', 'dc81-resubmit-b@example.test');
-insert into public.vendors (vendor_id, name, payment_portal_url, supported_payment_methods)
-  values (81201, 'DC81 Resubmit Vendor', 'https://vendor.example.test', 'card');
+insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
+  values (81201, 'DC81 Resubmit Vendor', 'vendor-81201@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81201, 'DC81 Resubmit Property');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (81201, 'card', 'DC81 Resubmit Card', '75001');
