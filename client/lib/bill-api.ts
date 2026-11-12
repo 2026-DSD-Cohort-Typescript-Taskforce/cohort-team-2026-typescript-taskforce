@@ -3,6 +3,7 @@
 // /login (the caller then does nothing more).
 
 import { apiFetch } from "./api-fetch";
+import { DECISION_FAILED, type Decision } from "./approvals";
 import { SAVE_FAILED } from "./bill-errors";
 import type { BillInput } from "./bill-validation";
 import type { Bill, FormOptions } from "./bill-view";
@@ -23,7 +24,7 @@ export type ApiFailure = {
 
 export type ApiResult<T> = { ok: true; data: T } | ({ ok: false } & ApiFailure);
 
-async function call<T>(
+export async function call<T>(
   path: string,
   init: RequestInit | undefined,
   read: (body: never) => T,
@@ -47,7 +48,7 @@ async function call<T>(
   }
 }
 
-function sendJson(method: "POST" | "PATCH", body: unknown): RequestInit {
+export function sendJson(method: "POST" | "PATCH", body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
@@ -94,5 +95,19 @@ export function submitBill(billId: number) {
     { method: "POST" },
     (body: { bill: { status: string } }) => body.bill.status,
     SUBMIT_FAILED,
+  );
+}
+
+export function loadApprovals() {
+  return call("/api/approvals", undefined, (body: { bills: Bill[] }) => body.bills, "Couldn't load the bills. Try again.");
+}
+
+/** decide_bill() returns the bills row, without the embedded names. */
+export function decideBill(billId: number, decision: Decision, note: string) {
+  return call(
+    `/api/bills/${billId}/decision`,
+    sendJson("POST", { decision, note }),
+    (body: { bill: { status: string } }) => ({ status: body.bill.status }),
+    DECISION_FAILED,
   );
 }

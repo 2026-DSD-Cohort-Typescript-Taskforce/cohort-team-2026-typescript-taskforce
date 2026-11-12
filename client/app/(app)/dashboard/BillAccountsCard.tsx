@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { getBillStatusRows } from '@/lib/bills';
 
@@ -45,6 +46,8 @@ function toBuckets(c: BillStatusCounts) {
 }
 
 export async function BillAccountsCard() {
+  // await cookies() outside the catch so Next can handle its prerender rejection
+  await cookies();
   const counts = await getBillStatusCounts().catch(() => EMPTY);
   const b = toBuckets(counts);
   const columns = [

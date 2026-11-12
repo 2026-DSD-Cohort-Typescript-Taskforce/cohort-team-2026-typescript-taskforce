@@ -15,7 +15,12 @@ const links = [
     icon: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
   },
   { href: '#', label: 'Accounts', icon: 'M3 9l9-5 9 5M5 9v9M10 9v9M14 9v9M19 9v9M3 20h18' },
-  { href: '#', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
+  { href: '/approvals', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
+  {
+    href: '/vendors',
+    label: 'Vendors',
+    icon: 'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  },
   {
     href: '#',
     label: 'Settings',
