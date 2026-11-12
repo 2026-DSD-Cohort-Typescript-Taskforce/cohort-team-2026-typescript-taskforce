@@ -16,6 +16,11 @@ const links = [
   { href: '/bills', label: 'Bills', icon: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3' },
   { href: '/approvals', label: 'Approvals', icon: 'M4 12l5 5L20 6' },
   {
+    href: '/vendors',
+    label: 'Vendors',
+    icon: 'M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  },
+  {
     href: '/properties',
     label: 'Properties',
     icon: 'M3 21h18M5 21V7l7-4 7 4v14M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4',
