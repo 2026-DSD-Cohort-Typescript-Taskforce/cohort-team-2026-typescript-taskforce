@@ -21,3 +21,4 @@ server/dist/
 
 # Operating system files
 .DS_Store
+.vscode/
