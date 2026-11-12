@@ -2,7 +2,7 @@
 // with a readable message, or null while apiFetch sends the user to /login.
 
 import { call, sendJson } from './bill-api';
-import type { Property, PropertyInput } from './properties';
+import type { Property, PropertyInput } from './property-validation';
 
 type One = { property: Property };
 const one = (body: One) => body.property;

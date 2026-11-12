@@ -6,7 +6,7 @@ import {
   invalidProperty,
   parsePropertyId,
   validateProperty,
-} from '@/lib/properties';
+} from '@/lib/property-validation';
 import { createUserClient, readJsonObject, reply, replyWithError } from '@/lib/supabase';
 
 /** Edits a property. Only the fields in the body change. */

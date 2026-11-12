@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { PROPERTY_SELECT, invalidProperty, validateProperty } from '@/lib/properties';
+import { PROPERTY_SELECT, invalidProperty, validateProperty } from '@/lib/property-validation';
 import { createUserClient, readJsonObject, reply, replyWithError } from '@/lib/supabase';
 
 /** Every property the user can see, by name (DC-83). */

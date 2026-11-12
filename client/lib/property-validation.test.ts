@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parsePropertyId, validateProperty } from './properties.ts';
+import { parsePropertyId, validateProperty } from './property-validation.ts';
 
 test('a complete form is trimmed, and blank optional fields become null', () => {
   assert.deepEqual(

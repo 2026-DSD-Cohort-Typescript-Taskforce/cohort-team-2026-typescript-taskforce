@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Property } from '@/lib/properties';
+import type { Property } from '@/lib/property-validation';
 import { loadProperties } from '@/lib/property-api';
 import { ErrorAlert, SuccessAlert, colorTransition, focusRing, primaryButton } from '@/app/ui';
 import { LoadError } from '../bills/bills-list';

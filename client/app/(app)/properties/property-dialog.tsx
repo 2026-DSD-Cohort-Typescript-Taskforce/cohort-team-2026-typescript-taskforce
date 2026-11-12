@@ -7,7 +7,7 @@ import {
   type Property,
   type PropertyErrors,
   type PropertyField,
-} from '@/lib/properties';
+} from '@/lib/property-validation';
 import { createProperty, deleteProperty, updateProperty } from '@/lib/property-api';
 import {
   ErrorAlert,
