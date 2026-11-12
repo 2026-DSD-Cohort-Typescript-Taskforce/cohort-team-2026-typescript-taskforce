@@ -1,8 +1,0 @@
-{
-  "deno.enablePaths": ["./supabase/functions"],
-  "deno.path": "/home/batz-j/.local/bin/deno",
-  "deno.config": "./supabase/functions/deno.json",
-  "editor.formatOnSave": true,
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "prettier.requireConfig": true
-}
