@@ -1,9 +1,19 @@
-import { useEffect, useReducer, useRef, useState } from "react";
-import { createDraftBill, loadUserRole, submitBill, updateDraftBill } from "@/lib/bill-api";
-import { MESSAGES, checkSubmittable, initialSubmission, submissionReducer } from "@/lib/bill-submission";
-import { validateBill, type BillInput, type BillValues } from "@/lib/bill-validation";
-import type { Bill } from "@/lib/bill-view";
-import { useBillsRefresh } from "./bills-provider";
+// The bill form's save and submit logic, used by Enter Bill Details and the fix form: it
+// validates, saves a new draft or updates the existing one, optionally runs afterSave (the
+// add form attaches the PDF there), then calls submit_bill(). Every change refreshes the
+// bills list, and the state drives the form's status messages.
+
+import { useEffect, useReducer, useRef, useState } from 'react';
+import { createDraftBill, loadUserRole, submitBill, updateDraftBill } from '@/lib/bill-api';
+import {
+  MESSAGES,
+  checkSubmittable,
+  initialSubmission,
+  submissionReducer,
+} from '@/lib/bill-submission';
+import { validateBill, type BillInput, type BillValues } from '@/lib/bill-validation';
+import type { Bill } from '@/lib/bill-view';
+import { useBillsRefresh } from './bills-provider';
 
 /**
  * Saving and submitting a bill from the bill form (DC-71, DC-76). The form passes its
@@ -13,7 +23,14 @@ import { useBillsRefresh } from "./bills-provider";
  *
  * Render <SubmissionStatus state={…} message={…} /> next to the form's buttons.
  */
-export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) {
+export function useBillSubmission({
+  bill = null,
+  afterSave,
+}: {
+  bill?: Bill | null;
+  /** Runs after each save, before a submit; return a message to stop there. */
+  afterSave?: (bill: Bill) => Promise<string | null>;
+} = {}) {
   const [submission, dispatch] = useReducer(submissionReducer, bill, initialSubmission);
   const [role, setRole] = useState<string | null>(null);
   const refresh = useBillsRefresh();
@@ -34,7 +51,8 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
   /** The values as BillInput, or null after showing what to fix. */
   function check(values: BillValues): BillInput | null {
     const result = validateBill(values);
-    if (result.errors) dispatch({ type: "invalid", fieldErrors: result.errors, message: MESSAGES.invalid });
+    if (result.errors)
+      dispatch({ type: 'invalid', fieldErrors: result.errors, message: MESSAGES.invalid });
     return result.input ?? null;
   }
 
@@ -43,24 +61,29 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
    * before, so saving or submitting again never adds a second bill).
    */
   async function save(input: BillInput, billId = savedBill.current?.bill_id): Promise<Bill | null> {
-    const step = billId ? "update" : "create";
+    const step = billId ? 'update' : 'create';
     const result = billId ? await updateDraftBill(billId, input) : await createDraftBill(input);
     // null: apiFetch is sending the user to /login.
     if (!result) return null;
     if (!result.ok) {
-      dispatch({ type: "failed", step, failure: result });
+      dispatch({ type: 'failed', step, failure: result });
       return null;
     }
     savedBill.current = result.data;
-    dispatch({ type: "stored", bill: result.data });
+    dispatch({ type: 'stored', bill: result.data });
+    const problem = afterSave ? await afterSave(result.data) : null;
     refresh();
+    if (problem) {
+      dispatch({ type: 'failed', step, failure: { status: 0, error: problem } });
+      return null;
+    }
     return result.data;
   }
 
-  async function run(action: "save" | "submit", task: () => Promise<void>) {
+  async function run(action: 'save' | 'submit', task: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
-    dispatch({ type: "start", action });
+    dispatch({ type: 'start', action });
     try {
       await task();
     } finally {
@@ -68,14 +91,14 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
     }
   }
 
-  /** Saves the values as a draft. Only an amount is needed. */
+  /** Saves the values as a draft. Any field may be empty. */
   async function saveDraft(values: BillValues) {
     if (running.current) return;
     const input = check(values);
     if (!input) return;
-    await run("save", async () => {
-      const step = savedBill.current ? "update" : "create";
-      if (await save(input)) dispatch({ type: "saved", step });
+    await run('save', async () => {
+      const step = savedBill.current ? 'update' : 'create';
+      if (await save(input)) dispatch({ type: 'saved', step });
     });
   }
 
@@ -87,13 +110,13 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
     const missing = checkSubmittable(input);
     if (missing) return dispatch(missing);
 
-    await run("submit", async () => {
+    await run('submit', async () => {
       const saved = await save(input);
       if (!saved) return;
       const result = await submitBill(saved.bill_id);
       if (!result) return;
-      if (!result.ok) return dispatch({ type: "failed", step: "submit", failure: result });
-      dispatch({ type: "submitted", status: result.data });
+      if (!result.ok) return dispatch({ type: 'failed', step: 'submit', failure: result });
+      dispatch({ type: 'submitted', status: result.data });
       refresh();
     });
   }
@@ -104,9 +127,9 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
     const input = check(values);
     if (!input) return null;
     let updated: Bill | null = null;
-    await run("save", async () => {
+    await run('save', async () => {
       updated = await save(input, billId);
-      if (updated) dispatch({ type: "saved", step: "update" });
+      if (updated) dispatch({ type: 'saved', step: 'update' });
     });
     return updated;
   }
@@ -114,14 +137,14 @@ export function useBillSubmission({ bill = null }: { bill?: Bill | null } = {}) 
   /** Back to idle, e.g. for "Add another". */
   function reset() {
     savedBill.current = bill;
-    dispatch({ type: "reset", bill });
+    dispatch({ type: 'reset', bill });
   }
 
   return {
     ...submission,
-    busy: submission.state === "saving" || submission.state === "submitting",
+    busy: submission.state === 'saving' || submission.state === 'submitting',
     /** Whether to offer submit: only billing operators can (submit_bill() answers 403 otherwise). */
-    canSubmit: role === "billing_operator",
+    canSubmit: role === 'billing_operator',
     saveDraft,
     submit,
     update,
