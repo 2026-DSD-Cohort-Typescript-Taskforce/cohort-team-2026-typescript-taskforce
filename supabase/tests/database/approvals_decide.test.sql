@@ -11,8 +11,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000081a1', 'dc81-a@example.test'),
   ('00000000-0000-4000-8000-0000000081a2', 'dc81-b@example.test'),
   ('00000000-0000-4000-8000-0000000081a3', 'dc81-c@example.test');
-insert into public.vendors (vendor_id, name, payment_portal_url, supported_payment_methods)
-  values (81001, 'DC81 Test Vendor', 'https://vendor.example.test', 'card');
+insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
+  values (81001, 'DC81 Test Vendor', 'vendor-81001@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81001, 'DC81 Test Property');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (81001, 'card', 'DC81 Test Card', '75001');
