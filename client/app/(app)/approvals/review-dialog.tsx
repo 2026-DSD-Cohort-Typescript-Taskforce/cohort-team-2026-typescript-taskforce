@@ -33,7 +33,7 @@ const pickerClass = [
   "[&_option:focus-visible]:bg-raised",
 ].join(" ");
 
-export function AmountPill({ amount }: { amount: number }) {
+export function AmountPill({ amount }: { amount: number | null }) {
   return (
     <span className="inline-flex shrink-0 items-center rounded-full border border-strong bg-raised px-3 py-1 text-body-sm font-semibold whitespace-nowrap">
       {formatAmount(amount)}
