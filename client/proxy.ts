@@ -67,7 +67,8 @@ export async function proxy(request: NextRequest) {
     pathname === '/bills' ||
     pathname.startsWith('/bills/') ||
     pathname === '/approvals' ||
-    pathname === '/vendors';
+    pathname === '/vendors' ||
+    pathname === '/users';
 
   let response: NextResponse;
 
@@ -83,5 +84,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/login', '/dashboard', '/bills', '/bills/:id', '/approvals', '/vendors'],
+  matcher: ['/', '/login', '/dashboard', '/bills', '/bills/:id', '/approvals', '/vendors', '/users'],
 };

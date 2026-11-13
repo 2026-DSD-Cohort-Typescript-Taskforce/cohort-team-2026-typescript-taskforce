@@ -47,16 +47,13 @@ async function assertRejects(promise: Promise<unknown>, status: number, code?: s
 
 describe('requireRole', () => {
   it('calls next when the role is allowed', async () => {
-    const next = await run(
-      fakeRequest(profileWithRole('system_administrator')),
-      'system_administrator',
-    );
+    const next = await run(fakeRequest(profileWithRole('system_admin')), 'system_admin');
     assert.equal(next.mock.callCount(), 1);
   });
 
   it('rejects another valid role with 403 forbidden', async () => {
     await assertRejects(
-      run(fakeRequest(profileWithRole('billing_operator')), 'system_administrator'),
+      run(fakeRequest(profileWithRole('billing_operator')), 'system_admin'),
       403,
       'forbidden',
     );
@@ -64,25 +61,21 @@ describe('requireRole', () => {
 
   it('rejects an unknown role with 403 forbidden', async () => {
     await assertRejects(
-      run(fakeRequest(profileWithRole('superuser')), 'system_administrator'),
+      run(fakeRequest(profileWithRole('superuser')), 'system_admin'),
       403,
       'forbidden',
     );
   });
 
   it('rejects a null role with 403 forbidden', async () => {
-    await assertRejects(
-      run(fakeRequest(profileWithRole(null)), 'system_administrator'),
-      403,
-      'forbidden',
-    );
+    await assertRejects(run(fakeRequest(profileWithRole(null)), 'system_admin'), 403, 'forbidden');
   });
 
   it('rejects a login with no profile with 403 profile_not_found', async () => {
-    await assertRejects(run(fakeRequest(null), 'system_administrator'), 403, 'profile_not_found');
+    await assertRejects(run(fakeRequest(null), 'system_admin'), 403, 'profile_not_found');
   });
 
   it('rejects a request with no req.auth with 401', async () => {
-    await assertRejects(run({} as Request, 'system_administrator'), 401);
+    await assertRejects(run({} as Request, 'system_admin'), 401);
   });
 });
