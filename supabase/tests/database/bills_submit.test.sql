@@ -11,8 +11,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000012a1', 'dc12-a@example.test'),
   ('00000000-0000-4000-8000-0000000012a2', 'dc12-b@example.test'),
   ('00000000-0000-4000-8000-0000000012a3', 'dc12-c@example.test');
-insert into public.vendors (vendor_id, name, payment_portal_url, supported_payment_methods)
-  values (12001, 'DC12 Test Vendor', 'https://vendor.example.test', 'card');
+insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
+  values (12001, 'DC12 Test Vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (12001, 'card', 'DC12 Test Card', '75001');
@@ -77,8 +77,8 @@ select is(
 select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
 select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
 select policies_are('public', 'bills',
-  ARRAY['bills table is public', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete bills'],
-  'bills has the public read policy, the two draft-only write policies and the delete policy');
+  ARRAY['authenticated users can view bills', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete draft bills'],
+  'bills has the signed-in read policy and the three draft-only write policies (DC-21)');
 select policy_cmd_is('public', 'bills', 'authenticated users can insert draft bills', 'insert', 'draft insert policy covers INSERT');
 select policy_roles_are('public', 'bills', 'authenticated users can insert draft bills', ARRAY['authenticated'], 'draft insert policy is for authenticated only');
 select policy_cmd_is('public', 'bills', 'authenticated users can update draft bills', 'update', 'draft update policy covers UPDATE');

@@ -127,7 +127,7 @@ export type ApprovalRow = {
   property: string;
   date_due: string | null;
   payment_type: string;
-  amount: number;
+  amount: number | null;
   status: string;
   bill: Bill;
 };
