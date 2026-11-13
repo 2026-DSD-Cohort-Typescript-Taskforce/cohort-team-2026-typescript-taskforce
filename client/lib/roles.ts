@@ -9,3 +9,6 @@ export const ROLE_LABELS: Record<Role, string> = {
   financial_approver: 'Financial Approver',
   system_administrator: 'System Administrator',
 };
+
+export const canManageUsers = (role: string | null | undefined): boolean =>
+  role === 'system_administrator';
