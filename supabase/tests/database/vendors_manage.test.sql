@@ -15,10 +15,10 @@ insert into auth.users (id, email) values
 insert into public.properties (property_id, name) values (84001, 'DC84 Test Property');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (84001, 'card', 'DC84 Test Card', '75001');
-insert into public.users (user_id, name, email, role, property_id, auth_user_id) values
-  (84101, 'Operator A', 'dc84-a@example.test', 'billing_operator', 84001, '00000000-0000-4000-8000-0000000084a1'),
-  (84102, 'Approver B', 'dc84-b@example.test', 'financial_approver', 84001, '00000000-0000-4000-8000-0000000084a2'),
-  (84103, 'Admin C', 'dc84-c@example.test', 'system_admin', 84001, '00000000-0000-4000-8000-0000000084a3');
+insert into public.users (user_id, name, email, role, auth_user_id) values
+  (84101, 'Operator A', 'dc84-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000084a1'),
+  (84102, 'Approver B', 'dc84-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000084a2'),
+  (84103, 'Admin C', 'dc84-c@example.test', 'system_admin', '00000000-0000-4000-8000-0000000084a3');
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods) values
   (84001, 'DC84 Vendor With Bill', 'bill@example.test', '1 Test Way', '555-0101', 'https://vendor.example.test', 'card'),
   (84002, 'DC84 Vendor No Bill', 'nobill@example.test', '2 Test Way', '555-0102', null, null);
