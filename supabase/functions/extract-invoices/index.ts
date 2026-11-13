@@ -1,38 +1,25 @@
 /**
- * This function extracts invoice fields from a PDF using OpenRouter and the Nemotron model.
- * 
- * /**
  * extract-invoices
  *
- * POST a PDF (raw body) with `Authorization: Bearer <user access token>`.
- * Optional header `x-property-id` sets bills.property_id.
+ * POST { path, replaceBillId? } with Authorization: Bearer <user access token>.
+ * path is the caller's upload: bill-documents/pending/<user_id>/<sha256>.pdf.
  *
- * Flow:
- * 1. Validate request: POST, Bearer token, non-empty body.
- * 2. Resolve the caller: auth.getUser() -> public.users.id via auth_user_id.
- * 3. Send the PDF to OpenRouter (free VL model) with a JSON schema:
- *    vendor (From), bill-to (Bill To), invoice (number, dates, total, line items).
- * 4. Validate the reply with Zod and trim blank strings to null.
- * 5. Vendor: match by name (case-insensitive) and fill only empty columns,
- *    or insert a new vendor. No name -> no vendor.
- * 6. Amount: use the invoice total, else the sum of line items.
- *    Still none -> 422, nothing written.
- * 7. Insert a draft bill. Duplicate vendor + invoice number -> update that bill.
+ * Reads the PDF, asks the model for the bill's details, and saves a bill as the caller
+ * (RLS applies): submitted when every detail is there, otherwise a draft with whatever
+ * was read. Every reply is { outcome, message, bill? }.
  *
- * Returns { extracted, vendor, bill }. Bill-to, currency and line items are
- * returned but not stored. No retry yet: an empty model reply fails with 422.
+ * Along the way it matches or adds the vendor and the property (Bill To), stores what the
+ * vendor accepts (Card, ACH) on the vendor, and picks the company's default payment method
+ * for an accepted type. Duplicates are checked by the PDF's SHA-256 and by vendor plus
+ * invoice number. The PDF is moved from pending/ to bills/<sha256>.pdf before the bill is
+ * saved, and pdf_path points at it.
  */
- 
 import { encodeBase64 } from "jsr:@std/encoding/base64";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@4.6.7";
-/**
- * this is the model that is used to extract invoice fields from a PDF. 
- * The line items are extracted as an array of objects, each containing a description, quantity, 
- * unit price,and amount.*/ 
+
 const MODEL = "nvidia/nemotron-3.5-super-vl:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-
 
 function parseMoney(value: number | string | null | undefined): number | null {
   if (value == null || value === "") return null;
@@ -57,7 +44,6 @@ const moneySchema = z
   .nullish()
   .transform(parseMoney);
 
-
 const lineItemSchema = z.object({
   description: z.string().nullish(),
   quantity: z.union([z.number(), z.string()]).nullish().transform(parseMoney),
@@ -72,6 +58,8 @@ const invoiceSchema = z.object({
   vendor_phone: z.string().nullish(),
   payment_portal_url: z.string().nullish(),
   supported_payment_methods: z.string().nullish(),
+  portal_username: z.string().nullish(),
+  portal_password: z.string().nullish(),
   bill_to_name: z.string().nullish(),
   bill_to_address: z.string().nullish(),
   bill_to_phone: z.string().nullish(),
@@ -99,23 +87,36 @@ const invoiceJsonSchema = {
     payment_portal_url: { type: ["string", "null"], description: "Pay-online URL. Null if not printed." },
     supported_payment_methods: {
       type: ["string", "null"],
-      description: "Printed text such as Card, ACH. Null if not printed.",
+      description:
+        "How the vendor takes payment, as printed near the pay-online link, for example 'Demo card or one-time ACH'. Null if not printed.",
     },
+    portal_username: { type: ["string", "null"], description: "Pay-online login username. Null if not printed." },
+    portal_password: { type: ["string", "null"], description: "Pay-online login password. Null if not printed." },
     bill_to_name: {
       type: ["string", "null"],
-      description: "Bill To / Sold To name. Do not copy the vendor name.",
+      description:
+        "The customer billed: the name under Bill To, Billed To, Prepared for, Customer, Customer / Business Name, Customer / Location or Your Account. Never the vendor.",
     },
     bill_to_address: { type: ["string", "null"], description: "Bill To address. Null if not printed." },
     bill_to_phone: { type: ["string", "null"], description: "Bill To phone. Not the vendor phone." },
     bill_to_email: { type: ["string", "null"], description: "Bill To email. Null if not printed." },
-    invoice_number: { type: ["string", "null"], description: "Invoice number. Null if not printed." },
+    invoice_number: {
+      type: ["string", "null"],
+      description:
+        "The bill's own number: Invoice, Invoice Reference, Statement, Statement ID, Document, Bill Reference or Bill / Record Number (for example BILL-1001). Not the account or customer number.",
+    },
     amount: {
       type: ["number", "string", "null"],
-      description: "Total due as a number or numeric string (for example 168.79 or \"$168.79\").",
+      description:
+        "The amount still to pay: Total Amount Due, Amount Due, Balance Due, Net Amount Payable, Net to Remit, Net Payable, Balance to Remit, Balance Outstanding, Outstanding Balance, Still to Pay or Please Pay.",
     },
     currency: { type: ["string", "null"], description: "ISO code or null." },
     date_issued: { type: ["string", "null"], description: "YYYY-MM-DD or null." },
-    date_due: { type: ["string", "null"], description: "YYYY-MM-DD or null." },
+    date_due: {
+      type: ["string", "null"],
+      description:
+        "Due date as YYYY-MM-DD, from Due, Due Date, Pay by, Payable by, Payment Deadline, Payment requested by or Please pay by. Convert written dates such as October 16, 2026.",
+    },
     line_items: {
       type: "array",
       items: {
@@ -139,57 +140,73 @@ function blankToNull(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body, null, 2), {
+const BUCKET = "bill-documents";
+// The bill is already on its way to payment, so its original PDF is kept.
+const IN_FLIGHT = new Set([
+  "pending_approval",
+  "pending_payment",
+  "processing",
+  "approval_denied",
+  "payment_failed",
+]);
+const REQUIRED: Record<string, string> = {
+  vendor_id: "vendor",
+  property_id: "property",
+  payment_id: "payment type",
+  invoice_number: "invoice number",
+  amount: "amount",
+  date_due: "due date",
+};
+
+type Outcome =
+  | "submitted"
+  | "draft"
+  | "duplicate"
+  | "confirm_replace"
+  | "needs_review"
+  | "rejected"
+  | "failed";
+type Extracted = z.infer<typeof invoiceSchema>;
+// No generated database types yet.
+// deno-lint-ignore no-explicit-any
+type Row = Record<string, any>;
+
+function reply(
+  outcome: Outcome,
+  message: string,
+  extra: Record<string, unknown> = {},
+  status = 200,
+): Response {
+  return new Response(JSON.stringify({ outcome, message, ...extra }), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return json({ error: "POST the PDF as the body." }, 405);
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return json({ error: "Sign in. Send Authorization: Bearer <access token>." }, 401);
-  }
-  const apiKey = Deno.env.get("OPENROUTER_API_KEY");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!apiKey) return json({ error: "Set OPENROUTER_API_KEY for the function." }, 500);
-  if (!supabaseUrl || !supabaseAnon) {
-    return json({ error: "SUPABASE_URL and SUPABASE_ANON_KEY are required." }, 500);
-  }
-  const pdf = new Uint8Array(await req.arrayBuffer());
-  if (pdf.byteLength === 0) return json({ error: "The body was empty." }, 400);
-  const propertyHeader = req.headers.get("x-property-id");
-  const property_id = propertyHeader ? Number(propertyHeader) : null;
-  if (propertyHeader && !Number.isInteger(property_id)) {
-    return json({ error: "x-property-id must be an integer." }, 400);
-  }
-  const supabase = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) {
-    return json({ error: "Invalid or expired access token." }, 401);
-  }
-  const { data: profile, error: profileError } = await supabase
-    .from("users")
-    .select("id")
-    .eq("auth_user_id", authData.user.id)
-    .maybeSingle();
-  if (profileError) return json({ error: "Could not load profile.", details: profileError }, 500);
-  if (!profile) {
-    return json({ error: "No public.users row linked to this login (auth_user_id)." }, 403);
-  }
-  // this is where we send in the request for ai vision to extract the bill i
+
+function list(words: string[]): string {
+  return words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
+// ilike treats % and _ as wildcards.
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+function withoutNulls(row: Row): Row {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value != null));
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The model's reading of the PDF, or null when it couldn't read it. */
+async function readInvoice(pdf: Uint8Array, apiKey: string): Promise<Extracted | null> {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     signal: AbortSignal.timeout(120_000),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 4000,
@@ -200,7 +217,7 @@ Deno.serve(async (req) => {
             {
               type: "text",
               text:
-                "Extract three groups: vendor (From / letterhead), billing (Bill To / Sold To), and this invoice (number, dates, totals, line items). Null if not printed, including names. Do not guess. Do not copy vendor into bill_to. Dates YYYY-MM-DD. Amounts numbers with no currency symbol. amount is the invoice grand total due, not only a line item.",
+                "Extract three groups: vendor (From / letterhead, including any pay-online URL, username and password printed on the bill), billing (Bill To / Sold To), and this invoice (number, dates, totals, line items). Null if not printed, including names. Do not guess. Do not copy vendor into bill_to. Dates YYYY-MM-DD. Amounts numbers with no currency symbol. amount is the invoice grand total due, not only a line item.",
             },
             {
               type: "file",
@@ -218,169 +235,287 @@ Deno.serve(async (req) => {
       },
       plugins: [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }],
     }),
+  }).catch((error) => {
+    console.error("OpenRouter request failed:", error);
+    return null;
   });
-  const openRouterBody: unknown = await response.json().catch(() => null);
+  if (!response) return null;
   if (!response.ok) {
-    return json({ error: `OpenRouter ${response.status}`, details: openRouterBody }, 502);
+    console.error("OpenRouter answered", response.status, await response.text().catch(() => ""));
+    return null;
   }
+
+  const body: unknown = await response.json().catch(() => null);
   const choice = z
     .object({
-      choices: z
-        .array(
-          z.object({
-            finish_reason: z.string().nullable().optional(),
-            message: z.object({ content: z.string().nullable() }),
-          }),
-        )
-        .min(1),
+      choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).min(1),
     })
-    .safeParse(openRouterBody);
-  if (!choice.success) {
-    return json({ error: "Unexpected OpenRouter response.", details: openRouterBody }, 502);
+    .safeParse(body);
+  const content = choice.success ? choice.data.choices[0].message.content : null;
+  if (!content) {
+    console.error("OpenRouter returned no content:", body);
+    return null;
   }
-  const first = choice.data.choices[0];
-  if (first.finish_reason === "length") return json({ error: "The model hit max_tokens." }, 502);
-  if (!first.message.content) return json({ error: "OpenRouter returned an empty message." }, 502);
-  let parsed: unknown;
+
   try {
-    parsed = JSON.parse(first.message.content);
+    const invoice = invoiceSchema.safeParse(JSON.parse(content));
+    if (!invoice.success) {
+      console.error("The reply did not match the invoice schema:", content);
+      return null;
+    }
+    const cleaned: Row = { ...invoice.data };
+    for (const [key, value] of Object.entries(cleaned)) {
+      if (typeof value === "string") cleaned[key] = blankToNull(value);
+    }
+    return cleaned as Extracted;
   } catch {
-    return json({ error: "Model did not return JSON.", raw: first.message.content }, 502);
+    console.error("The model did not return JSON:", content);
+    return null;
   }
-  const invoice = invoiceSchema.safeParse(parsed);
-  if (!invoice.success) {
-    return json({ error: "JSON did not match the invoice schema.", raw: parsed }, 502);
-  }
-  const extracted = {
-    ...invoice.data,
-    vendor_name: blankToNull(invoice.data.vendor_name),
-    vendor_address: blankToNull(invoice.data.vendor_address),
-    contact_name: blankToNull(invoice.data.contact_name),
-    vendor_phone: blankToNull(invoice.data.vendor_phone),
-    payment_portal_url: blankToNull(invoice.data.payment_portal_url),
-    supported_payment_methods: blankToNull(invoice.data.supported_payment_methods),
-    bill_to_name: blankToNull(invoice.data.bill_to_name),
-    bill_to_address: blankToNull(invoice.data.bill_to_address),
-    bill_to_phone: blankToNull(invoice.data.bill_to_phone),
-    bill_to_email: blankToNull(invoice.data.bill_to_email),
-    invoice_number: blankToNull(invoice.data.invoice_number),
-    currency: blankToNull(invoice.data.currency),
-    date_issued: blankToNull(invoice.data.date_issued),
-    date_due: blankToNull(invoice.data.date_due),
+}
+
+/** Matches the vendor by name and fills its empty columns, or adds it. null when it can't. */
+async function findOrCreateVendor(supabase: SupabaseClient, x: Extracted): Promise<Row | null> {
+  if (!x.vendor_name) return null;
+  const details: Row = {
+    address: x.vendor_address,
+    contact_name: x.contact_name,
+    phone: x.vendor_phone,
+    payment_portal_url: x.payment_portal_url,
+    supported_payment_methods: normalizeMethods(x.supported_payment_methods),
+    portal_username: x.portal_username,
+    portal_password: x.portal_password,
   };
-  let vendor: Record<string, unknown> | null = null;
-  if (extracted.vendor_name) {
-    const { data: existing, error: findError } = await supabase
+
+  const { data: existing } = await supabase
+    .from("vendors")
+    .select("*")
+    .ilike("name", escapeLike(x.vendor_name))
+    .limit(1)
+    .maybeSingle();
+  if (existing) {
+    // The vendor's latest bill says what it accepts now; other columns are only filled in.
+    const patch = Object.fromEntries(
+      Object.entries(details).filter(
+        ([column, value]) =>
+          value != null &&
+          value !== existing[column] &&
+          (existing[column] == null || column === "supported_payment_methods"),
+      ),
+    );
+    if (Object.keys(patch).length === 0) return existing;
+    const { data } = await supabase
       .from("vendors")
-      .select("*")
-      .ilike("vendor_name", extracted.vendor_name)
-      .maybeSingle();
-    if (findError) return json({ error: "Vendor lookup failed.", details: findError, extracted }, 500);
-    if (existing) {
-      const patch: Record<string, string> = {};
-      const fill = (column: string, value: string | null) => {
-        if (value && existing[column] == null) patch[column] = value;
-      };
-      fill("vendor_address", extracted.vendor_address);
-      fill("contact_name", extracted.contact_name);
-      fill("vendor_phone", extracted.vendor_phone);
-      fill("payment_portal_url", extracted.payment_portal_url);
-      fill("supported_payment_methods", extracted.supported_payment_methods);
-      if (Object.keys(patch).length > 0) {
-        const { data: updated, error: updateError } = await supabase
-          .from("vendors")
-          .update(patch)
-          .eq("vendor_id", existing.vendor_id)
-          .select()
-          .single();
-        if (updateError) return json({ error: "Vendor update failed.", details: updateError, extracted }, 500);
-        vendor = updated;
-      } else {
-        vendor = existing;
-      }
-    } else {
-      const { data: created, error: insertError } = await supabase
-        .from("vendors")
-        .insert({
-          vendor_name: extracted.vendor_name,
-          vendor_address: extracted.vendor_address,
-          contact_name: extracted.contact_name,
-          vendor_phone: extracted.vendor_phone,
-          payment_portal_url: extracted.payment_portal_url,
-          supported_payment_methods: extracted.supported_payment_methods,
-        })
-        .select()
-        .single();
-      if (insertError) return json({ error: "Vendor insert failed.", details: insertError, extracted }, 500);
-      vendor = created;
-    }
-  }
-  const amount = extracted.amount ?? totalFromLineItems(extracted.line_items);
-  if (amount == null) {
-    return json({
-      error: "amount is null; bills.amount is NOT NULL. No bill row written.",
-      extracted,
-      vendor,
-    }, 422);
-  }
-  if (extracted.amount == null) {
-    console.log(`Invoice amount missing; using line-item total ${amount}.`);
-    extracted.amount = amount;
-  }
-  const billFields = {
-    amount,
-    invoice_number: extracted.invoice_number,
-    date_issued: extracted.date_issued,
-    date_due: extracted.date_due,
-    vendor_id: vendor ? vendor.vendor_id : null,
-    user_id: profile.id,
-    property_id,
-    status: "draft",
-  };
-
-  let { data: bill, error: billError } = await supabase
-    .from("bills")
-    .insert(billFields)
-    .select()
-    .single();
-
-  if (billError?.code === "23505" && vendor && extracted.invoice_number) {
-    const { data: existingBill, error: findBillError } = await supabase
-      .from("bills")
-      .select("*")
-      .eq("vendor_id", vendor.vendor_id)
-      .ilike("invoice_number", extracted.invoice_number)
-      .maybeSingle();
-    if (findBillError || !existingBill) {
-      return json({ error: "Bill insert failed.", details: billError, extracted, vendor }, 409);
-    }
-    const { data: updatedBill, error: updateBillError } = await supabase
-      .from("bills")
-      .update({
-        amount: billFields.amount,
-        date_issued: billFields.date_issued,
-        date_due: billFields.date_due,
-        property_id: billFields.property_id,
-      })
-      .eq("bill_id", existingBill.bill_id)
+      .update(patch)
+      .eq("vendor_id", existing.vendor_id)
       .select()
       .single();
-    if (updateBillError) {
-      return json({ error: "Bill update failed.", details: updateBillError, extracted, vendor }, 500);
+    return data ?? existing;
+  }
+
+  // vendors.payment_portal_url and supported_payment_methods can't be empty.
+  if (!x.payment_portal_url || !details.supported_payment_methods) return null;
+  const { data, error } = await supabase
+    .from("vendors")
+    .insert({ name: x.vendor_name, ...withoutNulls(details) })
+    .select()
+    .single();
+  if (error) console.error("Vendor insert failed:", error);
+  return data;
+}
+
+/** Matches the Bill To by name, or adds it as a property. */
+async function findOrCreateProperty(supabase: SupabaseClient, x: Extracted): Promise<Row | null> {
+  if (!x.bill_to_name) return null;
+  const { data: existing } = await supabase
+    .from("properties")
+    .select("*")
+    .ilike("name", escapeLike(x.bill_to_name))
+    .limit(1)
+    .maybeSingle();
+  if (existing) return existing;
+  const { data, error } = await supabase
+    .from("properties")
+    .insert(
+      withoutNulls({
+        name: x.bill_to_name,
+        address: x.bill_to_address,
+        phone: x.bill_to_phone,
+        email: x.bill_to_email,
+      }),
+    )
+    .select()
+    .single();
+  if (error) console.error("Property insert failed:", error);
+  return data;
+}
+
+// When a vendor accepts both, pay by bank transfer first: no card fees.
+const PAYMENT_ORDER = ["bank", "card"] as const;
+
+/** card and/or bank, from printed text such as "Card, ACH" or "Demo card or one-time ACH". */
+function acceptedTypes(supported: string | null | undefined): Set<string> {
+  const types = new Set<string>();
+  if (!supported) return types;
+  if (/card|credit|debit|visa|mastercard|amex/i.test(supported)) types.add("card");
+  if (/\bach\b|bank|eft|transfer|e-?check/i.test(supported)) types.add("bank");
+  return types;
+}
+
+/** "Card, ACH" for the vendor row, however the bill words it. null when it names neither. */
+function normalizeMethods(supported: string | null | undefined): string | null {
+  const types = acceptedTypes(supported);
+  const words = [types.has("card") && "Card", types.has("bank") && "ACH"].filter(Boolean);
+  return words.length > 0 ? words.join(", ") : null;
+}
+
+/** The company's default payment method for the first accepted type in PAYMENT_ORDER. */
+async function defaultPaymentId(supabase: SupabaseClient, supported: string | null): Promise<number | null> {
+  const types = acceptedTypes(supported);
+  if (types.size === 0) return null;
+  const { data } = await supabase
+    .from("payment_methods")
+    .select("payment_id, payment_type")
+    .eq("is_default", true);
+  for (const type of PAYMENT_ORDER) {
+    const method = types.has(type) && (data ?? []).find((row) => row.payment_type === type);
+    if (method) return method.payment_id;
+  }
+  return null;
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return reply("failed", "POST { path }.", {}, 405);
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return reply("failed", "Sign in again.", {}, 401);
+
+  const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!apiKey || !supabaseUrl || !supabaseAnon) {
+    console.error("Set OPENROUTER_API_KEY, SUPABASE_URL and SUPABASE_ANON_KEY.");
+    return reply("failed", "The bill reader isn't set up.", {}, 500);
+  }
+
+  const body = (await req.json().catch(() => null)) as { path?: unknown; replaceBillId?: unknown } | null;
+  const path = typeof body?.path === "string" ? body.path : "";
+  const replaceBillId = Number.isInteger(body?.replaceBillId) ? (body?.replaceBillId as number) : null;
+
+  const supabase = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return reply("failed", "Sign in again.", {}, 401);
+  const { data: profile } = await supabase
+    .from("users")
+    .select("user_id")
+    .eq("auth_user_id", auth.user.id)
+    .maybeSingle();
+  if (!profile) return reply("failed", "No app profile is linked to this login.", {}, 403);
+
+  const match = new RegExp(`^pending/${profile.user_id}/([0-9a-f]{64})\\.pdf$`).exec(path);
+  if (!match) return reply("failed", "Upload the PDF again.", {}, 400);
+
+  const { data: file, error: downloadError } = await supabase.storage.from(BUCKET).download(path);
+  if (downloadError || !file) {
+    return reply("failed", "Couldn't find the uploaded PDF. Upload it again.", {}, 404);
+  }
+  const pdf = new Uint8Array(await file.arrayBuffer());
+  const sha256 = await sha256Hex(pdf);
+  if (sha256 !== match[1]) return reply("failed", "The uploaded PDF changed. Upload it again.", {}, 400);
+
+  const { data: sameFile } = await supabase
+    .from("bills")
+    .select("bill_id, status")
+    .eq("pdf_sha256", sha256)
+    .maybeSingle();
+  if (sameFile) return reply("duplicate", "This PDF was already uploaded.", { bill: sameFile });
+
+  const extracted = await readInvoice(pdf, apiKey);
+  const vendor = extracted ? await findOrCreateVendor(supabase, extracted) : null;
+  const property = extracted ? await findOrCreateProperty(supabase, extracted) : null;
+  const fields: Row = {
+    vendor_id: vendor?.vendor_id ?? null,
+    property_id: property?.property_id ?? null,
+    payment_id: await defaultPaymentId(
+      supabase,
+      normalizeMethods(extracted?.supported_payment_methods) ?? vendor?.supported_payment_methods ?? null,
+    ),
+    invoice_number: extracted?.invoice_number ?? null,
+    amount: extracted ? (extracted.amount ?? totalFromLineItems(extracted.line_items)) : null,
+    date_issued: extracted?.date_issued ?? null,
+    date_due: extracted?.date_due ?? null,
+  };
+
+  // Duplicate rules for a different PDF of the same vendor and invoice number.
+  let replacing: number | null = null;
+  if (fields.vendor_id && fields.invoice_number) {
+    const { data: same } = await supabase
+      .from("bills")
+      .select("bill_id, status")
+      .eq("vendor_id", fields.vendor_id)
+      .ilike("invoice_number", escapeLike(fields.invoice_number))
+      .maybeSingle();
+    if (same?.status === "payment_success") {
+      return reply("rejected", "This invoice was already paid. Nothing was saved.", { bill: same });
     }
-    bill = updatedBill;
-    billError = null;
-    console.log(
-      `Bill already existed; updated bill_id=${bill.bill_id} amount=${bill.amount} invoice_number=${bill.invoice_number}`,
-    );
+    if (same && IN_FLIGHT.has(same.status)) {
+      return reply("needs_review", "This invoice is already in progress, so its original PDF was kept.", {
+        bill: same,
+      });
+    }
+    if (same && same.bill_id !== replaceBillId) {
+      return reply("confirm_replace", "A draft for this invoice already exists. Replace its PDF?", {
+        bill: same,
+      });
+    }
+    if (same) replacing = same.bill_id;
   }
 
-  if (billError || !bill) {
-    return json({ error: "Bill insert failed.", details: billError, extracted, vendor }, 409);
+const pdfPath = `bills/${sha256}.pdf`;
+const { error: moveError } = await supabase.storage.from(BUCKET).move(path, pdfPath);
+// Same name means the same bytes: a file left by an earlier attempt is this PDF.
+const alreadyFiled = (moveError as { code?: string } | null)?.code === "KeyAlreadyExists";
+if (moveError && !alreadyFiled) {
+  console.error("Filing the PDF failed:", moveError);
+  return reply("failed", "Couldn't file the PDF. Try again.", {}, 500);
+}
+
+  const row = { ...fields, pdf_path: pdfPath, pdf_sha256: sha256 };
+  const saved = replacing
+    ? await supabase
+      .from("bills")
+      .update({ ...withoutNulls(row), updated_at: new Date().toISOString() })
+      .eq("bill_id", replacing)
+      .select()
+      .single()
+    : await supabase
+      .from("bills")
+      .insert({ ...row, user_id: profile.user_id, status: "draft" })
+      .select()
+      .single();
+  if (saved.error || !saved.data) {
+    console.error("Saving the bill failed:", saved.error);
+    return reply("failed", "Couldn't save the bill. Try again.", {}, 500);
+  }
+  const bill = saved.data;
+
+  const missing = Object.entries(REQUIRED)
+    .filter(([field]) => bill[field] == null || (field === "amount" && Number(bill.amount) <= 0))
+    .map(([, label]) => label);
+  if (missing.length > 0) {
+    const message = extracted
+      ? `Saved as a draft. Missing ${list(missing)}.`
+      : "We couldn't read this PDF. It was saved as a draft to fill in by hand.";
+    return reply("draft", message, { bill });
   }
 
-  console.log(
-    `Bill insert succeeded. bill_id=${bill.bill_id} amount=${bill.amount} invoice_number=${bill.invoice_number} vendor_id=${bill.vendor_id}`,
-  );
-  return json({ extracted, vendor, bill });
+  const { data: submitted, error: submitError } = await supabase.rpc("submit_bill", {
+    p_bill_id: bill.bill_id,
+  });
+  if (submitError) {
+    return reply("draft", `Saved as a draft. It couldn't be submitted: ${submitError.message}.`, { bill });
+  }
+  return reply("submitted", "Bill submitted for payment.", { bill: submitted });
 });

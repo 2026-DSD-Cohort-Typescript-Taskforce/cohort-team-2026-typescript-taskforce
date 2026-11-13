@@ -23,3 +23,4 @@ server/dist/
 .DS_Store
 
 CLAUDE.md
+.vscode/
