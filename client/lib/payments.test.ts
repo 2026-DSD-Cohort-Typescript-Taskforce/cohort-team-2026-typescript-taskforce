@@ -1,6 +1,9 @@
 import 'next/dist/server/node-environment.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import {
   workAsyncStorage,
   type WorkStore,
@@ -9,9 +12,38 @@ import {
   workUnitAsyncStorage,
   type RequestStore,
 } from 'next/dist/server/app-render/work-unit-async-storage.external.js';
-import { fetchPaymentMethodById, fetchPaymentMethods } from '../lib/paymentMethods.js';
-import { PaymentRequestError } from '../lib/paymentRequest.js';
 import type { PaymentMethod } from '../types/paymentMethods.js';
+
+// Match Next's server-module loading inside this isolated Node test process.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'server-only') {
+      return { url: 'data:text/javascript,export {};', shortCircuit: true };
+    }
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (specifier.startsWith('./') || specifier.startsWith('../')) {
+        return nextResolve(specifier.replace(/\.js$/, '') + '.ts', context);
+      }
+      if (specifier === 'next/headers') return nextResolve('next/headers.js', context);
+      throw error;
+    }
+  },
+  load(url, context, nextLoad) {
+    if (!url.endsWith('.ts')) return nextLoad(url, context);
+    return {
+      shortCircuit: true,
+      format: 'module',
+      source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), {
+        compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext },
+      }).outputText,
+    };
+  },
+});
+
+const { fetchPaymentMethodById, fetchPaymentMethods } = await import('./paymentMethods.ts');
+const { PaymentRequestError } = await import('./paymentRequest.ts');
 
 test('payment method reads use the signed-in session', async (t) => {
   const originalFetch = globalThis.fetch;
