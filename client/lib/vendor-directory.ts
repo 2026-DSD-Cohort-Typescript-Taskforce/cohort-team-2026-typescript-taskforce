@@ -1,6 +1,7 @@
 // Vendor types, role check, search, sort and the replies for /api/vendors (DC-84).
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
+import type { Role } from './roles.ts';
 import { toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
 import { INVALID_LOGO } from "./vendor-validation.ts";
 
@@ -13,7 +14,10 @@ export type Vendor = {
   logo_url: string | null;
 };
 
-const MANAGER_ROLES = ["financial_approver", "system_admin"];
+const MANAGER_ROLES: readonly string[] = [
+  'financial_approver',
+  'system_admin',
+] satisfies readonly Role[];
 const MAX_ID = 2147483647;
 
 export function canManageVendors(role: string | null | undefined): boolean {
