@@ -3,6 +3,7 @@
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
 import type { Bill } from "./bill-view.ts";
+import type { Role } from './roles.ts';
 import { BILL_NOT_FOUND, parseFields, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
 
 export type Decision = "approved" | "needs_revision" | "denied";
@@ -23,7 +24,7 @@ export const DECISIONS: { value: Decision; label: string; description: string }[
 ];
 
 /** users.role of the people who may decide bills. */
-export const FINANCIAL_APPROVER = "financial_approver";
+export const FINANCIAL_APPROVER: Role = 'financial_approver';
 
 /** decide_bill() refuses a longer note (counted as char_length, i.e. code points). */
 export const NOTE_MAX = 500;
