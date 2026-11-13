@@ -71,6 +71,7 @@ export async function proxy(request: NextRequest) {
     pathname === '/approvals' ||
     pathname === '/vendors' ||
     pathname === '/properties';
+    pathname === '/policies';
 
   let response: NextResponse;
 
@@ -99,5 +100,6 @@ export const config = {
     '/approvals',
     '/vendors',
     '/properties',
+    '/policies',
   ],
 };

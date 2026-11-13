@@ -16,9 +16,9 @@ insert into public.vendors (vendor_id, name, email, address, phone, payment_port
 insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
 insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
   values (12001, 'card', 'DC12 Test Card', '75001');
-insert into public.users (user_id, name, email, role, property_id, auth_user_id) values
-  (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', 12001, '00000000-0000-4000-8000-0000000012a1'),
-  (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', 12001, '00000000-0000-4000-8000-0000000012a2');
+insert into public.users (user_id, name, email, role, auth_user_id) values
+  (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000012a1'),
+  (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2');
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
   (12001, 'draft', 12001, 12001, 12101, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
   (12002, 'draft', 12001, 12001, 12101, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete

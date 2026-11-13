@@ -23,7 +23,6 @@ test('user helpers use the signed-in session', async (t) => {
     user_id: 7,
     name: 'Test user',
     role: 'billing_operator',
-    property_id: 1,
     phone: null,
     email: null,
     auth_user_id: 'test-auth-user',
