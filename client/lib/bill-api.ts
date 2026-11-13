@@ -158,7 +158,7 @@ export function addProperty(name: string) {
   return call(
     '/api/properties',
     sendJson('POST', { name }),
-    (body: { property: { id: number } }) => body.property,
+    (body: { property: { property_id: number } }) => ({ id: body.property.property_id }),
     "Couldn't add the property. Try again.",
   );
 }

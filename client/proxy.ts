@@ -62,7 +62,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const signedIn = SESSION_COOKIES.some((name) => jar.has(name));
-  // The /bills, /approvals and /policies pages load their data in the browser through apiFetch, which
+  // The /bills, /approvals, /properties, and /vendors pages load their data in the browser through apiFetch, which
   // refreshes an expired session itself, so they only need the signed-out check.
   const protectedPage =
     pathname === '/dashboard' ||
@@ -70,6 +70,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/bills/') ||
     pathname === '/approvals' ||
     pathname === '/vendors' ||
+    pathname === '/properties';
     pathname === '/policies';
 
   let response: NextResponse;
@@ -98,6 +99,7 @@ export const config = {
     '/bills/:id',
     '/approvals',
     '/vendors',
+    '/properties',
     '/policies',
   ],
 };
