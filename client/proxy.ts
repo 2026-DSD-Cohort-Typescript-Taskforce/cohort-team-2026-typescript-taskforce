@@ -53,7 +53,9 @@ export async function proxy(request: NextRequest) {
     if (!session.ok) {
       for (const name of SESSION_COOKIES) {
         jar.delete(name);
-        setCookies.push(`${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+        setCookies.push(
+          `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
+        );
       }
     }
     requestHeaders.set('cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '));
@@ -67,11 +69,16 @@ export async function proxy(request: NextRequest) {
     pathname === '/bills' ||
     pathname.startsWith('/bills/') ||
     pathname === '/approvals' ||
+    pathname === '/vendors' ||
     pathname === '/policies';
 
   let response: NextResponse;
 
-  if (pathname === '/' || (pathname === '/dashboard' && !dashboardSignedIn) || (protectedPage && !signedIn)) {
+  if (
+    pathname === '/' ||
+    (pathname === '/dashboard' && !dashboardSignedIn) ||
+    (protectedPage && !signedIn)
+  ) {
     response = NextResponse.redirect(new URL('/login', request.url));
   } else if (pathname === '/login' && signedIn) {
     response = NextResponse.redirect(new URL('/dashboard', request.url));
@@ -83,5 +90,14 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/login', '/dashboard', '/bills', '/bills/:id', '/approvals', '/policies'],
+  matcher: [
+    '/',
+    '/login',
+    '/dashboard',
+    '/bills',
+    '/bills/:id',
+    '/approvals',
+    '/vendors',
+    '/policies',
+  ],
 };
