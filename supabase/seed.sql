@@ -43,13 +43,18 @@ values
 -- Juniper Office Supply is new, complete and has no bills (so it can be deleted). The
 -- phones are 555-01xx numbers (set aside for fiction) with an area code, so they have the
 -- 10 digits the vendor form needs and a seeded vendor can be saved as it is.
-insert into public.users (name, email, role, property_id)
+insert into public.users (name, email, role)
 values (
   'Sam Rivera',
   'sam.rivera@example.com',
-  'system_admin',
-  (select property_id from public.properties where name = 'Alder Creek Workshop')
+  'system_admin'
 );
+
+-- DC-86: users link to properties through user_properties.
+insert into public.user_properties (user_id, property_id)
+select u.user_id, p.property_id
+from public.users u, public.properties p
+where u.email = 'sam.rivera@example.com' and p.name = 'Alder Creek Workshop';
 
 update public.vendors v
 set email = c.email, address = c.address, phone = c.phone
@@ -79,13 +84,17 @@ values (
 -- Morgan, to try the approvals page. Avery has no login yet (auth_user_id is NULL); a
 -- separate script (npm run seed:local-users --prefix server) links one. Due dates differ from id order on purpose. BILL-2101 also
 -- has a pending approvals row; the other two don't, so decide_bill() inserts one.
-insert into public.users (name, email, role, property_id)
+insert into public.users (name, email, role)
 values (
   'Avery Quinn',
   'avery.quinn@example.com',
-  'financial_approver',
-  (select property_id from public.properties where name = 'Alder Creek Workshop')
+  'financial_approver'
 );
+
+insert into public.user_properties (user_id, property_id)
+select u.user_id, p.property_id
+from public.users u, public.properties p
+where u.email = 'avery.quinn@example.com' and p.name = 'Alder Creek Workshop';
 
 insert into public.bills (status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_issued, date_due)
 values
