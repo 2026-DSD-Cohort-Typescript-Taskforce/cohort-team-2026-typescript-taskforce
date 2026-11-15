@@ -5,23 +5,22 @@ create extension if not exists pgtap with schema extensions;
 select plan(29);
 
 -- Setup (as postgres): logins A and B have profiles, C has none. Profile U has no login.
--- Test rows use fixed ids far above the seed data. Every profile needs a property.
-insert into public.properties (property_id, name) values (922101, 'DC-22 sync test property');
+-- Test rows use fixed ids far above the seed data.
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000000e1', 'sync-a@example.test'),
   ('00000000-0000-4000-8000-0000000000e2', 'sync-b@example.test'),
   ('00000000-0000-4000-8000-0000000000e3', 'sync-c@example.test');
-insert into public.users (user_id, name, email, role, phone, property_id, auth_user_id) values
-  (922101, 'Profile A', 'sync-a@example.test', 'billing_operator', '555-0001', 922101, '00000000-0000-4000-8000-0000000000e1'),
-  (922102, 'Profile B', 'sync-b@example.test', 'billing_operator', '555-0002', 922101, '00000000-0000-4000-8000-0000000000e2'),
-  (922103, 'Profile U', 'sync-u@example.test', 'billing_operator', '555-0003', 922101, null);
+insert into public.users (user_id, name, email, role, phone, auth_user_id) values
+  (922101, 'Profile A', 'sync-a@example.test', 'billing_operator', '555-0001', '00000000-0000-4000-8000-0000000000e1'),
+  (922102, 'Profile B', 'sync-b@example.test', 'billing_operator', '555-0002', '00000000-0000-4000-8000-0000000000e2'),
+  (922103, 'Profile U', 'sync-u@example.test', 'billing_operator', '555-0003', null);
 
 -- Every profile except A, to show that only the linked profile changes.
 create temp table others as
-  select user_id, name, email, role, phone, property_id, auth_user_id
+  select user_id, name, email, role, phone, auth_user_id
   from public.users where email <> 'sync-a@example.test';
 create temp view others_now as
-  select user_id, name, email, role, phone, property_id, auth_user_id
+  select user_id, name, email, role, phone, auth_user_id
   from public.users where user_id in (select user_id from others);
 
 -- Schema

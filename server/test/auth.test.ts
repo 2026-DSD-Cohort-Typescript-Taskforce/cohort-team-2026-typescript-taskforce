@@ -39,7 +39,7 @@ for (const url of [SUPABASE_URL, MAILPIT_URL]) {
 const ACCESS = 'sb-access-token';
 const REFRESH = 'sb-refresh-token';
 const BAD_CREDENTIALS = { error: 'Incorrect email or password.' };
-const PROFILE_KEYS = ['email', 'name', 'property_id', 'role', 'user_id'];
+const PROFILE_KEYS = ['email', 'name', 'role', 'user_id', 'user_properties'];
 
 let server: Server;
 let baseUrl: string;

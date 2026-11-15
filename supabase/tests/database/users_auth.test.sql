@@ -5,8 +5,8 @@ create extension if not exists pgtap with schema extensions;
 select plan(53);
 
 -- Setup (as postgres): three synthetic logins. A and B have profiles; C has none.
--- Test rows use fixed ids far above the seed data. Every profile needs a property, and a
--- bill also needs a vendor and a payment method.
+-- Test rows use fixed ids far above the seed data. A bill needs a property, a vendor and
+-- a payment method.
 insert into public.properties (property_id, name) values (922001, 'DC-22 test property');
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (922001, 'DC-22 test vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
@@ -16,9 +16,9 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000000a', 'dc22-a@example.test'),
   ('00000000-0000-4000-8000-00000000000b', 'dc22-b@example.test'),
   ('00000000-0000-4000-8000-00000000000c', 'dc22-c@example.test');
-insert into public.users (user_id, name, email, role, phone, property_id, created_at, updated_at) values
-  (922001, 'Profile A', 'dc22-a@example.test', 'billing_operator', '555-0001', 922001, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z'),
-  (922002, 'Profile B', 'dc22-b@example.test', 'billing_operator', '555-0002', 922001, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z');
+insert into public.users (user_id, name, email, role, phone, created_at, updated_at) values
+  (922001, 'Profile A', 'dc22-a@example.test', 'billing_operator', '555-0001', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z'),
+  (922002, 'Profile B', 'dc22-b@example.test', 'billing_operator', '555-0002', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z');
 select lives_ok(
   $$update public.users set auth_user_id = '00000000-0000-4000-8000-00000000000a' where email = 'dc22-a@example.test';
     update public.users set auth_user_id = '00000000-0000-4000-8000-00000000000b' where email = 'dc22-b@example.test'$$,
@@ -43,11 +43,11 @@ select col_type_is('public', 'users', 'user_id', 'integer', 'users.user_id is in
 select col_is_pk('public', 'users', 'user_id', 'users.user_id is the primary key');
 select fk_ok('public', 'bills', 'user_id', 'public', 'users', 'user_id', 'bills.user_id references users.user_id');
 select fk_ok('public', 'approvals', 'submitted_by', 'public', 'users', 'user_id', 'approvals.submitted_by references users.user_id');
-select col_type_is('public', 'users', 'role', 'character varying(255)', 'role stays free text');
+select col_type_is('public', 'users', 'role', 'character varying(255)', 'role is varchar(255), limited by a CHECK');
 select is(
   (select count(*)::int from pg_constraint where conrelid = 'public.users'::regclass and contype = 'c'),
-  0,
-  'users has no CHECK constraints (roles deferred)'
+  1,
+  'users has the role CHECK constraint'
 );
 
 -- Policies and grants
@@ -64,7 +64,7 @@ select column_privs_are('public', 'users', 'name', 'authenticated', ARRAY['SELEC
 select column_privs_are('public', 'users', 'phone', 'authenticated', ARRAY['SELECT', 'UPDATE'], 'authenticated can update phone');
 select column_privs_are('public', 'users', 'role', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update role');
 select column_privs_are('public', 'users', 'email', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update email (changed through Supabase Auth)');
-select column_privs_are('public', 'users', 'property_id', 'authenticated', ARRAY['SELECT'], 'authenticated cannot update property_id (open item)');
+select hasnt_column('public', 'users', 'property_id', 'property_id is gone; user_properties links users to properties');
 select sequence_privs_are('public', 'users_id_seq', 'anon', ARRAY[]::text[], 'anon has no privileges on users_id_seq');
 
 -- Timestamp trigger
@@ -98,7 +98,7 @@ select lives_ok(
 );
 select throws_ok($$update public.users set role = 'admin' where email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own role');
 select throws_ok($$update public.users set email = 'x@example.test' where email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own email (changed through Supabase Auth)');
-select throws_ok($$update public.users set property_id = null where email = 'dc22-a@example.test'$$, '42501', null, 'A cannot change own property_id (open item)');
+select throws_ok($$insert into public.user_properties (user_id, property_id) values (922001, 922001)$$, '42501', null, 'A cannot add themselves to a property');
 select throws_ok($$insert into public.users (email) values ('dc22-new@example.test')$$, '42501', null, 'A cannot insert users (admin/seed creates them)');
 select throws_ok($$delete from public.users where email = 'dc22-a@example.test'$$, '42501', null, 'A cannot delete users');
 reset role;
