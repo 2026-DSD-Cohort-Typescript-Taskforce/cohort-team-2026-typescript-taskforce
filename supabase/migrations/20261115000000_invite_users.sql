@@ -14,7 +14,7 @@
 --                              would skip proving the inbox after the invite and keep a
 --                              password someone else may have set. Delete that login first.
 --   23514  400   (CHECK)       the role isn't one of users.role's values
---   23503  409   (FK)          a property id doesn't exist
+--   23503  409   (FK)          a property id doesn't exist (Express answers 400 unknown_property)
 -- The email is trimmed and lower-cased (Supabase Auth stores it lower-cased), a blank phone
 -- becomes NULL and repeated property ids count once. Returns the new profile.
 

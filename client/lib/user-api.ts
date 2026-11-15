@@ -7,6 +7,7 @@ import {
   CREATE_USER_FAILED,
   LOAD_USERS_FAILED,
   RESEND_FAILED,
+  UPDATE_USER_FAILED,
   type NewUserInput,
   type UserRecord,
 } from './user-directory';
@@ -36,5 +37,15 @@ export function resendInvite(userId: number) {
     { method: 'POST' },
     (body: { message: string }) => body.message,
     RESEND_FAILED,
+  );
+}
+
+/** Changes a user's name, phone, role and properties. The email can't be changed here. */
+export function updateUser(userId: number, input: Omit<NewUserInput, 'email'>) {
+  return call(
+    `/api/admin/users/${userId}`,
+    sendJson('PATCH', input),
+    (body: { user: { name: string } }) => body.user,
+    UPDATE_USER_FAILED,
   );
 }

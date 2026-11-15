@@ -4,12 +4,16 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { loadProperties } from '@/lib/property-api';
 import type { Property } from '@/lib/property-validation';
 import { ROLES, ROLE_LABELS } from '@/lib/roles';
-import { createUser } from '@/lib/user-api';
+import { createUser, updateUser } from '@/lib/user-api';
 import {
   NEW_USER_FIELDS,
+  inviteNotSent,
+  inviteSent,
+  userSaved,
   validateNewUser,
   type NewUserErrors,
   type NewUserField,
+  type UserRecord,
 } from '@/lib/user-directory';
 import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
 
@@ -27,21 +31,33 @@ const TEXT_FIELDS: { field: keyof Omit<Values, 'role'>; label: string; type: str
 // Text and border colours are left to each field, which changes them with its error.
 const controlClass = `h-12 w-full rounded-input border bg-background px-4 text-body text-foreground ${colorTransition} ${focusRing}`;
 
+/** What a save reports to the page; a warning is a user added whose invite wasn't sent. */
+export type SaveNotice = { text: string; warning?: boolean };
+
 /**
- * The Add a User modal. It opens when mounted; the parent unmounts it on onClose, which
- * never comes while a save runs. Only system admins open it; the endpoint checks again.
+ * The Add a User modal, or Edit User when given a user, where the email is read-only (it is
+ * the login's). It opens when mounted; the parent unmounts it on onClose, which never comes
+ * while a save runs. Only system admins open it; the endpoints check again.
  */
-export function AddUserModal({
+export function UserModal({
+  user,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  user?: UserRecord;
   onClose: () => void;
-  /** inviteSent is false when the user was added but the email failed. */
-  onCreated: (email: string, inviteSent: boolean) => void;
+  onSaved: (notice: SaveNotice) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [values, setValues] = useState<Values>({ name: '', email: '', phone: '', role: '' });
-  const [propertyIds, setPropertyIds] = useState<number[]>([]);
+  const [values, setValues] = useState<Values>({
+    name: user?.name ?? '',
+    email: user?.email ?? '',
+    phone: user?.phone ?? '',
+    role: user?.role ?? '',
+  });
+  const [propertyIds, setPropertyIds] = useState<number[]>(
+    user?.properties.map((property) => property.property_id) ?? [],
+  );
   /** null while the properties load. */
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [propertiesError, setPropertiesError] = useState('');
@@ -114,7 +130,7 @@ export function AddUserModal({
     event.preventDefault();
     if (busyRef.current) return;
     const input = { ...values, phone: values.phone || undefined, propertyIds };
-    const found = validateNewUser(input);
+    const found = validateNewUser(input, !user);
     const first = NEW_USER_FIELDS.find((field) => found[field]);
     if (first) {
       setErrors(found);
@@ -127,7 +143,7 @@ export function AddUserModal({
     setError('');
     setBusy(true);
 
-    const result = await createUser(input);
+    const result = user ? await updateUser(user.user_id, input) : await createUser(input);
     // null: apiFetch is sending the user to /login.
     if (!result) return;
     setBusy(false);
@@ -136,7 +152,9 @@ export function AddUserModal({
       return;
     }
     dialogRef.current?.close();
-    onCreated(result.data.user.email, result.data.inviteSent);
+    if (!('inviteSent' in result.data)) onSaved({ text: userSaved(result.data.name) });
+    else if (result.data.inviteSent) onSaved({ text: inviteSent(result.data.user.email) });
+    else onSaved({ text: inviteNotSent(result.data.user.email), warning: true });
   }
 
   function errorProps(field: NewUserField) {
@@ -187,7 +205,7 @@ export function AddUserModal({
       </button>
 
       <h2 id={titleId} className="mt-6 text-heading">
-        Add a User
+        {user ? 'Edit User' : 'Add a User'}
       </h2>
 
       <form noValidate onSubmit={save} className="mt-6 flex flex-col gap-5">
@@ -204,13 +222,18 @@ export function AddUserModal({
               onChange={(event) => change(field, event.target.value)}
               maxLength={MAX_LENGTH}
               required={field !== 'phone'}
-              readOnly={saving}
+              readOnly={saving || (field === 'email' && !!user)}
               autoComplete="off"
               {...(field === 'phone'
                 ? { className: `${controlClass} border-strong focus-visible:border-primary` }
                 : errorProps(field))}
             />
             {field !== 'phone' && fieldError(field)}
+            {field === 'email' && user && (
+              <p className="text-body-sm text-secondary">
+                {"This is their sign-in email, so it can't be changed here."}
+              </p>
+            )}
           </div>
         ))}
 
@@ -280,7 +303,13 @@ export function AddUserModal({
           className={`w-full sm:w-auto sm:min-w-40 sm:self-end ${primaryButton}`}
         >
           {saving && <Spinner />}
-          {saving ? 'Sending invite…' : 'Send invite'}
+          {user
+            ? saving
+              ? 'Saving…'
+              : 'Save changes'
+            : saving
+              ? 'Sending invite…'
+              : 'Send invite'}
         </button>
       </form>
     </dialog>

@@ -16,14 +16,25 @@ const newUserSchema = z.object({
   role: roleSchema,
   propertyIds: z.array(idSchema).default([]),
 });
+// Email is the login's, which Supabase Auth changes, so an edit leaves it out.
+const editUserSchema = newUserSchema.omit({ email: true });
+
+const userNotFound = () => new HttpError(404, 'That user no longer exists.');
 
 // Invite links open the client's Set Password page with the new session in the URL fragment.
 const setPasswordUrl = () => `${env.CLIENT_URL}/set-password`;
 
-/** Maps invite_user()'s errors (supabase/migrations/20261115000000_invite_users.sql). */
-function inviteError(error: { code?: string; message?: string }) {
+/** Maps invite_user()'s and update_user()'s errors (supabase/migrations/2026111500*). */
+function rpcError(error: { code?: string; message?: string }) {
   switch (error.code) {
     case 'PT409':
+      if (error.message === 'own_role') {
+        return new HttpError(
+          409,
+          "You can't remove your own System Administrator role.",
+          'own_role',
+        );
+      }
       if (error.message === 'login_exists') {
         return new HttpError(
           409,
@@ -40,6 +51,8 @@ function inviteError(error: { code?: string; message?: string }) {
         'One of the chosen properties no longer exists. Reload and try again.',
         'unknown_property',
       );
+    case 'PT404':
+      return userNotFound();
     case 'PT403':
       return new HttpError(403, "You don't have access to this.", 'forbidden');
     default:
@@ -64,7 +77,7 @@ export async function inviteUser(req: Request, res: Response) {
     p_role: role,
     p_property_ids: propertyIds,
   });
-  if (error) throw inviteError(error);
+  if (error) throw rpcError(error);
 
   const inviteSent = await sendInvite(user.email, setPasswordUrl()).then(
     () => true,
@@ -76,8 +89,7 @@ export async function inviteUser(req: Request, res: Response) {
 /** Emails a user a new invite link, for one that expired or never arrived. */
 export async function resendInvite(req: Request, res: Response) {
   const userId = Number(req.params.id);
-  const notFound = new HttpError(404, 'That user no longer exists.');
-  if (!idSchema.safeParse(userId).success) throw notFound;
+  if (!idSchema.safeParse(userId).success) throw userNotFound();
 
   const { data, error } = await req
     .auth!.supabase.from('users')
@@ -85,8 +97,27 @@ export async function resendInvite(req: Request, res: Response) {
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
-  if (!data?.email) throw notFound;
+  if (!data?.email) throw userNotFound();
 
   await sendInvite(data.email, setPasswordUrl());
   res.status(202).json({ message: `Invite sent to ${data.email}.` });
+}
+
+/** Changes a user's name, phone, role and properties. update_user checks the role again. */
+export async function updateUser(req: Request, res: Response) {
+  const userId = Number(req.params.id);
+  if (!idSchema.safeParse(userId).success) throw userNotFound();
+  const parsed = editUserSchema.safeParse(req.body);
+  if (!parsed.success) throw new HttpError(400, "Check the user's details.");
+  const { name, phone, role, propertyIds } = parsed.data;
+
+  const { data: user, error } = await req.auth!.supabase.rpc('update_user', {
+    p_user_id: userId,
+    p_name: name,
+    p_phone: phone ?? null,
+    p_role: role,
+    p_property_ids: propertyIds,
+  });
+  if (error) throw rpcError(error);
+  res.json({ user });
 }

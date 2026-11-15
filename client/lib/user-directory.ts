@@ -3,10 +3,12 @@
 
 import { isRole, roleLabel } from './roles.ts';
 
-// properties(name) goes through user_properties (DC-86), so it is a list.
-export const USER_SELECT = 'user_id, name, email, phone, role, auth_user_id, properties(name)';
+// properties goes through user_properties (DC-86), so it is a list. The ids prefill the
+// edit form.
+export const USER_SELECT =
+  'user_id, name, email, phone, role, auth_user_id, properties(property_id, name)';
 
-type PropertyName = { name: string | null };
+type PropertyName = { property_id: number; name: string | null };
 
 /** A users row as USER_SELECT returns it. */
 export type UserRecord = {
@@ -68,11 +70,13 @@ export const ROLE_REQUIRED = 'Choose a role.';
 
 export const LOAD_USERS_FAILED = "Couldn't load users. Try again.";
 export const CREATE_USER_FAILED = "Couldn't add the user. Try again.";
+export const UPDATE_USER_FAILED = "Couldn't save the user. Try again.";
 export const USERS_FORBIDDEN = "You don't have access to manage users.";
 
 export const RESEND_FAILED = "Couldn't send the invite. Try again.";
 
 export const inviteSent = (email: string) => `Invite sent to ${email}.`;
+export const userSaved = (name: string) => `Saved ${name}.`;
 export const inviteNotSent = (email: string) =>
   `${email} was added, but the invite email couldn't be sent. Use Resend invite to try again.`;
 
@@ -80,13 +84,18 @@ export const inviteNotSent = (email: string) =>
 // (as in vendor-validation.ts).
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
-/** One message per field that failed; empty when the details can be sent. */
-export function validateNewUser(input: NewUserInput): NewUserErrors {
+/**
+ * One message per field that failed; empty when the details can be sent. Editing passes
+ * checkEmail false: the email is read-only there.
+ */
+export function validateNewUser(input: NewUserInput, checkEmail = true): NewUserErrors {
   const errors: NewUserErrors = {};
   if (!input.name.trim()) errors.name = NAME_REQUIRED;
-  const email = input.email.trim();
-  if (!email) errors.email = EMAIL_REQUIRED;
-  else if (!EMAIL_PATTERN.test(email)) errors.email = EMAIL_INVALID;
+  if (checkEmail) {
+    const email = input.email.trim();
+    if (!email) errors.email = EMAIL_REQUIRED;
+    else if (!EMAIL_PATTERN.test(email)) errors.email = EMAIL_INVALID;
+  }
   if (!isRole(input.role)) errors.role = ROLE_REQUIRED;
   return errors;
 }

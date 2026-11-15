@@ -4,17 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { loadUserRole } from '@/lib/bill-api';
 import { canManageUsers } from '@/lib/roles';
 import { loadUsers, resendInvite } from '@/lib/user-api';
-import {
-  USERS_FORBIDDEN,
-  inviteNotSent,
-  inviteSent,
-  toUserRow,
-  type UserRecord,
-  type UserRow,
-} from '@/lib/user-directory';
+import { USERS_FORBIDDEN, toUserRow, type UserRecord, type UserRow } from '@/lib/user-directory';
 import { ErrorAlert, SuccessAlert, primaryButton } from '@/app/ui';
 import { LoadError } from '../bills/bills-list';
-import { AddUserModal } from './add-user-modal';
+import { UserModal, type SaveNotice } from './user-modal';
 import { UsersTable } from './users-table';
 
 /** The Users table and the Add a User modal (DC-55). Only system admins see either. */
@@ -25,14 +18,16 @@ export function UsersDirectory() {
   const [loading, setLoading] = useState(true);
   /** null while the role loads; false if it isn't system_admin or didn't load. */
   const [canManage, setCanManage] = useState<boolean | null>(null);
-  const [adding, setAdding] = useState(false);
+  /** The open modal: { user } to edit that user, {} to add one, null when closed. */
+  const [modal, setModal] = useState<{ user?: UserRecord } | null>(null);
   const [success, setSuccess] = useState('');
-  /** An invite that couldn't be sent, from adding a user or resending. */
+  /** An invite that couldn't be sent, from adding a user or resending, or a failed resend. */
   const [warning, setWarning] = useState('');
   /** The user whose invite is being resent. */
   const [resendingId, setResendingId] = useState<number | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // The Add a User button, which gets focus back when the modal closes.
+  // The button that opened the modal (Add a User or a user's name), which gets focus back
+  // when the modal closes.
   const openerRef = useRef<HTMLButtonElement | null>(null);
   // Only the newest load's answer is shown, if reloads overlap.
   const latest = useRef(0);
@@ -74,26 +69,34 @@ export function UsersDirectory() {
     load();
   }
 
-  function openModal(opener: HTMLButtonElement) {
-    // Cleared now, so the next invite is announced even if it repeats the last one.
+  function openModal(opener: HTMLButtonElement, user?: UserRecord) {
+    // Cleared now, so the next save is announced even if it repeats the last one.
     setSuccess('');
     setWarning('');
     openerRef.current = opener;
-    setAdding(true);
+    setModal({ user });
   }
 
+  const edit = useCallback(
+    (row: UserRow, opener: HTMLButtonElement) => {
+      const user = users?.find((record) => record.user_id === row.user_id);
+      if (user) openModal(opener, user);
+    },
+    [users],
+  );
+
   function closeModal() {
-    setAdding(false);
+    setModal(null);
     const opener = openerRef.current;
     openerRef.current = null;
     if (opener?.isConnected) opener.focus();
     else headingRef.current?.focus();
   }
 
-  function created(email: string, sent: boolean) {
-    if (sent) setSuccess(inviteSent(email));
-    else setWarning(inviteNotSent(email));
-    // The new user shows with its properties as the list route reads them.
+  function saved({ text, warning }: SaveNotice) {
+    if (warning) setWarning(text);
+    else setSuccess(text);
+    // The row shows with its properties as the list route reads them.
     load();
   }
 
@@ -148,7 +151,7 @@ export function UsersDirectory() {
             <p className="text-body-lg font-medium">No users yet.</p>
           </div>
         ) : (
-          <UsersTable rows={rows} onResend={resend} resendingId={resendingId} />
+          <UsersTable rows={rows} onEdit={edit} onResend={resend} resendingId={resendingId} />
         )}
       </div>
     );
@@ -193,7 +196,7 @@ export function UsersDirectory() {
         <ErrorAlert message={warning} className="mb-6" />
         {content}
       </div>
-      {adding && <AddUserModal onClose={closeModal} onCreated={created} />}
+      {modal && <UserModal user={modal.user} onClose={closeModal} onSaved={saved} />}
     </>
   );
 }

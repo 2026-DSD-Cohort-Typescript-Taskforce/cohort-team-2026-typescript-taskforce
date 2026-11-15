@@ -18,7 +18,7 @@ const record: UserRecord = {
   phone: '555-010-1234',
   role: 'system_admin',
   auth_user_id: '9f0c3c1e-0000-4000-8000-000000000000',
-  properties: [{ name: 'Maple Court' }],
+  properties: [{ property_id: 1, name: 'Maple Court' }],
 };
 
 const valid: NewUserInput = {
@@ -46,13 +46,22 @@ test('toUserRow marks a user with no login as pending', () => {
 });
 
 test('toUserRow joins a list of properties', () => {
-  const row = toUserRow({ ...record, properties: [{ name: 'Maple Court' }, { name: 'Oak Row' }] });
+  const row = toUserRow({
+    ...record,
+    properties: [
+      { property_id: 1, name: 'Maple Court' },
+      { property_id: 2, name: 'Oak Row' },
+    ],
+  });
   assert.equal(row.properties, 'Maple Court, Oak Row');
 });
 
 test('toUserRow shows a dash when there are no properties', () => {
   assert.equal(toUserRow({ ...record, properties: [] }).properties, '—');
-  assert.equal(toUserRow({ ...record, properties: [{ name: null }] }).properties, '—');
+  assert.equal(
+    toUserRow({ ...record, properties: [{ property_id: 1, name: null }] }).properties,
+    '—',
+  );
 });
 
 test('toUserRow shows an unknown role as stored, and no role as a dash', () => {
@@ -97,5 +106,12 @@ test('validateNewUser reports every failing field at once', () => {
     name: NAME_REQUIRED,
     email: EMAIL_REQUIRED,
     role: ROLE_REQUIRED,
+  });
+});
+
+test('validateNewUser skips the email when editing, where it is read-only', () => {
+  assert.deepEqual(validateNewUser({ ...valid, email: '' }, false), {});
+  assert.deepEqual(validateNewUser({ ...valid, email: '', name: ' ' }, false), {
+    name: NAME_REQUIRED,
   });
 });
