@@ -18,13 +18,12 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import { createClient } from '@supabase/supabase-js';
 import app from '../src/app';
-import { mailpitUrl } from './helpers/mailpit-url';
 
 const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SEED_USER_PASSWORD } = process.env;
-const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL?.trim() || 'alex.morgan@example.com';
+const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? 'alex.morgan@example.com';
 // A second seeded login, so changing its email doesn't affect the other tests.
 const CHANGE_USER_EMAIL = 'morgan.ellis@example.com';
-const MAILPIT_URL = mailpitUrl(process.env.MAILPIT_URL);
+const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
 // Same default as src/config/env.ts. Email confirmation links redirect to its /login.
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:3000';
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SEED_USER_PASSWORD) {
