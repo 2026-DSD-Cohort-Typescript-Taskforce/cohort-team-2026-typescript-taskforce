@@ -6,8 +6,7 @@ import { HttpError } from '../middleware/errorHandler';
 import { emailInUse, sendInvite } from '../services/auth.service';
 
 // Ids are Postgres integer columns; a bigger number would fail in the database as a 500.
-const MAX_ID = 2147483647;
-const idSchema = z.number().int().positive().max(MAX_ID);
+const idSchema = z.number().int().positive().max(2_147_483_647);
 
 // users.name, email and phone are varchar(255).
 const newUserSchema = z.object({
@@ -32,7 +31,7 @@ function inviteError(error: { code?: string; message?: string }) {
           'login_exists',
         );
       }
-      return emailInUse();
+    // falls through
     case '23505':
       return emailInUse();
     case '23503':
@@ -55,12 +54,7 @@ function inviteError(error: { code?: string; message?: string }) {
  */
 export async function inviteUser(req: Request, res: Response) {
   const parsed = newUserSchema.safeParse(req.body);
-  if (!parsed.success) {
-    const fields = [
-      ...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? 'body'))),
-    ];
-    throw new HttpError(400, `Check the user's details: ${fields.join(', ')}.`);
-  }
+  if (!parsed.success) throw new HttpError(400, "Check the user's details.");
   const { name, email, phone, role, propertyIds } = parsed.data;
 
   const { data: user, error } = await req.auth!.supabase.rpc('invite_user', {

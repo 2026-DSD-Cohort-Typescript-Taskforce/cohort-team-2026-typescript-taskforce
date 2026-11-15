@@ -146,6 +146,5 @@ export async function setPasswordForSession(
     throw isRejection(error) ? linkExpired() : unavailable();
   }
   const { data } = await supabase.auth.getSession();
-  if (!data.session) throw linkExpired();
-  return data.session;
+  return data.session!;
 }
