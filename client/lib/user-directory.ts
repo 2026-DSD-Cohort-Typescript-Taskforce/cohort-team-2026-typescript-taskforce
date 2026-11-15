@@ -3,8 +3,7 @@
 
 import { isRole, roleLabel } from './roles.ts';
 
-// Embeds the property through users.property_id. After DC-86 a user can have several
-// properties: change this to user_properties(properties(name)) and nothing else.
+// properties(name) goes through user_properties (DC-86), so it is a list.
 export const USER_SELECT = 'user_id, name, email, phone, role, auth_user_id, properties(name)';
 
 type PropertyName = { name: string | null };
@@ -18,8 +17,7 @@ export type UserRecord = {
   role: string | null;
   /** null until the user accepts the invite and has a login. */
   auth_user_id: string | null;
-  /** One property today (or none); a list once the embed goes through user_properties. */
-  properties: PropertyName | PropertyName[] | null;
+  properties: PropertyName[];
 };
 
 export type UserRow = {
@@ -34,12 +32,7 @@ export type UserRow = {
 };
 
 export function toUserRow(record: UserRecord): UserRow {
-  const list = Array.isArray(record.properties)
-    ? record.properties
-    : record.properties
-      ? [record.properties]
-      : [];
-  const names = list.map((property) => property.name?.trim()).filter(Boolean);
+  const names = record.properties.map((property) => property.name?.trim()).filter(Boolean);
   return {
     user_id: record.user_id,
     name: record.name ?? '',
@@ -77,7 +70,11 @@ export const LOAD_USERS_FAILED = "Couldn't load users. Try again.";
 export const CREATE_USER_FAILED = "Couldn't add the user. Try again.";
 export const USERS_FORBIDDEN = "You don't have access to manage users.";
 
+export const RESEND_FAILED = "Couldn't send the invite. Try again.";
+
 export const inviteSent = (email: string) => `Invite sent to ${email}.`;
+export const inviteNotSent = (email: string) =>
+  `${email} was added, but the invite email couldn't be sent. Use Resend invite to try again.`;
 
 // local@domain, where the domain has at least two non-empty dot-separated labels
 // (as in vendor-validation.ts).

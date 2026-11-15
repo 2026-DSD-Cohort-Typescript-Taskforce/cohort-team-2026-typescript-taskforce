@@ -29,6 +29,7 @@ test('every role has a non-empty label', () => {
 test('roleLabel shows the label for a known role', () => {
   assert.equal(roleLabel('system_admin'), 'System Administrator');
   assert.equal(roleLabel('billing_operator'), 'Billing Operator');
+  assert.equal(roleLabel('viewer'), 'Viewer');
 });
 
 test('roleLabel shows an unknown role as it is stored', () => {

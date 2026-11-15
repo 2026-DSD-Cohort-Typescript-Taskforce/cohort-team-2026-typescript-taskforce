@@ -2,8 +2,14 @@
 // routes. Each returns the data, a failure with a readable message, or null while
 // apiFetch sends the user to /login.
 
-import { call, type ApiResult } from './bill-api';
-import { LOAD_USERS_FAILED, type NewUserInput, type UserRecord } from './user-directory';
+import { call, sendJson } from './bill-api';
+import {
+  CREATE_USER_FAILED,
+  LOAD_USERS_FAILED,
+  RESEND_FAILED,
+  type NewUserInput,
+  type UserRecord,
+} from './user-directory';
 
 export function loadUsers() {
   return call(
@@ -14,33 +20,21 @@ export function loadUsers() {
   );
 }
 
-// Temporary ids for mocked users: negative, so they never clash with a real user_id.
-let nextMockId = -1;
+/** Adds a pending user and emails the invite. `inviteSent` is false if only the email failed. */
+export function createUser(input: NewUserInput) {
+  return call(
+    '/api/admin/users',
+    sendJson('POST', input),
+    (body: { user: { email: string }; inviteSent: boolean }) => body,
+    CREATE_USER_FAILED,
+  );
+}
 
-/**
- * MOCK: nothing is saved. Waits 500 ms, then answers with the user as the endpoint will,
- * with no login yet (auth_user_id null).
- *
- * TODO(DC-55): send the input to POST /api/admin/users (call + sendJson('POST', input),
- * fallback CREATE_USER_FAILED) and drop `propertyNames`: the endpoint returns the embed.
- *
- * @param propertyNames The chosen properties' names, which only the mock needs.
- */
-export async function createUser(
-  input: NewUserInput,
-  propertyNames: string[] = [],
-): Promise<ApiResult<UserRecord>> {
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  return {
-    ok: true,
-    data: {
-      user_id: nextMockId--,
-      name: input.name.trim(),
-      email: input.email.trim(),
-      phone: input.phone?.trim() || null,
-      role: input.role,
-      auth_user_id: null,
-      properties: propertyNames.map((name) => ({ name })),
-    },
-  };
+export function resendInvite(userId: number) {
+  return call(
+    `/api/admin/users/${userId}/invite`,
+    { method: 'POST' },
+    (body: { message: string }) => body.message,
+    RESEND_FAILED,
+  );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { loadFormOptions } from '@/lib/bill-api';
+import { loadProperties } from '@/lib/property-api';
+import type { Property } from '@/lib/property-validation';
 import { ROLES, ROLE_LABELS } from '@/lib/roles';
 import { createUser } from '@/lib/user-api';
 import {
@@ -9,12 +10,10 @@ import {
   validateNewUser,
   type NewUserErrors,
   type NewUserField,
-  type UserRecord,
 } from '@/lib/user-directory';
 import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
 
 type Values = { name: string; email: string; phone: string; role: string };
-type Property = { id: number; name: string };
 
 // users.name, email and phone are varchar(255).
 const MAX_LENGTH = 255;
@@ -30,14 +29,15 @@ const controlClass = `h-12 w-full rounded-input border bg-background px-4 text-b
 
 /**
  * The Add a User modal. It opens when mounted; the parent unmounts it on onClose, which
- * never comes while a save runs. Only system admins open it; the endpoint will check again.
+ * never comes while a save runs. Only system admins open it; the endpoint checks again.
  */
 export function AddUserModal({
   onClose,
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (user: UserRecord) => void;
+  /** inviteSent is false when the user was added but the email failed. */
+  onCreated: (email: string, inviteSent: boolean) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [values, setValues] = useState<Values>({ name: '', email: '', phone: '', role: '' });
@@ -71,12 +71,11 @@ export function AddUserModal({
     return () => window.removeEventListener('keydown', holdEsc, true);
   }, []);
 
-  // TODO: GET /api/properties once it exists; the bill form's choices list them for now.
   useEffect(() => {
     let active = true;
-    loadFormOptions().then((result) => {
+    loadProperties().then((result) => {
       if (!active || !result) return;
-      if (result.ok) setProperties(result.data.properties);
+      if (result.ok) setProperties(result.data);
       else setPropertiesError(result.error);
     });
     return () => {
@@ -128,10 +127,7 @@ export function AddUserModal({
     setError('');
     setBusy(true);
 
-    const names = (properties ?? [])
-      .filter((property) => propertyIds.includes(property.id))
-      .map((property) => property.name);
-    const result = await createUser(input, names);
+    const result = await createUser(input);
     // null: apiFetch is sending the user to /login.
     if (!result) return;
     setBusy(false);
@@ -140,7 +136,7 @@ export function AddUserModal({
       return;
     }
     dialogRef.current?.close();
-    onCreated(result.data);
+    onCreated(result.data.user.email, result.data.inviteSent);
   }
 
   function errorProps(field: NewUserField) {
@@ -255,12 +251,14 @@ export function AddUserModal({
           ) : (
             <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-input border border-strong p-2">
               {properties.map((property) => (
-                <li key={property.id}>
+                <li key={property.property_id}>
                   <label className="flex items-center gap-3 rounded-button px-2 py-2 text-body hover:bg-raised">
                     <input
                       type="checkbox"
-                      checked={propertyIds.includes(property.id)}
-                      onChange={(event) => toggleProperty(property.id, event.target.checked)}
+                      checked={propertyIds.includes(property.property_id)}
+                      onChange={(event) =>
+                        toggleProperty(property.property_id, event.target.checked)
+                      }
                       disabled={saving}
                       className={`size-5 accent-primary ${focusRing}`}
                     />

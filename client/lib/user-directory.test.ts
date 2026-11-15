@@ -18,7 +18,7 @@ const record: UserRecord = {
   phone: '555-010-1234',
   role: 'system_admin',
   auth_user_id: '9f0c3c1e-0000-4000-8000-000000000000',
-  properties: { name: 'Maple Court' },
+  properties: [{ name: 'Maple Court' }],
 };
 
 const valid: NewUserInput = {
@@ -51,7 +51,6 @@ test('toUserRow joins a list of properties', () => {
 });
 
 test('toUserRow shows a dash when there are no properties', () => {
-  assert.equal(toUserRow({ ...record, properties: null }).properties, '—');
   assert.equal(toUserRow({ ...record, properties: [] }).properties, '—');
   assert.equal(toUserRow({ ...record, properties: [{ name: null }] }).properties, '—');
 });

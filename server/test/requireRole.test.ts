@@ -8,7 +8,7 @@ import { requireRole } from '../src/middleware/requireRole';
 import type { Profile } from '../src/services/users.service';
 
 function profileWithRole(role: string | null): Profile {
-  return { user_id: 1, name: 'Test User', email: 'test@example.com', role, property_id: null };
+  return { user_id: 1, name: 'Test User', email: 'test@example.com', role, user_properties: [] };
 }
 
 /** A fake supabase client whose users lookup resolves to `profile`. */
@@ -48,6 +48,11 @@ async function assertRejects(promise: Promise<unknown>, status: number, code?: s
 describe('requireRole', () => {
   it('calls next when the role is allowed', async () => {
     const next = await run(fakeRequest(profileWithRole('system_admin')), 'system_admin');
+    assert.equal(next.mock.callCount(), 1);
+  });
+
+  it('knows every role in the users.role CHECK, including viewer', async () => {
+    const next = await run(fakeRequest(profileWithRole('viewer')), 'viewer');
     assert.equal(next.mock.callCount(), 1);
   });
 

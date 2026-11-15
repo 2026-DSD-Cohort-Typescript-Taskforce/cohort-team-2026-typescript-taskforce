@@ -3,9 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { loadUserRole } from '@/lib/bill-api';
 import { canManageUsers } from '@/lib/roles';
-import { loadUsers } from '@/lib/user-api';
-import { USERS_FORBIDDEN, inviteSent, toUserRow, type UserRecord } from '@/lib/user-directory';
-import { SuccessAlert, primaryButton } from '@/app/ui';
+import { loadUsers, resendInvite } from '@/lib/user-api';
+import {
+  USERS_FORBIDDEN,
+  inviteNotSent,
+  inviteSent,
+  toUserRow,
+  type UserRecord,
+  type UserRow,
+} from '@/lib/user-directory';
+import { ErrorAlert, SuccessAlert, primaryButton } from '@/app/ui';
 import { LoadError } from '../bills/bills-list';
 import { AddUserModal } from './add-user-modal';
 import { UsersTable } from './users-table';
@@ -20,6 +27,10 @@ export function UsersDirectory() {
   const [canManage, setCanManage] = useState<boolean | null>(null);
   const [adding, setAdding] = useState(false);
   const [success, setSuccess] = useState('');
+  /** An invite that couldn't be sent, from adding a user or resending. */
+  const [warning, setWarning] = useState('');
+  /** The user whose invite is being resent. */
+  const [resendingId, setResendingId] = useState<number | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   // The Add a User button, which gets focus back when the modal closes.
   const openerRef = useRef<HTMLButtonElement | null>(null);
@@ -66,6 +77,7 @@ export function UsersDirectory() {
   function openModal(opener: HTMLButtonElement) {
     // Cleared now, so the next invite is announced even if it repeats the last one.
     setSuccess('');
+    setWarning('');
     openerRef.current = opener;
     setAdding(true);
   }
@@ -78,9 +90,24 @@ export function UsersDirectory() {
     else headingRef.current?.focus();
   }
 
-  function created(user: UserRecord) {
-    setUsers((current) => (current ? [...current, user] : [user]));
-    setSuccess(inviteSent(user.email ?? ''));
+  function created(email: string, sent: boolean) {
+    if (sent) setSuccess(inviteSent(email));
+    else setWarning(inviteNotSent(email));
+    // The new user shows with its properties as the list route reads them.
+    load();
+  }
+
+  async function resend(row: UserRow) {
+    if (resendingId !== null) return;
+    setSuccess('');
+    setWarning('');
+    setResendingId(row.user_id);
+    const result = await resendInvite(row.user_id);
+    // null: apiFetch is sending the user to /login.
+    if (!result) return;
+    setResendingId(null);
+    if (result.ok) setSuccess(result.data);
+    else setWarning(result.error);
   }
 
   if (canManage === null) {
@@ -121,7 +148,7 @@ export function UsersDirectory() {
             <p className="text-body-lg font-medium">No users yet.</p>
           </div>
         ) : (
-          <UsersTable rows={rows} />
+          <UsersTable rows={rows} onResend={resend} resendingId={resendingId} />
         )}
       </div>
     );
@@ -163,6 +190,7 @@ export function UsersDirectory() {
       {/* The alert brings its own margin, so no gap is left while it is empty. */}
       <div className="flex flex-col">
         <SuccessAlert message={success} className="mb-6" />
+        <ErrorAlert message={warning} className="mb-6" />
         {content}
       </div>
       {adding && <AddUserModal onClose={closeModal} onCreated={created} />}

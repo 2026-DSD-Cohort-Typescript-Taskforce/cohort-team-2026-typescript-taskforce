@@ -50,6 +50,12 @@ async function main() {
       });
       if (createError) throw createError;
       authUserId = data.user.id;
+      // Confirming the email links the pending profile, and that trigger clears any password
+      // set before the confirmation (DC-55), so set it again now the login is linked.
+      const { error: passwordError } = await supabase.auth.admin.updateUserById(authUserId, {
+        password: SEED_USER_PASSWORD,
+      });
+      if (passwordError) throw passwordError;
     }
 
     const { error: linkError } = await supabase
