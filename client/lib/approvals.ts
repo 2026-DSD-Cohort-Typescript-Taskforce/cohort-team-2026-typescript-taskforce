@@ -2,24 +2,34 @@
 // error replies for POST /api/bills/[id]/decision, and the queue's table rows.
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
-import type { Bill } from "./bill-view.ts";
+import type { Bill } from './bill-view.ts';
 import type { Role } from './roles.ts';
-import { BILL_NOT_FOUND, parseFields, toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
+import {
+  BILL_NOT_FOUND,
+  parseFields,
+  toErrorResponse,
+  type ErrorResponse,
+  type SupabaseError,
+} from './submit-errors.ts';
 
-export type Decision = "approved" | "needs_revision" | "denied";
+export type Decision = 'approved' | 'needs_revision' | 'denied';
 
 // In the order the modal lists them.
 export const DECISIONS: { value: Decision; label: string; description: string }[] = [
-  { value: "approved", label: "Bill Approved", description: "This bill may be processed for payment." },
   {
-    value: "needs_revision",
-    label: "Bill Needs Revision",
-    description: "This bill requires revisions prior to approval.",
+    value: 'approved',
+    label: 'Bill Approved',
+    description: 'This bill may be processed for payment.',
   },
   {
-    value: "denied",
-    label: "Bill Not Approved",
-    description: "This bill may not be processed for payment at this time.",
+    value: 'needs_revision',
+    label: 'Bill Needs Revision',
+    description: 'This bill requires revisions prior to approval.',
+  },
+  {
+    value: 'denied',
+    label: 'Bill Not Approved',
+    description: 'This bill may not be processed for payment at this time.',
   },
 ];
 
@@ -33,19 +43,19 @@ export const DECISION_FAILED = "Couldn't save the decision. Try again.";
 
 /** payment_methods.payment_type as the queue shows it; null when the bill has no method. */
 export function paymentTypeLabel(type: string | null): string {
-  if (type === null) return "—";
-  if (type === "card") return "Credit/Debit Card";
-  if (type === "bank") return "Bank account";
+  if (type === null) return '—';
+  if (type === 'card') return 'Credit/Debit Card';
+  if (type === 'bank') return 'Bank account';
   return type;
 }
 
 export function decisionBanner(decision: Decision, billId: number): string {
   switch (decision) {
-    case "approved":
+    case 'approved':
       return `Bill ${billId} approved.`;
-    case "needs_revision":
+    case 'needs_revision':
       return `Bill ${billId} sent back for revision.`;
-    case "denied":
+    case 'denied':
       return `Bill ${billId} not approved.`;
   }
 }
@@ -62,16 +72,16 @@ export function validateDecisionInput(
 ): { input: { decision: Decision; note: string | null } } | { fields: string[] } {
   const fields: string[] = [];
   const decision = DECISIONS.find((d) => d.value === body.decision)?.value;
-  if (!decision) fields.push("decision");
+  if (!decision) fields.push('decision');
 
   let note: string | null = null;
   if (body.note !== null && body.note !== undefined) {
-    if (typeof body.note !== "string") {
-      fields.push("note");
+    if (typeof body.note !== 'string') {
+      fields.push('note');
     } else {
       const trimmed = body.note.trim();
-      if (noteLength(trimmed) > NOTE_MAX) fields.push("note");
-      else note = trimmed === "" ? null : trimmed;
+      if (noteLength(trimmed) > NOTE_MAX) fields.push('note');
+      else note = trimmed === '' ? null : trimmed;
     }
   }
 
@@ -79,7 +89,7 @@ export function validateDecisionInput(
 }
 
 const FIELD_MESSAGES: Record<string, string> = {
-  decision: "Choose an approval decision.",
+  decision: 'Choose an approval decision.',
   note: `Keep the note to ${NOTE_MAX} characters or fewer.`,
 };
 
@@ -89,7 +99,7 @@ export function invalidDecision(fields: string[]): ErrorResponse {
     status: 400,
     body: {
       error: FIELD_MESSAGES[fields[0]] ?? FIELD_MESSAGES.decision,
-      code: "invalid_decision",
+      code: 'invalid_decision',
       fields,
     },
   };
@@ -101,18 +111,21 @@ export function invalidDecision(fields: string[]): ErrorResponse {
  */
 export function toDecisionErrorResponse(error: SupabaseError): ErrorResponse {
   switch (error.code) {
-    case "PT400":
+    case 'PT400':
       return invalidDecision(parseFields(error.details));
-    case "PT403":
-      return { status: 403, body: { error: "Only financial approvers can decide bills.", code: "forbidden" } };
-    case "PT404":
+    case 'PT403':
+      return {
+        status: 403,
+        body: { error: 'Only financial approvers can decide bills.', code: 'forbidden' },
+      };
+    case 'PT404':
       return BILL_NOT_FOUND;
-    case "PT409":
+    case 'PT409':
       return {
         status: 409,
         body: {
-          error: "This bill has already been decided.",
-          code: "not_pending_approval",
+          error: 'This bill has already been decided.',
+          code: 'not_pending_approval',
           ...(error.details ? { status: error.details } : {}),
         },
       };
@@ -136,8 +149,8 @@ export type ApprovalRow = {
 export function approvalRow(bill: Bill): ApprovalRow {
   return {
     bill_id: bill.bill_id,
-    vendor: bill.vendor?.name ?? "—",
-    property: bill.property?.name ?? "—",
+    vendor: bill.vendor?.name ?? '—',
+    property: bill.property?.name ?? '—',
     date_due: bill.date_due,
     payment_type: paymentTypeLabel(bill.payment?.payment_type ?? null),
     amount: bill.amount,
@@ -148,4 +161,6 @@ export function approvalRow(bill: Bill): ApprovalRow {
 
 // Plain objects, not TanStack's SortingState, so this module needs no package.
 /** Earliest due date first. */
-export const APPROVALS_DEFAULT_SORT: { id: string; desc: boolean }[] = [{ id: "date_due", desc: false }];
+export const APPROVALS_DEFAULT_SORT: { id: string; desc: boolean }[] = [
+  { id: 'date_due', desc: false },
+];

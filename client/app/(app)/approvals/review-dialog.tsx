@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { DECISIONS, NOTE_MAX, noteLength, paymentTypeLabel, type Decision } from "@/lib/approvals";
-import { decideBill } from "@/lib/bill-api";
-import { formatAmount, formatDate, type Bill } from "@/lib/bill-view";
-import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from "@/app/ui";
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { DECISIONS, NOTE_MAX, noteLength, paymentTypeLabel, type Decision } from '@/lib/approvals';
+import { decideBill } from '@/lib/bill-api';
+import { formatAmount, formatDate, type Bill } from '@/lib/bill-view';
+import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
 
 // Text and border colours are left to each control, which changes them with its state.
 const controlClass = `w-full rounded-input border bg-background px-4 text-body disabled:cursor-not-allowed disabled:border-subtle disabled:text-disabled-foreground ${colorTransition} ${focusRing}`;
@@ -13,25 +13,25 @@ const controlClass = `w-full rounded-input border bg-background px-4 text-body d
 // colours, so it also shows in screenshots. Other browsers keep their native select. The long
 // option text wraps there, in the list and in the select (min-h, not h), instead of overflowing.
 const pickerClass = [
-  "[appearance:base-select]",
-  "items-center",
-  "[&::picker(select)]:[appearance:base-select]",
-  "[&::picker(select)]:mt-1",
-  "[&::picker(select)]:w-[anchor-size(self-inline)]",
-  "[&::picker(select)]:rounded-input",
-  "[&::picker(select)]:border-strong",
-  "[&::picker(select)]:bg-overlay",
-  "[&::picker(select)]:p-1",
-  "[&::picker(select)]:text-foreground",
-  "[&::picker(select)]:not-italic",
-  "[&::picker(select)]:shadow-l4",
-  "[&_option]:rounded-input",
-  "[&_option]:px-3",
-  "[&_option]:py-2",
-  "[&_option]:whitespace-normal",
-  "[&_option:hover]:bg-raised",
-  "[&_option:focus-visible]:bg-raised",
-].join(" ");
+  '[appearance:base-select]',
+  'items-center',
+  '[&::picker(select)]:[appearance:base-select]',
+  '[&::picker(select)]:mt-1',
+  '[&::picker(select)]:w-[anchor-size(self-inline)]',
+  '[&::picker(select)]:rounded-input',
+  '[&::picker(select)]:border-strong',
+  '[&::picker(select)]:bg-overlay',
+  '[&::picker(select)]:p-1',
+  '[&::picker(select)]:text-foreground',
+  '[&::picker(select)]:not-italic',
+  '[&::picker(select)]:shadow-l4',
+  '[&_option]:rounded-input',
+  '[&_option]:px-3',
+  '[&_option]:py-2',
+  '[&_option]:whitespace-normal',
+  '[&_option:hover]:bg-raised',
+  '[&_option:focus-visible]:bg-raised',
+].join(' ');
 
 export function AmountPill({ amount }: { amount: number | null }) {
   return (
@@ -70,10 +70,10 @@ export function ReviewDialog({
   onGone: (message: string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [decision, setDecision] = useState<Decision | "">("");
-  const [note, setNote] = useState("");
+  const [decision, setDecision] = useState<Decision | ''>('');
+  const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const noteId = useId();
   const counterId = useId();
   const noticeId = useId();
@@ -89,8 +89,8 @@ export function ReviewDialog({
   // The server checks the role, the status and the note again.
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canDecide || decision === "" || tooLong || submitting) return;
-    setError("");
+    if (!canDecide || decision === '' || tooLong || submitting) return;
+    setError('');
     setSubmitting(true);
     const result = await decideBill(bill.bill_id, decision, note);
     // null: apiFetch is sending the user to /login.
@@ -107,7 +107,7 @@ export function ReviewDialog({
     }
   }
 
-  const vendor = bill.vendor?.name ?? "—";
+  const vendor = bill.vendor?.name ?? '—';
 
   return (
     <dialog
@@ -130,7 +130,10 @@ export function ReviewDialog({
         <span className="underline underline-offset-4">Back</span>
       </button>
 
-      <section aria-label="Bill details" className="mt-6 rounded-card border border-strong p-5 sm:p-6">
+      <section
+        aria-label="Bill details"
+        className="mt-6 rounded-card border border-strong p-5 sm:p-6"
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-1">
             <p className="text-body-sm text-secondary">Bill Vendor</p>
@@ -140,19 +143,22 @@ export function ReviewDialog({
         </div>
         <dl className="mt-4 flex flex-col gap-2 text-body">
           <Detail label="Bill #" value={String(bill.bill_id)} />
-          <Detail label="Invoice #" value={bill.invoice_number ?? "—"} />
+          <Detail label="Invoice #" value={bill.invoice_number ?? '—'} />
         </dl>
         <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <dl className="flex min-w-0 flex-col gap-2 text-body">
-            <Detail label="Property" value={bill.property?.name ?? "—"} />
-            <Detail label="Payment Type" value={paymentTypeLabel(bill.payment?.payment_type ?? null)} />
-            <Detail label="Payment Method" value={bill.payment?.name ?? "—"} />
-            <Detail label="Issued" value={bill.date_issued ? formatDate(bill.date_issued) : "—"} />
+            <Detail label="Property" value={bill.property?.name ?? '—'} />
+            <Detail
+              label="Payment Type"
+              value={paymentTypeLabel(bill.payment?.payment_type ?? null)}
+            />
+            <Detail label="Payment Method" value={bill.payment?.name ?? '—'} />
+            <Detail label="Issued" value={bill.date_issued ? formatDate(bill.date_issued) : '—'} />
             <Detail label="Received" value={formatDate(bill.date_received)} />
           </dl>
           <p className="flex shrink-0 flex-col gap-2 text-body text-secondary italic sm:text-right">
             <span>Unpaid</span>
-            <span>{bill.date_due ? `Due ${formatDate(bill.date_due)}` : "No due date"}</span>
+            <span>{bill.date_due ? `Due ${formatDate(bill.date_due)}` : 'No due date'}</span>
           </p>
         </div>
       </section>
@@ -163,9 +169,12 @@ export function ReviewDialog({
           Bill Status
         </p>
         <p className="pl-4.5 text-body text-secondary">
-          <strong className="font-semibold text-foreground">Pending</strong> approval for bill payment
+          <strong className="font-semibold text-foreground">Pending</strong> approval for bill
+          payment
         </p>
-        <p className="pl-4.5 text-caption text-secondary">Status Message: Bill submitted for approval.</p>
+        <p className="pl-4.5 text-caption text-secondary">
+          Status Message: Bill submitted for approval.
+        </p>
       </div>
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
@@ -188,7 +197,7 @@ export function ReviewDialog({
             aria-label="Approval decision"
             value={decision}
             onChange={(event) => setDecision(event.target.value as Decision)}
-            className={`min-h-12 border-strong py-2.5 focus-visible:border-primary ${controlClass} ${decision === "" ? "text-secondary italic" : "text-foreground"} ${pickerClass}`}
+            className={`min-h-12 border-strong py-2.5 focus-visible:border-primary ${controlClass} ${decision === '' ? 'text-secondary italic' : 'text-foreground'} ${pickerClass}`}
           >
             <option value="" disabled hidden>
               Approval decision
@@ -210,11 +219,11 @@ export function ReviewDialog({
               onChange={(event) => setNote(event.target.value)}
               aria-describedby={counterId}
               aria-invalid={tooLong || undefined}
-              className={`resize-y py-3 text-foreground ${controlClass} ${tooLong ? "border-danger" : "border-strong focus-visible:border-primary"}`}
+              className={`resize-y py-3 text-foreground ${controlClass} ${tooLong ? 'border-danger' : 'border-strong focus-visible:border-primary'}`}
             />
             <p
               id={counterId}
-              className={`self-end text-caption ${tooLong ? "font-semibold text-danger" : "text-secondary"}`}
+              className={`self-end text-caption ${tooLong ? 'font-semibold text-danger' : 'text-secondary'}`}
             >
               {length}/{NOTE_MAX}
             </p>
@@ -225,13 +234,13 @@ export function ReviewDialog({
             save leaves the user on it rather than on the page body. submit() ignores the click. */}
         <button
           type="submit"
-          disabled={!canDecide || decision === "" || tooLong}
+          disabled={!canDecide || decision === '' || tooLong}
           aria-disabled={submitting || undefined}
           data-pending={submitting || undefined}
           className={`w-full sm:w-auto sm:min-w-48 sm:self-center ${primaryButton}`}
         >
           {submitting && <Spinner />}
-          {submitting ? "Submitting…" : "Submit"}
+          {submitting ? 'Submitting…' : 'Submit'}
         </button>
       </form>
     </dialog>

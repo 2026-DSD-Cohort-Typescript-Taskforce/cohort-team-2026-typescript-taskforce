@@ -1,8 +1,8 @@
-import "server-only";
+import 'server-only';
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { reply } from "@/lib/supabase";
-import type { SupabaseError } from "@/lib/submit-errors";
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { reply } from '@/lib/supabase';
+import type { SupabaseError } from '@/lib/submit-errors';
 import {
   INVALID_LOGO_REPLY,
   LOGO_FAILED,
@@ -10,18 +10,20 @@ import {
   VENDOR_FORBIDDEN,
   VENDOR_NOT_FOUND,
   type Vendor,
-} from "@/lib/vendor-directory";
-import type { LogoStore, LogoSwap } from "@/lib/vendor-queries";
+} from '@/lib/vendor-directory';
+import type { LogoStore, LogoSwap } from '@/lib/vendor-queries';
 
-export const VENDOR_SELECT = "vendor_id, name, email, address, phone, logo_path";
-export const LOGO_BUCKET = "vendor-logos";
+export const VENDOR_SELECT = 'vendor_id, name, email, address, phone, logo_path';
+export const LOGO_BUCKET = 'vendor-logos';
 
-export type VendorRow = Omit<Vendor, "logo_url"> & { logo_path: string | null };
+export type VendorRow = Omit<Vendor, 'logo_url'> & { logo_path: string | null };
 
 /** The vendor as the browser sees it: the logo's public URL instead of its storage path. */
 export function toVendor(supabase: SupabaseClient, row: VendorRow): Vendor {
   const { logo_path, ...rest } = row;
-  const logo_url = logo_path ? supabase.storage.from(LOGO_BUCKET).getPublicUrl(logo_path).data.publicUrl : null;
+  const logo_url = logo_path
+    ? supabase.storage.from(LOGO_BUCKET).getPublicUrl(logo_path).data.publicUrl
+    : null;
   return { ...rest, logo_url };
 }
 
@@ -30,7 +32,7 @@ export function toVendor(supabase: SupabaseClient, row: VendorRow): Vendor {
  * update or delete it blocks matches 0 rows, so every write asks first (is_vendor_manager()).
  */
 export async function requireVendorManager(supabase: SupabaseClient): Promise<Response | null> {
-  const { data, error } = await supabase.rpc("is_vendor_manager");
+  const { data, error } = await supabase.rpc('is_vendor_manager');
   if (error) return replyWithVendorError(error);
   return data === true ? null : reply(VENDOR_FORBIDDEN);
 }
@@ -38,7 +40,7 @@ export async function requireVendorManager(supabase: SupabaseClient): Promise<Re
 /** Replies to a Supabase error with a readable message. Unexpected ones are logged here. */
 export function replyWithVendorError(error: SupabaseError, fallback?: string): Response {
   const response = toVendorErrorResponse(error, fallback);
-  if (response.status === 500) console.error("Supabase request failed:", error);
+  if (response.status === 500) console.error('Supabase request failed:', error);
   return reply(response);
 }
 
@@ -50,32 +52,39 @@ export function replyWithStorageError(error: StorageError): Response {
   const status = Number(error.status ?? error.statusCode);
   if (status === 403) return reply(VENDOR_FORBIDDEN);
   if (status === 413 || status === 415) return reply(INVALID_LOGO_REPLY);
-  if (status === 400 && /mime|size|too large|exceed/i.test(error.message ?? "")) return reply(INVALID_LOGO_REPLY);
-  console.error("Logo upload failed:", error);
-  return reply({ status: 500, body: { error: LOGO_FAILED, code: "logo_failed" } });
+  if (status === 400 && /mime|size|too large|exceed/i.test(error.message ?? ''))
+    return reply(INVALID_LOGO_REPLY);
+  console.error('Logo upload failed:', error);
+  return reply({ status: 500, body: { error: LOGO_FAILED, code: 'logo_failed' } });
 }
 
 /** One vendor's logo_path for replaceLogoPath (lib/vendor-queries.ts), as the signed-in user. */
-export function logoStore(supabase: SupabaseClient, id: number): LogoStore<VendorRow, SupabaseError> {
+export function logoStore(
+  supabase: SupabaseClient,
+  id: number,
+): LogoStore<VendorRow, SupabaseError> {
   return {
-    read: () => supabase.from("vendors").select("logo_path").eq("vendor_id", id).maybeSingle(),
+    read: () => supabase.from('vendors').select('logo_path').eq('vendor_id', id).maybeSingle(),
     swap: (expected, next) => {
       const update = supabase
-        .from("vendors")
+        .from('vendors')
         .update({ logo_path: next, updated_at: new Date().toISOString() })
-        .eq("vendor_id", id);
-      const unchanged = expected === null ? update.is("logo_path", null) : update.eq("logo_path", expected);
+        .eq('vendor_id', id);
+      const unchanged =
+        expected === null ? update.is('logo_path', null) : update.eq('logo_path', expected);
       return unchanged.select(VENDOR_SELECT).maybeSingle();
     },
   };
 }
 
 /** Replies to a logo change that didn't save: 404, a Supabase error, or a logged 500. */
-export function replyWithLogoSwapFailure(swap: Exclude<LogoSwap<VendorRow, SupabaseError>, { kind: "saved" }>): Response {
-  if (swap.kind === "missing") return reply(VENDOR_NOT_FOUND);
-  if (swap.kind === "error") return replyWithVendorError(swap.error, LOGO_FAILED);
-  console.error("Logo not changed: other requests kept changing it.");
-  return reply({ status: 500, body: { error: LOGO_FAILED, code: "logo_failed" } });
+export function replyWithLogoSwapFailure(
+  swap: Exclude<LogoSwap<VendorRow, SupabaseError>, { kind: 'saved' }>,
+): Response {
+  if (swap.kind === 'missing') return reply(VENDOR_NOT_FOUND);
+  if (swap.kind === 'error') return replyWithVendorError(swap.error, LOGO_FAILED);
+  console.error('Logo not changed: other requests kept changing it.');
+  return reply({ status: 500, body: { error: LOGO_FAILED, code: 'logo_failed' } });
 }
 
 /** Best effort: deletes a logo file. A failure is logged and never reaches the caller. */

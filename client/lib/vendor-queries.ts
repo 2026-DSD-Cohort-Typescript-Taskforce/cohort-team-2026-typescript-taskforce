@@ -32,14 +32,17 @@ export type LogoStore<R, E> = {
   /** The vendor's logo_path now; `data` is null once the vendor is gone. */
   read(): PromiseLike<{ data: { logo_path: string | null } | null; error: E | null }>;
   /** Sets logo_path to `next` only while it still equals `expected`; `data` is null if it didn't. */
-  swap(expected: string | null, next: string | null): PromiseLike<{ data: R | null; error: E | null }>;
+  swap(
+    expected: string | null,
+    next: string | null,
+  ): PromiseLike<{ data: R | null; error: E | null }>;
 };
 
 export type LogoSwap<R, E> =
-  | { kind: "saved"; row: R; previous: string | null }
-  | { kind: "missing" }
-  | { kind: "error"; error: E }
-  | { kind: "busy" };
+  | { kind: 'saved'; row: R; previous: string | null }
+  | { kind: 'missing' }
+  | { kind: 'error'; error: E }
+  | { kind: 'busy' };
 
 /**
  * Points a vendor at a new logo file (or none) and says which file it replaced, so the caller
@@ -55,13 +58,13 @@ export async function replaceLogoPath<R, E>(
   let current = expected;
   for (let attempt = 1; attempt <= LOGO_SWAP_ATTEMPTS; attempt++) {
     const swapped = await store.swap(current, next);
-    if (swapped.error) return { kind: "error", error: swapped.error };
-    if (swapped.data) return { kind: "saved", row: swapped.data, previous: current };
+    if (swapped.error) return { kind: 'error', error: swapped.error };
+    if (swapped.data) return { kind: 'saved', row: swapped.data, previous: current };
     if (attempt === LOGO_SWAP_ATTEMPTS) break;
     const read = await store.read();
-    if (read.error) return { kind: "error", error: read.error };
-    if (!read.data) return { kind: "missing" };
+    if (read.error) return { kind: 'error', error: read.error };
+    if (!read.data) return { kind: 'missing' };
     current = read.data.logo_path;
   }
-  return { kind: "busy" };
+  return { kind: 'busy' };
 }

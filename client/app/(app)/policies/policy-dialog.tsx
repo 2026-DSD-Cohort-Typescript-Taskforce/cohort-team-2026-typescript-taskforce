@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { savePolicy } from "@/lib/policy-api";
-import type { Policy, PolicyVendor } from "@/lib/policies";
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { savePolicy } from '@/lib/policy-api';
+import type { Policy, PolicyVendor } from '@/lib/policies';
 import {
   POLICY_FIELDS,
   POLICY_NAME_MAX,
@@ -10,8 +10,8 @@ import {
   validatePolicyInput,
   type PolicyErrors,
   type PolicyField,
-} from "@/lib/policy-validation";
-import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from "@/app/ui";
+} from '@/lib/policy-validation';
+import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
 
 // Text and border colours are left to each field, which changes them with its error.
 const controlClass = `w-full rounded-input border bg-background px-4 text-body text-foreground placeholder:text-secondary ${colorTransition} ${focusRing}`;
@@ -35,12 +35,12 @@ export function PolicyDialog({
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [values, setValues] = useState<Record<PolicyField, string>>({
-    name: vendor.policy?.name ?? "",
-    description: vendor.policy?.description ?? "",
+    name: vendor.policy?.name ?? '',
+    description: vendor.policy?.description ?? '',
   });
   const [errors, setErrors] = useState<PolicyErrors>({});
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   // busy as a ref too, set at once: the close guards read it, and a dialog closed straight
   // after a save ends must not see the value from the last render.
   const busyRef = useRef(false);
@@ -58,10 +58,10 @@ export function PolicyDialog({
   // close a saving dialog: Esc is stopped at keydown instead, wherever focus is.
   useEffect(() => {
     function holdEsc(event: KeyboardEvent) {
-      if (event.key === "Escape" && busyRef.current) event.preventDefault();
+      if (event.key === 'Escape' && busyRef.current) event.preventDefault();
     }
-    window.addEventListener("keydown", holdEsc, true);
-    return () => window.removeEventListener("keydown", holdEsc, true);
+    window.addEventListener('keydown', holdEsc, true);
+    return () => window.removeEventListener('keydown', holdEsc, true);
   }, []);
 
   function setBusy(value: boolean) {
@@ -87,16 +87,16 @@ export function PolicyDialog({
     event.preventDefault();
     if (busyRef.current) return;
     const checked = validatePolicyInput(values);
-    if ("errors" in checked) {
+    if ('errors' in checked) {
       setErrors(checked.errors);
       // An earlier reply's message (a 403, offline) would read as part of these.
-      setError("");
+      setError('');
       const first = POLICY_FIELDS.find((field) => checked.errors[field]);
       if (first) document.getElementById(fieldId(first))?.focus();
       return;
     }
     setErrors({});
-    setError("");
+    setError('');
     setBusy(true);
 
     const result = await savePolicy(vendor.vendor_id, checked.input);
@@ -157,17 +157,17 @@ export function PolicyDialog({
             required: true,
             // readOnly, not disabled, while saving: the field keeps focus if Enter saved.
             readOnly: saving,
-            autoComplete: "off",
-            "aria-invalid": fieldError ? (true as const) : undefined,
-            "aria-describedby": fieldError ? errorId : undefined,
-            className: `${controlClass} ${fieldError ? "border-danger" : "border-strong focus-visible:border-primary"}`,
+            autoComplete: 'off',
+            'aria-invalid': fieldError ? (true as const) : undefined,
+            'aria-describedby': fieldError ? errorId : undefined,
+            className: `${controlClass} ${fieldError ? 'border-danger' : 'border-strong focus-visible:border-primary'}`,
           };
           return (
             <div key={field} className="flex flex-col gap-1">
               <label htmlFor={fieldId(field)} className="text-body-sm text-secondary">
-                {field === "name" ? "Policy Name" : "Policy"}
+                {field === 'name' ? 'Policy Name' : 'Policy'}
               </label>
-              {field === "name" ? (
+              {field === 'name' ? (
                 <input
                   {...shared}
                   type="text"
@@ -205,7 +205,7 @@ export function PolicyDialog({
           className={`w-full sm:w-auto sm:min-w-40 sm:self-end ${primaryButton}`}
         >
           {saving && <Spinner />}
-          {saving ? "Saving…" : "Save"}
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </form>
     </dialog>

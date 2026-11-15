@@ -1,17 +1,17 @@
 import 'server-only';
 
 import { getSessionAccessToken } from './accessToken';
-import type {
-  Bill,
-  CreateBillInput
-} from '@/types/bill';
+import type { Bill, CreateBillInput } from '@/types/bill';
 
 const LAST_SUBMITTED = 'order=created_at.desc&limit=1&status=neq.draft&select=*,vendors(name)';
 
 export type UpdateBillInput = Partial<CreateBillInput>;
 
 export class BillRequestError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'BillRequestError';
   }
@@ -25,16 +25,19 @@ async function requestBills(query: string, init?: RequestInit): Promise<Response
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     throw new Error('Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY on the Next server.');
   }
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/bills${query ? `?${query}` : ''}`, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${accessToken}`,
+  const response = await fetch(
+    `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/bills${query ? `?${query}` : ''}`,
+    {
+      ...init,
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        ...init?.headers,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
-  });
+  );
   if (!response.ok) {
     throw new BillRequestError(response.status, `Bill request failed: ${response.status}`);
   }
@@ -106,9 +109,7 @@ export async function getBillStatusRows(): Promise<StatusRow[]> {
 }
 
 // one { status } row per bill for one user
-export async function getBillStatusRowsByUserId(
-  userId: string,
-): Promise<StatusRow[]> {
+export async function getBillStatusRowsByUserId(userId: string): Promise<StatusRow[]> {
   return getBills<StatusRow>(`user_id=eq.${encodeURIComponent(userId)}&select=status`);
 }
 
