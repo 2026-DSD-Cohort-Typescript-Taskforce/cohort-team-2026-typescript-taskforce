@@ -25,7 +25,7 @@ test('payment method reads use the signed-in session', async (t) => {
   process.env.SUPABASE_URL = 'https://supabase.invalid/';
   process.env.SUPABASE_PUBLISHABLE_KEY = 'test-key';
 
-  const paymentMethod: PaymentMethod = { payment_id: 7, payment_type: 'card', name: 'Demo' };
+  const paymentMethod: PaymentMethod = { payment_method_id: 7, payment_type: 'card', name: 'Demo' };
   let token: string | undefined = 'session-jwt';
   let authStatus = 200;
   let dataStatus = 200;
@@ -81,7 +81,7 @@ test('payment method reads use the signed-in session', async (t) => {
     await t.test('lists only the permitted payment method fields', async () => {
       assert.deepEqual(await request(fetchPaymentMethods), [paymentMethod]);
       assert.equal(calls.at(-1)?.url.pathname, '/rest/v1/payment_methods');
-      assert.equal(calls.at(-1)?.url.search, '?select=payment_id%2Cpayment_type%2Cname');
+      assert.equal(calls.at(-1)?.url.search, '?select=payment_method_id%2Cpayment_type%2Cname');
     });
 
     await t.test('fetches one payment method by id', async () => {
@@ -89,7 +89,7 @@ test('payment method reads use the signed-in session', async (t) => {
       assert.equal(calls.at(-1)?.url.pathname, '/rest/v1/payment_methods');
       assert.equal(
         calls.at(-1)?.url.search,
-        '?payment_id=eq.7&limit=1&select=payment_id%2Cpayment_type%2Cname',
+        '?payment_method_id=eq.7&limit=1&select=payment_method_id%2Cpayment_type%2Cname',
       );
     });
 

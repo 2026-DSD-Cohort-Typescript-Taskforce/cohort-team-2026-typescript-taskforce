@@ -14,7 +14,7 @@ function initialValues(bill: Bill): Record<BillField, string> {
   return {
     vendor_id: String(bill.vendor_id),
     property_id: String(bill.property_id),
-    payment_id: String(bill.payment_id),
+    payment_method_id: String(bill.payment_method_id),
     invoice_number: bill.invoice_number ?? "",
     amount: String(bill.amount),
     date_due: bill.date_due?.slice(0, 10) ?? "",
@@ -111,18 +111,18 @@ export function BillEditForm({
             </select>
           </Field>
 
-          <Field label="Payment method" name="payment_id" error={submission.fieldErrors.payment_id}>
+          <Field label="Payment method" name="payment_method_id" error={submission.fieldErrors.payment_method_id}>
             <select
-              id="payment_id"
-              value={values.payment_id}
-              onChange={(event) => setField("payment_id", event.target.value)}
+              id="payment_method_id"
+              value={values.payment_method_id}
+              onChange={(event) => setField("payment_method_id", event.target.value)}
               disabled={!options || submission.busy}
               className={controlClass}
-              {...field("payment_id")}
+              {...field("payment_method_id")}
             >
               {/* Preserve the current payment method when the loaded choices omit its ID. */}
-              {!options?.paymentMethods.some((method) => String(method.id) === values.payment_id) && (
-                <option value={values.payment_id}>{bill.payment?.name ?? "Current payment method unavailable"}</option>
+              {!options?.paymentMethods.some((method) => String(method.id) === values.payment_method_id) && (
+                <option value={values.payment_method_id}>{bill.payment?.name ?? "Current payment method unavailable"}</option>
               )}
               {options?.paymentMethods.map((method) => (
                 <option key={method.id} value={method.id}>{method.name} ({method.type})</option>

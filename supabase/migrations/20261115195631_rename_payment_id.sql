@@ -10,10 +10,17 @@
 --                  HOWEVER,
 --                  Doing so also means renaming any and all references to payment_id in the codebase that aren't referring to the payments table.
 
+-- Renaming the PKs:
 ALTER TABLE bills               RENAME COLUMN payment_id TO payment_method_id;
 ALTER TABLE payment_methods     RENAME COLUMN payment_id TO payment_method_id;
 ALTER TABLE cards               RENAME COLUMN payment_id TO payment_method_id;
 ALTER TABLE bank_accounts       RENAME COLUMN payment_id TO payment_method_id;
+
+-- Also should rename the FK relationships:
+ALTER TABLE bills         RENAME CONSTRAINT bills_payment_id_fkey         TO bills_payment_method_id_fkey;
+ALTER TABLE cards         RENAME CONSTRAINT cards_payment_id_fkey         TO cards_payment_method_id_fkey;
+ALTER TABLE bank_accounts RENAME CONSTRAINT bank_accounts_payment_id_fkey TO bank_accounts_payment_method_id_fkey;
+
 
 -- Claude said I need to add this to make sure the rename doesn't break anything:
 ALTER SEQUENCE payment_methods_payment_id_seq RENAME TO payment_methods_payment_method_id_seq;

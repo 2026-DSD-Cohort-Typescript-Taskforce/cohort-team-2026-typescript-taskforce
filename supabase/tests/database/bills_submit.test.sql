@@ -14,12 +14,12 @@ insert into auth.users (id, email) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (12001, 'DC12 Test Vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (12001, 'card', 'DC12 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000012a1'),
   (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (12001, 'draft', 12001, 12001, 12101, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
   (12002, 'draft', 12001, 12001, 12101, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete
   (12005, 'draft', 12001, 12001, 12101, 12001, null, 120.00, current_date + 30),       -- no invoice number
@@ -154,13 +154,13 @@ select results_eq(
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due, status)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due, status)
     values (12001, 12001, 12101, 12001, 'DC12-20', 120.00, current_date + 30, 'pending_payment')$$,
   '42501', null,
   'inserting a bill that is not a draft is refused'
 );
 select lives_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (12001, 12001, 12101, 12001, 'DC12-21', 120.00)$$,
   'inserting a bill without a status runs (it defaults to draft)'
 );

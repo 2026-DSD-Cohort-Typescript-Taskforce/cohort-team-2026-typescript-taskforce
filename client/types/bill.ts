@@ -4,7 +4,7 @@ export interface Bill {
   property_id: number;
   vendor_id: number;
   user_id: number;
-  payment_id: number;
+  payment_method_id: number;
   date_due: string | null;
   invoice_number: string | null;
   date_issued: string | null;
@@ -21,7 +21,7 @@ export interface CreateBillInput {
   property_id: number;
   vendor_id: number;
   user_id: number;
-  payment_id: number;
+  payment_method_id: number;
   date_due?: string | null;
   invoice_number?: string | null;
   date_issued?: string | null;
