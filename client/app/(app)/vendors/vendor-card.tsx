@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { displayValue, type Vendor } from "@/lib/vendor-directory";
-import { colorTransition, focusRing } from "@/app/ui";
+import { useState } from 'react';
+import { displayValue, type Vendor } from '@/lib/vendor-directory';
+import { ActionsMenu } from '@/components/ui/actions-menu';
 
 /** The vendor's logo, or a generic avatar when it has none or the image doesn't load. */
 export function VendorAvatar({ src, className }: { src: string | null; className: string }) {
@@ -13,11 +13,19 @@ export function VendorAvatar({ src, className }: { src: string | null; className
     return (
       // Plain <img>: the Supabase Storage host differs per environment.
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt="" onError={() => setFailed(src)} className={`bg-raised object-cover ${className}`} />
+      <img
+        src={src}
+        alt=""
+        onError={() => setFailed(src)}
+        className={`bg-raised object-cover ${className}`}
+      />
     );
   }
   return (
-    <span aria-hidden="true" className={`flex items-center justify-center bg-raised text-secondary ${className}`}>
+    <span
+      aria-hidden="true"
+      className={`flex items-center justify-center bg-raised text-secondary ${className}`}
+    >
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -53,7 +61,7 @@ function Icon({ d }: { d: string }) {
 /** A detail, or a dash that reads as "Not set". */
 function Value({ value }: { value: string | null }) {
   const shown = displayValue(value);
-  if (shown !== "—") return shown;
+  if (shown !== '—') return shown;
   return (
     <>
       <span aria-hidden="true">—</span>
@@ -73,106 +81,28 @@ export function VendorCard({
   /** The trigger is the ⋮ button, which gets focus back when the dialog closes. */
   onEdit: (vendor: Vendor, trigger: HTMLButtonElement) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const itemRef = useRef<HTMLButtonElement>(null);
-  const triggerId = useId();
-  const menuId = useId();
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    itemRef.current?.focus();
-    // click, not pointerdown: by then a click on a field has moved focus there, and a click
-    // on nothing focusable has left it on the body, which is when it goes back to the ⋮.
-    function closeOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      setMenuOpen(false);
-      if (document.activeElement === document.body) triggerRef.current?.focus();
-    }
-    document.addEventListener("click", closeOutside);
-    return () => document.removeEventListener("click", closeOutside);
-  }, [menuOpen]);
-
-  function onMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setMenuOpen(false);
-      triggerRef.current?.focus();
-    } else if (event.key === "Tab") {
-      setMenuOpen(false);
-    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      // One item: the arrows keep focus on it rather than scrolling the page.
-      event.preventDefault();
-      itemRef.current?.focus();
-    }
-  }
-
-  function edit() {
-    setMenuOpen(false);
-    if (triggerRef.current) onEdit(vendor, triggerRef.current);
-  }
-
   return (
     <li className="flex flex-col gap-4 rounded-card border border-subtle bg-surface p-5">
       <div className="flex items-start gap-4">
-        <VendorAvatar src={vendor.logo_url} className="size-14 shrink-0 rounded-input border border-subtle" />
+        <VendorAvatar
+          src={vendor.logo_url}
+          className="size-14 shrink-0 rounded-input border border-subtle"
+        />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h3 className="text-body-lg font-semibold break-words">{vendor.name}</h3>
           <dl>
             <dt className="sr-only">Address</dt>
-            <dd className="text-body-sm text-secondary break-words">
+            <dd className="text-body-sm break-words text-secondary">
               <Value value={vendor.address} />
             </dd>
           </dl>
         </div>
         {canManage && (
-          <div className="relative -mt-2 -mr-2 shrink-0">
-            <button
-              ref={triggerRef}
-              id={triggerId}
-              type="button"
-              aria-label={`Actions for ${vendor.name}`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-controls={menuOpen ? menuId : undefined}
-              onClick={() => setMenuOpen((open) => !open)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setMenuOpen(true);
-                }
-              }}
-              className={`inline-flex size-10 items-center justify-center rounded-button text-secondary hover:bg-raised hover:text-foreground ${colorTransition} ${focusRing}`}
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="size-5">
-                <circle cx="12" cy="5" r="1.75" />
-                <circle cx="12" cy="12" r="1.75" />
-                <circle cx="12" cy="19" r="1.75" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <div
-                ref={menuRef}
-                id={menuId}
-                role="menu"
-                aria-labelledby={triggerId}
-                onKeyDown={onMenuKeyDown}
-                className="absolute top-full right-0 z-10 mt-1 min-w-40 rounded-input border border-strong bg-overlay p-1 shadow-l4"
-              >
-                <button
-                  ref={itemRef}
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  onClick={edit}
-                  className={`flex w-full items-center rounded-input px-3 py-2 text-left text-body-sm whitespace-nowrap text-foreground hover:bg-raised focus-visible:bg-raised ${colorTransition} ${focusRing}`}
-                >
-                  Edit vendor
-                </button>
-              </div>
-            )}
+          <div className="-mt-2 -mr-2 shrink-0">
+            <ActionsMenu
+              label={`Actions for ${vendor.name}`}
+              actions={[{ label: 'Edit vendor', onSelect: (trigger) => onEdit(vendor, trigger) }]}
+            />
           </div>
         )}
       </div>

@@ -6,6 +6,8 @@ import {
   NAME_REQUIRED,
   ROLE_REQUIRED,
   toUserRow,
+  chipsFor,
+  matchesUser,
   validateNewUser,
   type NewUserInput,
   type UserRecord,
@@ -37,6 +39,7 @@ test('toUserRow keeps the details and labels the role', () => {
     role: 'system_admin',
     roleLabel: 'System Administrator',
     properties: 'Maple Court',
+    propertyNames: ['Maple Court'],
     pending: false,
   });
 });
@@ -114,4 +117,35 @@ test('validateNewUser skips the email when editing, where it is read-only', () =
   assert.deepEqual(validateNewUser({ ...valid, email: '', name: ' ' }, false), {
     name: NAME_REQUIRED,
   });
+});
+
+test('toUserRow keeps the property names as a list for the chips', () => {
+  const row = toUserRow({
+    ...record,
+    properties: [
+      { property_id: 1, name: 'Maple Court' },
+      { property_id: 2, name: ' ' },
+    ],
+  });
+  assert.deepEqual(row.propertyNames, ['Maple Court']);
+});
+
+test('matchesUser finds a name or email, ignoring case and spaces around the query', () => {
+  const row = toUserRow(record);
+  for (const query of ['', '  ', 'ada', 'LOVELACE', ' Ada Lovelace ', 'example.com', 'ADA@']) {
+    assert.equal(matchesUser(row, query), true, query);
+  }
+});
+
+test('matchesUser misses other fields and other text', () => {
+  const row = toUserRow(record);
+  for (const query of ['zed', 'Maple', 'System Administrator', '555']) {
+    assert.equal(matchesUser(row, query), false, query);
+  }
+});
+
+test('chipsFor shows the first two and counts the rest', () => {
+  assert.deepEqual(chipsFor([]), { shown: [], more: 0 });
+  assert.deepEqual(chipsFor(['A', 'B']), { shown: ['A', 'B'], more: 0 });
+  assert.deepEqual(chipsFor(['A', 'B', 'C', 'D']), { shown: ['A', 'B'], more: 2 });
 });

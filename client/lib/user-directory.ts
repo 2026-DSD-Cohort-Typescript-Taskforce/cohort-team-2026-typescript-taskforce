@@ -29,12 +29,17 @@ export type UserRow = {
   phone: string | null;
   role: string | null;
   roleLabel: string;
+  /** The names joined, for sorting and the table's filters. */
   properties: string;
+  /** The same names as a list, for the chips. */
+  propertyNames: string[];
   pending: boolean;
 };
 
 export function toUserRow(record: UserRecord): UserRow {
-  const names = record.properties.map((property) => property.name?.trim()).filter(Boolean);
+  const names = record.properties
+    .map((property) => property.name?.trim())
+    .filter((name): name is string => !!name);
   return {
     user_id: record.user_id,
     name: record.name ?? '',
@@ -43,8 +48,20 @@ export function toUserRow(record: UserRecord): UserRow {
     role: record.role,
     roleLabel: roleLabel(record.role),
     properties: names.length > 0 ? names.join(', ') : '—',
+    propertyNames: names,
     pending: record.auth_user_id === null,
   };
+}
+
+/** True when the name or email holds the query, ignoring case. A blank query matches all. */
+export function matchesUser(row: UserRow, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  return [row.name, row.email].some((field) => field?.toLowerCase().includes(needle));
+}
+
+/** The property chips to show in a row: the first two, and how many more there are. */
+export function chipsFor(names: string[]): { shown: string[]; more: number } {
+  return { shown: names.slice(0, 2), more: Math.max(names.length - 2, 0) };
 }
 
 /** The Add a User form's details. */

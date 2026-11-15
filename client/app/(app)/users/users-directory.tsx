@@ -1,14 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { loadUserRole } from '@/lib/bill-api';
 import { canManageUsers } from '@/lib/roles';
 import { loadUsers, resendInvite } from '@/lib/user-api';
-import { USERS_FORBIDDEN, toUserRow, type UserRecord, type UserRow } from '@/lib/user-directory';
-import { ErrorAlert, SuccessAlert, primaryButton } from '@/app/ui';
+import {
+  USERS_FORBIDDEN,
+  matchesUser,
+  toUserRow,
+  type UserRecord,
+  type UserRow,
+} from '@/lib/user-directory';
+import { ErrorAlert, SuccessAlert, colorTransition, focusRing, primaryButton } from '@/app/ui';
 import { LoadError } from '../bills/bills-list';
 import { UserModal, type SaveNotice } from './user-modal';
 import { UsersTable } from './users-table';
+
+// As the vendor search (vendors-directory.tsx).
+const searchClass = `h-12 w-full rounded-input border border-strong bg-background pr-4 pl-11 text-body text-foreground placeholder:text-secondary focus-visible:border-primary ${colorTransition} ${focusRing}`;
 
 /** The Users table and the Add a User modal (DC-55). Only system admins see either. */
 export function UsersDirectory() {
@@ -25,6 +34,8 @@ export function UsersDirectory() {
   const [warning, setWarning] = useState('');
   /** The user whose invite is being resent. */
   const [resendingId, setResendingId] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
+  const searchId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   // The button that opened the modal (Add a User or a user's name), which gets focus back
   // when the modal closes.
@@ -63,6 +74,7 @@ export function UsersDirectory() {
   }, []);
 
   const rows = useMemo(() => users?.map(toUserRow) ?? [], [users]);
+  const shown = useMemo(() => rows.filter((row) => matchesUser(row, query)), [rows, query]);
 
   function reload() {
     setLoading(true);
@@ -77,13 +89,10 @@ export function UsersDirectory() {
     setModal({ user });
   }
 
-  const edit = useCallback(
-    (row: UserRow, opener: HTMLButtonElement) => {
-      const user = users?.find((record) => record.user_id === row.user_id);
-      if (user) openModal(opener, user);
-    },
-    [users],
-  );
+  function edit(row: UserRow, opener: HTMLButtonElement) {
+    const user = users?.find((record) => record.user_id === row.user_id);
+    if (user) openModal(opener, user);
+  }
 
   function closeModal() {
     setModal(null);
@@ -146,12 +155,42 @@ export function UsersDirectory() {
       <div className="flex flex-col gap-4">
         {/* A failed reload keeps the table shown. */}
         {loadError && <LoadError message={loadError} retrying={loading} onRetry={reload} />}
-        {users.length === 0 ? (
+        {users.length > 0 && (
+          <div className="relative">
+            <label htmlFor={searchId} className="sr-only">
+              Search users
+            </label>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-secondary"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-4-4" />
+            </svg>
+            <input
+              id={searchId}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search users by name or email"
+              autoComplete="off"
+              className={searchClass}
+            />
+          </div>
+        )}
+        {shown.length === 0 ? (
           <div className="rounded-card border border-subtle bg-surface p-6 sm:p-8">
-            <p className="text-body-lg font-medium">No users yet.</p>
+            <p className="text-body-lg font-medium">
+              {users.length === 0 ? 'No users yet.' : `No users match “${query.trim()}”.`}
+            </p>
           </div>
         ) : (
-          <UsersTable rows={rows} onEdit={edit} onResend={resend} resendingId={resendingId} />
+          <UsersTable rows={shown} onEdit={edit} onResend={resend} resendingId={resendingId} />
         )}
       </div>
     );
@@ -165,7 +204,14 @@ export function UsersDirectory() {
           <h1 ref={headingRef} tabIndex={-1} className="text-heading outline-none">
             Users
           </h1>
-          {users && <p className="text-body text-secondary">All ({rows.length})</p>}
+          {users && (
+            // Announced as the search narrows the list.
+            <p role="status" className="text-body text-secondary">
+              {shown.length === rows.length
+                ? `All (${rows.length})`
+                : `${shown.length} of ${rows.length}`}
+            </p>
+          )}
         </div>
         {/* Hidden until the list has loaded. */}
         {users && (
