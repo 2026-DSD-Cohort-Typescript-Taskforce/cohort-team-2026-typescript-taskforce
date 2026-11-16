@@ -25,9 +25,11 @@ ALTER TABLE bank_accounts RENAME CONSTRAINT bank_accounts_payment_id_fkey TO ban
 -- Claude said I need to add this to make sure the rename doesn't break anything:
 ALTER SEQUENCE payment_methods_payment_id_seq RENAME TO payment_methods_payment_method_id_seq;
 
--- Also, submit_bill() has to be re-typed with payment_method_id. While here, this merges the two
--- previous versions: 20261111062000 (drafts may be incomplete, payment method required) accidentally
--- overwrote 20261110180000 (a bill sent back for revision returns to pending_approval, not pending_payment).
+-- Also, submit_bill() has to not only be re-typed with payment_method_id,
+-- It has also been changed to fix an issue caused by two conflicting migration:
+--    - Migration 20261111062000 (drafts may be incomplete, payment method required) accidentally overwrote 20261110180000 (a bill sent back for revision returns to pending_approval, not pending_payment).
+-- This merges the two so supabase test db doesn't break.
+--    - (Affected test files have also been updated by Claude)
 CREATE OR REPLACE FUNCTION public.submit_bill(p_bill_id integer)
 RETURNS public.bills
 LANGUAGE plpgsql
