@@ -1,5 +1,5 @@
 /**
- * DC-25 handoff proposal; no HTTP or browser implementation is included.
+ * DC-25 handoff contract implemented by the DC-95 Express browser worker.
  * See docs/adr/0002-payment-execution-contract.md.
  * Runtime schemas must reject unexpected fields, including steps and selectors.
  * Both endpoints require Authorization: Bearer <STAGEHAND_SECRET>.
@@ -30,7 +30,7 @@ export interface ExecuteResponse {
   confirmed: true;
 }
 
-/** Proposed non-2xx response JSON; these are not database statuses. */
+/** Non-2xx response JSON; these codes are not database statuses. */
 export interface WorkerErrorResponse {
   code:
     | 'unauthorized'
@@ -40,7 +40,7 @@ export interface WorkerErrorResponse {
     | 'execution_in_progress'
     | 'outcome_unknown'
     | 'portal_error';
-  message: string;
+  error: string;
 }
 
 /**
