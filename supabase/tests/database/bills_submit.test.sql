@@ -105,9 +105,10 @@ set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","r
 select throws_ok($$select public.submit_bill(12999)$$, 'PT404', 'not_found', 'refusals are raised as errors with the PostgREST status SQLSTATE');
 select is(pg_temp.submit_error(12999), ARRAY['PT404', 'not_found', null], 'an unknown bill gets not_found');
 select is(pg_temp.submit_error(12010), ARRAY['PT409', 'not_draft', 'pending_payment'], 'a bill that is not a draft gets not_draft with its current status');
--- A bill can't be missing its vendor or property: the columns are NOT NULL since DC-53.
-select col_not_null('public', 'bills', 'vendor_id', 'bills.vendor_id is NOT NULL, so no bill lacks a vendor');
-select col_not_null('public', 'bills', 'property_id', 'bills.property_id is NOT NULL, so no bill lacks a property');
+-- Drafts may be missing a vendor or property (20261111062000); submit_bill() and the
+-- bills_complete_unless_draft check make sure a bill past draft has both.
+select col_is_null('public', 'bills', 'vendor_id', 'bills.vendor_id may be NULL while the bill is a draft');
+select col_is_null('public', 'bills', 'property_id', 'bills.property_id may be NULL while the bill is a draft');
 select is(pg_temp.submit_error(12005), ARRAY['PT400', 'incomplete_bill', '["invoice_number"]'], 'no invoice number: incomplete_bill lists invoice_number');
 select is(pg_temp.submit_error(12006), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'amount 0: incomplete_bill lists amount');
 select is(pg_temp.submit_error(12007), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'negative amount: incomplete_bill lists amount');

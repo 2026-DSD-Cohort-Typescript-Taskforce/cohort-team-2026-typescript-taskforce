@@ -106,18 +106,22 @@ select throws_ok(
   '23503', 'insert or update on table "bills" violates foreign key constraint "bills_user_id_fkey"',
   'a user that does not exist is refused'
 );
+-- Drafts may be incomplete (20261111062000), but a bill past draft needs a vendor and property.
+-- Run as postgres: signed-in users can only insert drafts, so RLS would refuse first.
+reset role;
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
-    values (null, 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
-  '23502', 'null value in column "vendor_id" of relation "bills" violates not-null constraint',
-  'a bill without a vendor is refused'
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
+    values ('pending_approval', null, 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-014', 1.00)$$,
+  '23514', 'new row for relation "bills" violates check constraint "bills_complete_unless_draft"',
+  'a bill past draft without a vendor is refused'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
-    values (pg_temp.id('vendor_a'), null, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
-  '23502', 'null value in column "property_id" of relation "bills" violates not-null constraint',
-  'a bill without a property is refused'
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
+    values ('pending_approval', pg_temp.id('vendor_a'), null, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-015', 1.00)$$,
+  '23514', 'new row for relation "bills" violates check constraint "bills_complete_unless_draft"',
+  'a bill past draft without a property is refused'
 );
+set local role authenticated;
 
 -- DC-20 invoice number and date rules
 select lives_ok(
