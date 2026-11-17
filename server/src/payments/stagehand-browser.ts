@@ -1,0 +1,382 @@
+import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
+import { HttpError } from '../middleware/errorHandler';
+import type { ExecuteRequest, ObserveRequest } from './payment-contract';
+import type { PortalBrowser, PortalSession } from './worker';
+import { guardNavigation } from './navigation-guard';
+import { assertPaymentMatch } from './worker-input';
+
+const selector = z.string().min(1);
+const stepSchema = z.strictObject({
+  action: z.enum(['click', 'login', 'check', 'wait']),
+  selector,
+});
+const profileSchema = z.strictObject({
+  portalUrl: z.url().optional(),
+  vendorId: z.number().int().positive().optional(),
+  capture: z.array(stepSchema).max(8).optional(),
+  pay: z.array(stepSchema).max(8).optional(),
+  amountUnit: z.enum(['dollars', 'cents']),
+  invoiceSelector: selector,
+  totalSelector: selector,
+  paySelector: selector,
+  confirmationSelector: selector,
+  confirmationInvoiceSelector: selector,
+  confirmationTotalSelector: selector,
+  confirmationReferenceSelector: selector,
+  confirmationUrl: z.url().optional(),
+});
+export type PortalProfile = z.infer<typeof profileSchema>;
+
+async function pageBody(page: { evaluate: (fn: () => string) => Promise<string> }) {
+  return page.evaluate(() => document.body.innerText);
+}
+
+async function waitForText(
+  page: { evaluate: (fn: () => string) => Promise<string> },
+  ready: (text: string) => boolean,
+  timeoutMs: number,
+) {
+  const started = Date.now();
+  let text = '';
+  while (Date.now() - started < timeoutMs) {
+    text = await pageBody(page);
+    if (ready(text)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return text;
+}
+
+function showsMoney(text: string) {
+  return /\$\s*\d/.test(text);
+}
+
+type PortalPage = {
+  evaluate(
+    pageFunction: (step: { selector: string; action: string }) => string,
+    step: { selector: string; action: string },
+  ): Promise<string>;
+};
+
+async function runSteps(
+  page: PortalPage,
+  steps: { action: 'click' | 'login' | 'check' | 'wait'; selector: string }[],
+) {
+  for (const step of steps) {
+    const started = Date.now();
+    let outcome = 'missing';
+    while (Date.now() - started < 10000) {
+      outcome = await page.evaluate(
+        ({ selector, action }) => {
+          const node = document.querySelector(selector);
+          if (!(node instanceof HTMLElement) || node.getClientRects().length === 0) return 'missing';
+          if (action === 'wait') return 'ready';
+          if (action === 'login') {
+            if (!(node instanceof HTMLFormElement)) return 'missing';
+            const text = document.body.innerText;
+            const email = text.match(/Email:\s*(\S+)/)?.[1];
+            const password = text.match(/Password:\s*(\S+)/)?.[1];
+            const emailInput = node.querySelector<HTMLInputElement>('input[name="email"]');
+            const passwordInput = node.querySelector<HTMLInputElement>('input[name="password"]');
+            if (!email || !password || !emailInput || !passwordInput) return 'missing';
+            emailInput.value = email;
+            passwordInput.value = password;
+            node.requestSubmit();
+            return 'ready';
+          }
+          if (action === 'check' && node instanceof HTMLInputElement && !node.checked) node.click();
+          if (action === 'click') node.click();
+          return 'ready';
+        },
+        step,
+      );
+      if (outcome === 'ready') break;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+    if (outcome !== 'ready') throw new Error('Portal step missed its control');
+  }
+}
+
+async function openAccount(page: {
+  evaluate: (fn: () => string) => Promise<string>;
+}) {
+  for (let step = 0; step < 6; step += 1) {
+    const action = await page.evaluate(() => {
+      const form = document.querySelector<HTMLFormElement>('#login-form');
+      if (form) {
+        const text = document.body.innerText;
+        const email = text.match(/Email:\s*(\S+)/)?.[1];
+        const password = text.match(/Password:\s*(\S+)/)?.[1];
+        const emailInput = form.querySelector<HTMLInputElement>('input[name="email"]');
+        const passwordInput = form.querySelector<HTMLInputElement>('input[name="password"]');
+        if (!email || !password || !emailInput || !passwordInput) return 'wait';
+        emailInput.value = email;
+        passwordInput.value = password;
+        form.requestSubmit();
+        return 'submit';
+      }
+      const link = document.querySelector<HTMLAnchorElement>('a[href*="#signin"]');
+      if (!link) return 'stop';
+      link.click();
+      return 'click';
+    });
+    if (action === 'stop') break;
+    if (action === 'click' || action === 'wait') {
+      await waitForText(page, (text) => text.includes('Email:') && text.includes('Password:'), 8000);
+      continue;
+    }
+    await waitForText(page, (text) => showsMoney(text) && !text.includes('Sign in to your account'), 10000);
+  }
+  await waitForText(page, showsMoney, 8000);
+}
+
+/** Selectors are trusted operator configuration, never accepted in HTTP requests. */
+export class StagehandBrowser implements PortalBrowser {
+  constructor(private readonly profilesFile: string | undefined) {}
+
+  private async profiles(): Promise<PortalProfile[]> {
+    if (!this.profilesFile)
+      throw new HttpError(503, 'Portal execution is not configured.', 'portal_error');
+    try {
+      return z.array(profileSchema).parse(JSON.parse(await readFile(this.profilesFile, 'utf8')));
+    } catch {
+      throw new HttpError(503, 'Portal configuration is invalid.', 'portal_error');
+    }
+  }
+
+  private async profile(input: ObserveRequest) {
+    const profiles = await this.profiles();
+    const shared = profiles.filter((item) => item.portalUrl === undefined);
+    const profile =
+      profiles.find((item) => item.portalUrl === input.portalUrl) ??
+      (shared.length === 1 ? shared[0] : undefined);
+    if (!profile)
+      throw new HttpError(422, 'Portal is not configured for execution.', 'invalid_request');
+    return profile;
+  }
+
+  async prepareExecution(input: ExecuteRequest) {
+    const profile = await this.profile(input);
+    if (profile.vendorId !== undefined && profile.vendorId !== input.vendorId)
+      throw new HttpError(422, 'Portal vendor does not match.', 'payment_mismatch');
+    return { unit: profile.amountUnit, open: () => this.open(input, 'execute', profile) };
+  }
+
+  async open(
+    input: ObserveRequest,
+    mode: 'observe' | 'execute',
+    pinnedProfile?: PortalProfile,
+  ): Promise<PortalSession> {
+    const profile = mode === 'execute' ? pinnedProfile : undefined;
+    if (mode === 'execute' && !profile)
+      throw new HttpError(503, 'Execution profile was not validated.', 'portal_error');
+    const { localBrowser, Stagehand } = await import('@browserbasehq/stagehand');
+    const debug = process.env.NODE_ENV !== 'production' && process.env.STAGEHAND_DEBUG === 'true';
+    const pause = async (stage: string) => {
+      if (!debug) return;
+      console.info(`[Stagehand debug] ${stage}`);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    };
+    // New temporary Chrome profile per request. No shared login/session state.
+    const browser = await localBrowser.launch({ headless: !debug });
+    let guard: Awaited<ReturnType<typeof guardNavigation>> | undefined;
+    let stagehand: Awaited<ReturnType<typeof Stagehand.create>> | undefined;
+    try {
+      stagehand = await Stagehand.create({
+        browser,
+        model: {
+          // Payment controls come from trusted portal profiles; no model actions.
+          generate: async () => {
+            throw new Error('Model-driven payment actions are disabled.');
+          },
+        },
+      });
+      if (!browser.cdpUrl) throw new Error('Browser has no local CDP endpoint');
+      guard = await guardNavigation(
+        browser.cdpUrl,
+        [input.portalUrl, ...(profile?.confirmationUrl ? [profile.confirmationUrl] : [])],
+        mode === 'observe',
+      );
+      const [page] = await browser.context.pages();
+      if (!page) throw new Error('Browser page unavailable');
+      const response = await page.goto(input.portalUrl, { timeout: 30000 });
+      guard.check();
+      if (!response || response.status() >= 400) throw new Error('Portal failed to load');
+      await pause('Portal loaded');
+      guard.check();
+
+      const read = async (invoiceSelector: string, totalSelector: string) => {
+        const result = await page.evaluate(
+          ({ invoiceSelector, totalSelector }) => {
+            const invoices = document.querySelectorAll<HTMLElement>(invoiceSelector);
+            const totals = document.querySelectorAll<HTMLElement>(totalSelector);
+            if (
+              [invoices, totals].some(
+                (nodes) => nodes.length !== 1 || !nodes[0].getClientRects().length,
+              )
+            ) {
+              throw new Error('Missing or ambiguous payment detail');
+            }
+            return { invoice: invoices[0].innerText.trim(), total: totals[0].innerText.trim() };
+          },
+          { invoiceSelector, totalSelector },
+        );
+        guard!.check();
+        return result;
+      };
+      const captureSteps =
+        mode === 'execute'
+          ? pinnedProfile?.capture
+          : await this.profile(input)
+              .then((item) => item.capture)
+              .catch((error: unknown) => {
+                if (error instanceof HttpError && error.status === 422) return undefined;
+                throw error;
+              });
+      const executionProfile = () => {
+        if (!profile) throw new Error('Observation session cannot execute');
+        return profile;
+      };
+      return {
+        async text() {
+          if (captureSteps?.length) await runSteps(page as unknown as PortalPage, captureSteps);
+          else await openAccount(page);
+          guard!.check();
+          const pageText = await page.evaluate(() => document.body.innerText);
+          guard!.check();
+          return pageText;
+        },
+        async review() {
+          const p = executionProfile();
+          if (p.capture?.length) await runSteps(page as unknown as PortalPage, p.capture);
+          if (p.pay?.length) await runSteps(page as unknown as PortalPage, p.pay);
+          const alreadyConfirmed = await page.evaluate(
+            (selector) => Boolean(document.querySelector(selector)),
+            p.confirmationSelector,
+          );
+          if (alreadyConfirmed)
+            throw new HttpError(409, 'Portal already shows confirmation.', 'payment_mismatch');
+          // Hydrated checkouts may restore state before enabling payment. Wait before
+          // BrowserWorker persists submission intent; submit still rechecks atomically.
+          await page.waitForFunction(
+            (selector) => {
+              const buttons = document.querySelectorAll<HTMLElement>(selector);
+              return (
+                buttons.length === 1 &&
+                buttons[0].getClientRects().length > 0 &&
+                !buttons[0].matches(':disabled, [aria-disabled="true"]')
+              );
+            },
+            p.paySelector,
+            { timeout: 15000 },
+          );
+          guard!.check();
+          return read(p.invoiceSelector, p.totalSelector);
+        },
+        async submit(expected) {
+          const p = executionProfile();
+          await pause('Review invoice before payment');
+          assertPaymentMatch(await read(p.invoiceSelector, p.totalSelector), expected);
+          guard!.check();
+          // Recheck and click in one browser task, so no navigation/model step can intervene.
+          await page.evaluate(
+            ({ p, expected }) => {
+              const invoices = document.querySelectorAll<HTMLElement>(p.invoiceSelector);
+              const totals = document.querySelectorAll<HTMLElement>(p.totalSelector);
+              const buttons = document.querySelectorAll<HTMLElement>(p.paySelector);
+              if (
+                [invoices, totals, buttons].some(
+                  (nodes) => nodes.length !== 1 || !nodes[0].getClientRects().length,
+                )
+              ) {
+                throw new Error('Ambiguous portal control');
+              }
+              const invoice = invoices[0].innerText.trim();
+              const total = totals[0].innerText.trim();
+              const match = /^(?:USD\s*|\$\s*)?(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/.exec(
+                total,
+              );
+              const cents = match
+                ? BigInt(match[1].replaceAll(',', '')) * 100n +
+                  BigInt((match[2] ?? '').padEnd(2, '0'))
+                : -1n;
+              if (
+                invoice !== expected.invoice ||
+                cents !== BigInt(expected.cents) ||
+                document.querySelector(p.confirmationSelector)
+              ) {
+                throw new Error('Payment details changed');
+              }
+              const button = buttons[0];
+              if (button.matches(':disabled, [aria-disabled="true"]'))
+                throw new Error('Payment button disabled');
+              button.click();
+            },
+            { p, expected },
+          );
+          guard!.check();
+        },
+        async confirm(expected) {
+          const p = executionProfile();
+          await page.waitForFunction(
+            ({ p, expected }) => {
+              const markers = document.querySelectorAll<HTMLElement>(p.confirmationSelector);
+              const invoices = document.querySelectorAll<HTMLElement>(
+                p.confirmationInvoiceSelector,
+              );
+              const totals = document.querySelectorAll<HTMLElement>(p.confirmationTotalSelector);
+              const references = document.querySelectorAll<HTMLElement>(
+                p.confirmationReferenceSelector,
+              );
+              if (
+                [markers, invoices, totals, references].some(
+                  (nodes) => nodes.length !== 1 || !nodes[0].getClientRects().length,
+                )
+              )
+                return false;
+              const match = /^(?:USD\s*|\$\s*)?(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/.exec(
+                totals[0].innerText.trim(),
+              );
+              const cents = match
+                ? BigInt(match[1].replaceAll(',', '')) * 100n +
+                  BigInt((match[2] ?? '').padEnd(2, '0'))
+                : -1n;
+              return (
+                invoices[0].innerText.trim() === expected.invoice &&
+                cents === BigInt(expected.cents) &&
+                references[0].innerText.trim().length > 0
+              );
+            },
+            { p, expected },
+            { timeout: 15000 },
+          );
+          await pause('Payment confirmed — viewing receipt');
+          guard!.check();
+        },
+        async close() {
+          try {
+            await stagehand!.close();
+          } finally {
+            try {
+              await browser.close();
+            } finally {
+              guard!.close();
+            }
+          }
+        },
+      };
+    } catch (error) {
+      await stagehand?.close().catch(() => {});
+      await browser.close().catch(() => {});
+      guard?.close();
+      if (error instanceof HttpError) throw error;
+      const failure = new HttpError(
+        502,
+        'Portal browser could not complete the request.',
+        'portal_error',
+      );
+      failure.cause = error;
+      throw failure;
+    }
+  }
+}
