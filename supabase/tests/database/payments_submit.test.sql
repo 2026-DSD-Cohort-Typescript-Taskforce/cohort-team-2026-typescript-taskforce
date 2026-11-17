@@ -281,10 +281,13 @@ select is(pg_temp.prepare_error(89011), ARRAY['PT409', 'already_paid', pg_temp.p
 reset role;
 
 -- Audit text: only ids, statuses, by-service, the outcome code and policies. Never amounts, the
--- account reference or a transaction reference.
+-- account reference or a transaction reference. The shape check covers the rows the payment
+-- functions write (no entity_type); DC-101's row trigger adds its own entity_type = 'payment'
+-- rows in its own format.
 select is(
   (select count(*)::int from public.audit_logs
     where name like 'payment\_%'
+      and entity_type is null
       and description !~ '^payment [0-9]+ \(bill [0-9]+\): [a-z]+ → [a-z]+, by (user [0-9]+|service)(, outcome [a-z_]+)?(, policies \[.*\])?$'),
   0, 'every payment audit row has the documented shape');
 select is(
