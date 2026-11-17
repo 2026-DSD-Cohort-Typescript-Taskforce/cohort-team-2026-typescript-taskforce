@@ -58,7 +58,7 @@ Use at most 10 rules. Never use a property id that is not in the property list. 
 
 Do not guess. When something needed to write a rule is missing or ambiguous (the amount, which properties, which payment types, what to do, or how far the policy reaches), leave that rule out or fill in only what is stated, and add a question. Each question has a topic (amount, property, payment_type, effect or scope) and plain-language text. Ask at most 5 questions. Do not ask about anything the answers already settle.
 
-Unsupported topics. These cannot be expressed as rules: anything about a schedule or timing (due dates, days of the week, "after the 15th"), per-user or per-role limits, running totals (a monthly or yearly total, "total spend"), and rules that involve other vendors. If the sentence asks for any of these, add an entry to unsupported with the offending text and the reason, and do not put it into a rule.
+Unsupported topics. These cannot be expressed as rules: anything about a schedule or timing (due dates, days of the week, "after the 15th"), per-user or per-role limits, running totals (a monthly or yearly total, "total spend"), rules that involve other vendors, and other actions (any action other than allow, require approval or block, such as notifying, splitting payments or holds). If the sentence asks for any of these, add an entry to unsupported with the offending text and the reason, and do not put it into a rule.
 
 Other fields:
 - interpretation: a plain-language reading of the rules you wrote, in one or two sentences.

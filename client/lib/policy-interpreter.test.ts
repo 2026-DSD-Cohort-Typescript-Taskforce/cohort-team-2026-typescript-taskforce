@@ -118,6 +118,7 @@ describe('prompt', () => {
       'per-user',
       'total',
       'other vendors',
+      'other actions',
     ]) {
       assert.ok(SYSTEM_PROMPT.includes(word), `missing ${word}`);
     }
