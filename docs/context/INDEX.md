@@ -1,0 +1,5 @@
+# Project context
+
+| Component        | Covers                                                                        | Doc                                     | Last AI change                                                                                               | Lessons                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Stagehand worker | server/src/payments, server/src/routes/stagehand.routes.ts, server/src/app.ts | [Stagehand worker](stagehand-worker.md) | 2026-11-15 · run e30488e3 · Implement authenticated Stagehand observe/execute worker endpoints with durable… | 2 · latest: Stagehand v4's browser handle needs an attached Stagehand client before page ac… |
