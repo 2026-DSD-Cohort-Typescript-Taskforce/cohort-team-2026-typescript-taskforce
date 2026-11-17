@@ -10,7 +10,7 @@ select plan(53);
 insert into public.properties (property_id, name) values (922001, 'DC-22 test property');
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (922001, 'DC-22 test vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (922001, 'card', 'DC-22 test card', '00000');
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-00000000000a', 'dc22-a@example.test'),
@@ -115,13 +115,13 @@ select is((select updated_at from public.users where email = 'dc22-b@example.tes
 
 -- bills and approvals reference users.user_id
 select lives_ok(
-  $$insert into public.bills (bill_id, amount, status, property_id, vendor_id, user_id, payment_id) values (922001, 1.00, 'draft', 922001, 922001, 922002, 922001);
+  $$insert into public.bills (bill_id, amount, status, property_id, vendor_id, user_id, payment_method_id) values (922001, 1.00, 'draft', 922001, 922001, 922002, 922001);
     insert into public.approvals (bill_id, submitted_by, status) values (922001, 922002, 'pending')$$,
   'a bill and an approval can reference B''s profile'
 );
 select throws_ok($$delete from public.users where email = 'dc22-b@example.test'$$, '23503', null, 'a profile referenced by bills/approvals cannot be deleted');
 select throws_ok(
-  $$insert into public.bills (bill_id, amount, status, property_id, vendor_id, user_id, payment_id) values (922002, 1.00, 'draft', 922001, 922001, -1, 922001)$$,
+  $$insert into public.bills (bill_id, amount, status, property_id, vendor_id, user_id, payment_method_id) values (922002, 1.00, 'draft', 922001, 922001, -1, 922001)$$,
   '23503', null, 'bills.user_id must exist in users'
 );
 

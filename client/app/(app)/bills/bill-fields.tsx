@@ -18,7 +18,7 @@ export const NEW = 'new';
 export type BillFormValues = {
   invoice_number: string;
   amount: string;
-  payment_id: string;
+  payment_method_id: string;
   date_due: string;
   vendor_id: string;
   property_id: string;
@@ -35,7 +35,7 @@ export function emptyValues(): BillFormValues {
   return {
     invoice_number: '',
     amount: '',
-    payment_id: '',
+    payment_method_id: '',
     date_due: '',
     vendor_id: '',
     property_id: '',
@@ -50,7 +50,7 @@ export function valuesFromBill(bill: Bill): BillFormValues {
     ...emptyValues(),
     invoice_number: bill.invoice_number ?? '',
     amount: bill.amount == null ? '' : Number(bill.amount).toFixed(2),
-    payment_id: bill.payment_id ? String(bill.payment_id) : '',
+    payment_method_id: bill.payment_method_id ? String(bill.payment_method_id) : '',
     date_due: bill.date_due ?? '',
     vendor_id: bill.vendor_id ? String(bill.vendor_id) : '',
     property_id: bill.property_id ? String(bill.property_id) : '',
@@ -59,8 +59,8 @@ export function valuesFromBill(bill: Bill): BillFormValues {
 
 /** The six bill fields, for useBillSubmission. */
 export function toBillValues(values: BillFormValues): BillValues {
-  const { invoice_number, amount, payment_id, date_due, vendor_id, property_id } = values;
-  return { invoice_number, amount, payment_id, date_due, vendor_id, property_id };
+  const { invoice_number, amount, payment_method_id, date_due, vendor_id, property_id } = values;
+  return { invoice_number, amount, payment_method_id, date_due, vendor_id, property_id };
 }
 
 /** Format checks before saving. A draft may leave any field empty. */
@@ -94,7 +94,7 @@ export async function resolveChoices(
   let next = values;
   if (next.vendor_id === NEW) {
     const type = options.paymentMethods.find(
-      (method) => String(method.id) === next.payment_id,
+      (method) => String(method.id) === next.payment_method_id,
     )?.type;
     const result = await addVendor({
       name: next.new_vendor_name.trim(),
@@ -175,12 +175,12 @@ export function BillFields({
           />
         )}
       </Field>
-      <Field label="Payment type" error={errors.payment_id}>
+      <Field label="Payment type" error={errors.payment_method_id}>
         {(props) => (
           <select
             {...props}
-            value={values.payment_id}
-            onChange={set('payment_id')}
+            value={values.payment_method_id}
+            onChange={set('payment_method_id')}
             className={controlClass}
           >
             <option value="">Credit/Debit card, bank…</option>
