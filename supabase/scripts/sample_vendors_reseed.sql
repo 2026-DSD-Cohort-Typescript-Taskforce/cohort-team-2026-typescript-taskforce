@@ -1,4 +1,5 @@
--- DC-109: run with psql -X -v ON_ERROR_STOP=1 -f this-file against LOCAL Supabase.
+-- DC-109: a manual check, not a pgTAP test (supabase test db would run anything under
+-- supabase/tests). Run against LOCAL Supabase: psql -X -v ON_ERROR_STOP=1 -f this-file
 -- Everything rolls back, except sequence advancement (normal PostgreSQL behavior).
 \set ON_ERROR_STOP on
 begin;
@@ -24,7 +25,7 @@ select 'bills' as kind, coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::tex
 union all select 'policies', coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]') from public.policies t
 union all select 'user_vendors', coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]') from public.user_vendors t;
 
-\ir ../../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
+\ir ../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
 
 do $$
 begin
@@ -67,8 +68,8 @@ end $$;
 -- Simulate a missing sample vendor without deleting an existing row or its links.
 create temp table dc109_summit_before as select vendor_id from public.vendors where lower(name) = 'summit trail equipment rental';
 update public.vendors set name = 'DC109 unrelated vendor' where vendor_id in (select vendor_id from dc109_summit_before);
-\ir ../../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
-\ir ../../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
+\ir ../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
+\ir ../migrations/20261117180000_refresh_sample_vendors_from_bills.sql
 
 do $$
 begin
