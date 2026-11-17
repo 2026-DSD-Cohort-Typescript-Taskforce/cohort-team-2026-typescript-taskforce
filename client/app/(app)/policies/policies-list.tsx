@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
-import { loadUserRole } from "@/lib/bill-api";
-import { loadPolicyVendors, setPolicyActive } from "@/lib/policy-api";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
+import { loadUserRole } from '@/lib/bill-api';
+import { loadPolicyVendors, setPolicyActive } from '@/lib/policy-api';
 import {
   NOT_APPLIED_NOTICE,
   canManagePolicies,
@@ -12,15 +12,30 @@ import {
   replacePolicy,
   type Policy,
   type PolicyVendor,
-} from "@/lib/policies";
-import { ErrorAlert, Spinner, SuccessAlert, colorTransition, focusRing, secondaryButton } from "@/app/ui";
-import { PolicyDialog } from "./policy-dialog";
-import { PolicyRow } from "./policy-row";
+} from '@/lib/policies';
+import {
+  ErrorAlert,
+  Spinner,
+  SuccessAlert,
+  colorTransition,
+  focusRing,
+  secondaryButton,
+} from '@/app/ui';
+import { PolicyDialog } from './policy-dialog';
+import { PolicyRow } from './policy-row';
 
 const searchClass = `h-12 w-full rounded-input border border-strong bg-background pr-4 pl-11 text-body text-foreground placeholder:text-secondary focus-visible:border-primary ${colorTransition} ${focusRing}`;
 
 /** The load failed: its message and a Retry button. A failed reload keeps the rows shown. */
-function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+function LoadError({
+  message,
+  retrying,
+  onRetry,
+}: {
+  message: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
   return (
     <div className="flex flex-col items-start gap-3">
       <ErrorAlert message={message} />
@@ -32,7 +47,7 @@ function LoadError({ message, retrying, onRetry }: { message: string; retrying: 
         className={secondaryButton}
       >
         {retrying && <Spinner />}
-        {retrying ? "Retrying…" : "Retry"}
+        {retrying ? 'Retrying…' : 'Retry'}
       </button>
     </div>
   );
@@ -68,13 +83,13 @@ function RowsSkeleton() {
 export function PoliciesList() {
   /** null until the first load succeeds. */
   const [vendors, setVendors] = useState<PolicyVendor[] | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   /** null while the role loads; false if it can't manage policies or didn't load. */
   const [canManage, setCanManage] = useState<boolean | null>(null);
-  const [query, setQuery] = useState("");
-  const [banner, setBanner] = useState("");
-  const [error, setError] = useState("");
+  const [query, setQuery] = useState('');
+  const [banner, setBanner] = useState('');
+  const [error, setError] = useState('');
   /** Vendors whose on/off change is being saved. */
   const [saving, setSaving] = useState<Set<number>>(() => new Set());
   /** The open dialog: the vendor as it was when the modal opened. */
@@ -95,7 +110,7 @@ export function PoliciesList() {
       if (!result || request !== latest.current) return;
       if (result.ok) {
         setVendors(result.data);
-        setLoadError("");
+        setLoadError('');
       } else {
         setLoadError(result.error);
       }
@@ -125,14 +140,14 @@ export function PoliciesList() {
   }
 
   function clearSearch() {
-    setQuery("");
+    setQuery('');
     searchRef.current?.focus();
   }
 
   function openDialog(vendor: PolicyVendor, opener: HTMLButtonElement) {
     // Cleared now, so the outcome of this dialog is announced even if it repeats the last one.
-    setBanner("");
-    setError("");
+    setBanner('');
+    setError('');
     openerRef.current = opener;
     setDialog({ vendor });
   }
@@ -152,7 +167,8 @@ export function PoliciesList() {
     // Committed now, so closeDialog sees whether the row is still in the list.
     flushSync(() => {
       setVendors((current) => current && replacePolicy(current, vendorId, policy));
-      if (vendor) setBanner(vendor.policy ? policyBanner("updated", "") : policyBanner("added", vendor.name));
+      if (vendor)
+        setBanner(vendor.policy ? policyBanner('updated', '') : policyBanner('added', vendor.name));
     });
   }
 
@@ -167,9 +183,11 @@ export function PoliciesList() {
     const previous = vendor.policy;
     if (!previous) return;
     const id = vendor.vendor_id;
-    setBanner("");
-    setError("");
-    setVendors((current) => current && replacePolicy(current, id, { ...previous, is_active: next }));
+    setBanner('');
+    setError('');
+    setVendors(
+      (current) => current && replacePolicy(current, id, { ...previous, is_active: next }),
+    );
     setSaving((current) => new Set(current).add(id));
 
     const result = await setPolicyActive(id, next);
@@ -182,7 +200,7 @@ export function PoliciesList() {
     if (!result) return;
     if (result.ok) {
       setVendors((current) => current && replacePolicy(current, id, result.data));
-      setBanner(policyBanner(next ? "on" : "off", result.data.name));
+      setBanner(policyBanner(next ? 'on' : 'off', result.data.name));
       return;
     }
     // Back to what it was.
@@ -193,7 +211,11 @@ export function PoliciesList() {
 
   let content: ReactNode;
   if (!vendors) {
-    content = loadError ? <LoadError message={loadError} retrying={loading} onRetry={reload} /> : <RowsSkeleton />;
+    content = loadError ? (
+      <LoadError message={loadError} retrying={loading} onRetry={reload} />
+    ) : (
+      <RowsSkeleton />
+    );
   } else {
     const shown = filterPolicyVendors(vendors, query);
     let rows: ReactNode;
@@ -231,10 +253,18 @@ export function PoliciesList() {
         {loadError && <LoadError message={loadError} retrying={loading} onRetry={reload} />}
         {/* No overflow-hidden: it would clip a row's ⋮ menu. Nothing inside paints its own
             background, so the panel's rounded corners hold without it. */}
-        <section aria-labelledby={headingId} className="rounded-card border border-subtle bg-surface">
+        <section
+          aria-labelledby={headingId}
+          className="rounded-card border border-subtle bg-surface"
+        >
           <div className="flex flex-col gap-4 border-b border-subtle p-4 sm:p-5">
             {/* tabIndex -1: takes focus when the row whose ⋮ had it goes away. */}
-            <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-subheading outline-none">
+            <h2
+              ref={headingRef}
+              id={headingId}
+              tabIndex={-1}
+              className="text-subheading outline-none"
+            >
               Vendors ({vendors.length})
             </h2>
             {vendors.length > 0 && (
@@ -288,7 +318,7 @@ export function PoliciesList() {
               type="button"
               aria-label="Dismiss"
               onClick={() => {
-                setBanner("");
+                setBanner('');
                 headingRef.current?.focus();
               }}
               className={`absolute top-1 right-1 inline-flex size-8 items-center justify-center rounded-button text-success-foreground hover:bg-success-border ${colorTransition} ${focusRing}`}

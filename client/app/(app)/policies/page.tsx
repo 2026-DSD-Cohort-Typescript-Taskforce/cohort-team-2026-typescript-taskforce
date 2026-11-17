@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
-import { PoliciesList } from "./policies-list";
+import type { Metadata } from 'next';
+import { PoliciesList } from './policies-list';
 
 export const metadata: Metadata = {
-  title: "Policies",
+  title: 'Policies',
 };
 
 // The vendor policies page (DC-85): everyone signed in can read it; financial approvers and

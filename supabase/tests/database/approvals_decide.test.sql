@@ -14,12 +14,12 @@ insert into auth.users (id, email) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (81001, 'DC81 Test Vendor', 'vendor-81001@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81001, 'DC81 Test Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (81001, 'card', 'DC81 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (81101, 'Operator A', 'dc81-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000081a1'),
   (81102, 'Approver B', 'dc81-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000081a2');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (81001, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-01', 120.00, current_date + 7),  -- approve, one pending row
   (81002, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-02', 120.00, current_date + 7),  -- needs revision, no approvals row
   (81003, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-03', 120.00, current_date + 7),  -- denied
@@ -131,7 +131,8 @@ select results_eq(
   'refused calls change no approvals row'
 );
 -- Rows written in this transaction have created_at = now(); seeded rows don't.
-select is((select count(*)::int from public.audit_logs where created_at = now()), 0, 'refused calls write no audit row');
+-- actor_type is null keeps to decide_bill's own rows; DC-101 trigger rows are tested in audit_logs.test.sql.
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 0, 'refused calls write no audit row');
 
 -- As approver B: approve a bill with one pending row. Times are cast to timestamptz so
 -- these pass whether the columns are timestamp or timestamptz.
@@ -151,7 +152,7 @@ select results_eq(
   'the pending row became approved by B, at now, with the trimmed note'
 );
 select results_eq(
-  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now()$$,
+  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now() and actor_type is null$$,
   $$values ('bill_approved', 'bill 81001: pending_approval → pending_payment, by user 81102', now())$$,
   'exactly one audit row: bill_approved, naming this bill and B''s profile'
 );
@@ -172,7 +173,7 @@ select results_eq(
   'with no approvals row, one is inserted: submitted by the bill''s user, decided by B, blank note stored as NULL'
 );
 select is(
-  (select count(*)::int from public.audit_logs where name = 'bill_needs_revision' and created_at = now()
+  (select count(*)::int from public.audit_logs where name = 'bill_needs_revision' and created_at = now() and actor_type is null
      and description = 'bill 81002: pending_approval → draft, by user 81102'),
   1,
   'one bill_needs_revision audit row'
@@ -194,7 +195,7 @@ select results_eq(
   'the approvals row is rejected and keeps all 500 characters'
 );
 select is(
-  (select count(*)::int from public.audit_logs where name = 'bill_denied' and created_at = now()
+  (select count(*)::int from public.audit_logs where name = 'bill_denied' and created_at = now() and actor_type is null
      and description = 'bill 81003: pending_approval → approval_denied, by user 81102'),
   1,
   'one bill_denied audit row'
@@ -211,7 +212,7 @@ select results_eq(
   $$values (81004, 'pending'), (81005, 'approved')$$,
   'only the newer pending row became approved'
 );
-select is((select count(*)::int from public.audit_logs where created_at = now()), 4, 'four decisions wrote exactly four audit rows');
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 4, 'four decisions wrote exactly four audit rows');
 
 -- Direct approvals writes are closed to signed-in users
 set local role authenticated;

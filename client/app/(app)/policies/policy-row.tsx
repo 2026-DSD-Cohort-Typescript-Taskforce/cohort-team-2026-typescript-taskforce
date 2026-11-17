@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { checkboxLabel, paymentLine, type PolicyVendor } from "@/lib/policies";
-import { colorTransition, focusRing } from "@/app/ui";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { checkboxLabel, paymentLine, type PolicyVendor } from '@/lib/policies';
+import { colorTransition, focusRing } from '@/app/ui';
 
 /**
  * One vendor and its policy. Managers get a checkbox that switches the policy on or off and
@@ -46,18 +46,18 @@ export function PolicyRow({
       setMenuOpen(false);
       if (document.activeElement === document.body) triggerRef.current?.focus();
     }
-    document.addEventListener("click", closeOutside);
-    return () => document.removeEventListener("click", closeOutside);
+    document.addEventListener('click', closeOutside);
+    return () => document.removeEventListener('click', closeOutside);
   }, [menuOpen]);
 
   function onMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
+    if (event.key === 'Escape') {
       event.preventDefault();
       setMenuOpen(false);
       triggerRef.current?.focus();
-    } else if (event.key === "Tab") {
+    } else if (event.key === 'Tab') {
       setMenuOpen(false);
-    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       // One item: the arrows keep focus on it rather than scrolling the page.
       event.preventDefault();
       itemRef.current?.focus();
@@ -87,9 +87,13 @@ export function PolicyRow({
       <div className="col-span-3 row-start-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-3 sm:row-start-1">
         {policy ? (
           <>
-            <p className="text-body-sm text-secondary">{policy.is_active ? "Active policy" : "Inactive policy"}</p>
+            <p className="text-body-sm text-secondary">
+              {policy.is_active ? 'Active policy' : 'Inactive policy'}
+            </p>
             <p className="font-medium break-words">{policy.name}</p>
-            <p className="line-clamp-2 text-body-sm break-words text-secondary">{policy.description}</p>
+            <p className="line-clamp-2 text-body-sm break-words text-secondary">
+              {policy.description}
+            </p>
           </>
         ) : (
           <p className="text-body-sm text-secondary">No policy yet.</p>
@@ -118,7 +122,7 @@ export function PolicyRow({
             aria-controls={menuOpen ? menuId : undefined}
             onClick={() => setMenuOpen((open) => !open)}
             onKeyDown={(event) => {
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
                 setMenuOpen(true);
               }
@@ -148,7 +152,7 @@ export function PolicyRow({
                 onClick={edit}
                 className={`flex w-full items-center rounded-input px-3 py-2 text-left text-body-sm whitespace-nowrap text-foreground hover:bg-raised focus-visible:bg-raised ${colorTransition} ${focusRing}`}
               >
-                {policy ? "Edit policy" : "Add policy"}
+                {policy ? 'Edit policy' : 'Add policy'}
               </button>
             </div>
           )}

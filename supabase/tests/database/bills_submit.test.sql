@@ -14,12 +14,12 @@ insert into auth.users (id, email) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (12001, 'DC12 Test Vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (12001, 'card', 'DC12 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000012a1'),
   (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (12001, 'draft', 12001, 12001, 12101, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
   (12002, 'draft', 12001, 12001, 12101, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete
   (12005, 'draft', 12001, 12001, 12101, 12001, null, 120.00, current_date + 30),       -- no invoice number
@@ -105,9 +105,10 @@ set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","r
 select throws_ok($$select public.submit_bill(12999)$$, 'PT404', 'not_found', 'refusals are raised as errors with the PostgREST status SQLSTATE');
 select is(pg_temp.submit_error(12999), ARRAY['PT404', 'not_found', null], 'an unknown bill gets not_found');
 select is(pg_temp.submit_error(12010), ARRAY['PT409', 'not_draft', 'pending_payment'], 'a bill that is not a draft gets not_draft with its current status');
--- A bill can't be missing its vendor or property: the columns are NOT NULL since DC-53.
-select col_not_null('public', 'bills', 'vendor_id', 'bills.vendor_id is NOT NULL, so no bill lacks a vendor');
-select col_not_null('public', 'bills', 'property_id', 'bills.property_id is NOT NULL, so no bill lacks a property');
+-- Drafts may be missing a vendor or property (20261111062000); submit_bill() and the
+-- bills_complete_unless_draft check make sure a bill past draft has both.
+select col_is_null('public', 'bills', 'vendor_id', 'bills.vendor_id may be NULL while the bill is a draft');
+select col_is_null('public', 'bills', 'property_id', 'bills.property_id may be NULL while the bill is a draft');
 select is(pg_temp.submit_error(12005), ARRAY['PT400', 'incomplete_bill', '["invoice_number"]'], 'no invoice number: incomplete_bill lists invoice_number');
 select is(pg_temp.submit_error(12006), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'amount 0: incomplete_bill lists amount');
 select is(pg_temp.submit_error(12007), ARRAY['PT400', 'incomplete_bill', '["amount"]'], 'negative amount: incomplete_bill lists amount');
@@ -125,7 +126,8 @@ select results_eq(
   'refused submits change no bill'
 );
 -- Rows written in this transaction have created_at = now(); seeded rows don't.
-select is((select count(*)::int from public.audit_logs where created_at = now()), 0, 'refused submits write no audit row');
+-- actor_type is null keeps to submit_bill's own rows; DC-101 trigger rows are tested in audit_logs.test.sql.
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 0, 'refused submits write no audit row');
 
 -- As operator A: success. Times are cast to timestamptz so these pass whether the
 -- columns are timestamp or timestamptz.
@@ -145,7 +147,7 @@ select results_eq(
   'the bill is stored as pending_payment with updated_at = now'
 );
 select results_eq(
-  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now()$$,
+  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now() and actor_type is null$$,
   $$values ('bill_submitted', 'bill 12001: draft → pending_payment, by user 12101', now())$$,
   'exactly one audit row: bill_submitted, naming this bill and A''s profile, at now'
 );
@@ -154,13 +156,13 @@ select results_eq(
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due, status)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due, status)
     values (12001, 12001, 12101, 12001, 'DC12-20', 120.00, current_date + 30, 'pending_payment')$$,
   '42501', null,
   'inserting a bill that is not a draft is refused'
 );
 select lives_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (12001, 12001, 12101, 12001, 'DC12-21', 120.00)$$,
   'inserting a bill without a status runs (it defaults to draft)'
 );

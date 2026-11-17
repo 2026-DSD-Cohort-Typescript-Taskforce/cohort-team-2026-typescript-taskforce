@@ -1,9 +1,15 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { flushSync } from "react-dom";
-import type { ApiFailure } from "@/lib/bill-api";
-import { createVendor, deleteVendor, removeVendorLogo, updateVendor, uploadVendorLogo } from "@/lib/vendor-api";
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import type { ApiFailure } from '@/lib/bill-api';
+import {
+  createVendor,
+  deleteVendor,
+  removeVendorLogo,
+  updateVendor,
+  uploadVendorLogo,
+} from '@/lib/vendor-api';
 import {
   ADDRESS_MAX,
   EMAIL_MAX,
@@ -15,21 +21,22 @@ import {
   type VendorErrors,
   type VendorField,
   type VendorInput,
-} from "@/lib/vendor-validation";
-import { LOGO_FAILED, type Vendor } from "@/lib/vendor-directory";
-import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from "@/app/ui";
-import { DeleteVendorDialog } from "./delete-vendor-dialog";
-import { VendorAvatar } from "./vendor-card";
+} from '@/lib/vendor-validation';
+import { LOGO_FAILED, type Vendor } from '@/lib/vendor-directory';
+import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
+import { DeleteVendorDialog } from './delete-vendor-dialog';
+import { VendorAvatar } from './vendor-card';
 
 /** What Save does to the logo: nothing, upload the chosen file, or remove the stored one. */
-type LogoChange = { kind: "keep" } | { kind: "file"; file: File; preview: string } | { kind: "remove" };
+type LogoChange =
+  { kind: 'keep' } | { kind: 'file'; file: File; preview: string } | { kind: 'remove' };
 
 const FIELDS: { field: VendorField; label: string; type: string; maxLength?: number }[] = [
-  { field: "name", label: "Name", type: "text", maxLength: NAME_MAX },
-  { field: "email", label: "Email", type: "email", maxLength: EMAIL_MAX },
-  { field: "address", label: "Physical Address", type: "text", maxLength: ADDRESS_MAX },
+  { field: 'name', label: 'Name', type: 'text', maxLength: NAME_MAX },
+  { field: 'email', label: 'Email', type: 'email', maxLength: EMAIL_MAX },
+  { field: 'address', label: 'Physical Address', type: 'text', maxLength: ADDRESS_MAX },
   // No length limit to mirror: the phone rule counts digits.
-  { field: "phone", label: "Phone", type: "tel" },
+  { field: 'phone', label: 'Phone', type: 'tel' },
 ];
 
 // Text and border colours are left to each field, which changes them with its error.
@@ -38,7 +45,7 @@ const controlClass = `h-12 w-full rounded-input border bg-background px-4 text-b
 const textButton = `rounded-button text-body-sm font-medium text-secondary underline underline-offset-4 hover:text-foreground disabled:cursor-not-allowed disabled:text-disabled-foreground ${colorTransition} ${focusRing}`;
 
 function sameDetails(input: VendorInput, vendor: Vendor): boolean {
-  return VENDOR_FIELDS.every((field) => input[field] === (vendor[field] ?? ""));
+  return VENDOR_FIELDS.every((field) => input[field] === (vendor[field] ?? ''));
 }
 
 /**
@@ -57,7 +64,7 @@ export function VendorDialog({
   vendor: Vendor | null;
   onClose: () => void;
   /** done false: the fields saved but the logo didn't, so the dialog stays open. */
-  onSaved: (vendor: Vendor, action: "saved" | "added", done: boolean) => void;
+  onSaved: (vendor: Vendor, action: 'saved' | 'added', done: boolean) => void;
   onDeleted: (vendor: Vendor) => void;
   /** The vendor was deleted elsewhere (404). */
   onGone: () => void;
@@ -69,24 +76,24 @@ export function VendorDialog({
   const trashRef = useRef<HTMLButtonElement>(null);
   // Fixed at opening: an add whose logo failed becomes an edit of the new vendor, but its
   // banner still says "Added".
-  const [action] = useState<"saved" | "added">(vendor ? "saved" : "added");
+  const [action] = useState<'saved' | 'added'>(vendor ? 'saved' : 'added');
   /** The vendor as stored; null until an add saves its fields. */
   const [saved, setSaved] = useState(vendor);
   const [values, setValues] = useState<VendorInput>({
-    name: vendor?.name ?? "",
-    email: vendor?.email ?? "",
-    address: vendor?.address ?? "",
-    phone: vendor?.phone ?? "",
+    name: vendor?.name ?? '',
+    email: vendor?.email ?? '',
+    address: vendor?.address ?? '',
+    phone: vendor?.phone ?? '',
   });
   const [errors, setErrors] = useState<VendorErrors>({});
-  const [logo, setLogo] = useState<LogoChange>({ kind: "keep" });
-  const [logoError, setLogoError] = useState("");
+  const [logo, setLogo] = useState<LogoChange>({ kind: 'keep' });
+  const [logoError, setLogoError] = useState('');
   /** The fields are saved and the logo isn't: Save retries only the logo, unless they change. */
   const [logoPending, setLogoPending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   // busy as a ref too, set at once: the close guards read it, and a dialog closed straight
   // after a save or delete ends must not see the value from the last render.
   const busyRef = useRef(false);
@@ -107,20 +114,21 @@ export function VendorDialog({
   // keydown instead, before it becomes a close request, wherever focus is.
   useEffect(() => {
     function holdEsc(event: KeyboardEvent) {
-      if (event.key === "Escape" && busyRef.current) event.preventDefault();
+      if (event.key === 'Escape' && busyRef.current) event.preventDefault();
     }
-    window.addEventListener("keydown", holdEsc, true);
-    return () => window.removeEventListener("keydown", holdEsc, true);
+    window.addEventListener('keydown', holdEsc, true);
+    return () => window.removeEventListener('keydown', holdEsc, true);
   }, []);
 
   // Frees a preview once another logo replaces it, or the dialog closes.
   useEffect(() => {
-    if (logo.kind !== "file") return;
+    if (logo.kind !== 'file') return;
     const url = logo.preview;
     return () => URL.revokeObjectURL(url);
   }, [logo]);
 
-  const shownLogo = logo.kind === "file" ? logo.preview : logo.kind === "remove" ? null : (saved?.logo_url ?? null);
+  const shownLogo =
+    logo.kind === 'file' ? logo.preview : logo.kind === 'remove' ? null : (saved?.logo_url ?? null);
 
   function setBusy(set: (value: boolean) => void, value: boolean) {
     busyRef.current = value;
@@ -144,19 +152,19 @@ export function VendorDialog({
   function chooseLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     // Cleared, so choosing the same file again still counts as a change.
-    event.target.value = "";
+    event.target.value = '';
     if (!file) return;
     if (!logoExtension(file)) {
       setLogoError(INVALID_LOGO);
       return;
     }
-    setLogoError("");
-    setLogo({ kind: "file", file, preview: URL.createObjectURL(file) });
+    setLogoError('');
+    setLogo({ kind: 'file', file, preview: URL.createObjectURL(file) });
   }
 
   function removeLogo() {
-    setLogoError("");
-    setLogo(saved?.logo_url ? { kind: "remove" } : { kind: "keep" });
+    setLogoError('');
+    setLogo(saved?.logo_url ? { kind: 'remove' } : { kind: 'keep' });
     // The Remove logo button goes away with the logo.
     logoButtonRef.current?.focus();
   }
@@ -170,9 +178,9 @@ export function VendorDialog({
   function refused(result: ApiFailure) {
     if (result.status === 404) {
       gone();
-    } else if (result.code === "duplicate_vendor_name") {
+    } else if (result.code === 'duplicate_vendor_name') {
       setErrors({ name: result.error });
-      document.getElementById(fieldId("name"))?.focus();
+      document.getElementById(fieldId('name'))?.focus();
     } else {
       // 403, 400, 500 or offline: the reply's own message.
       setError(result.error);
@@ -184,16 +192,16 @@ export function VendorDialog({
     event.preventDefault();
     if (busyRef.current) return;
     const checked = validateVendorInput(values);
-    if ("errors" in checked) {
+    if ('errors' in checked) {
       setErrors(checked.errors);
       // An earlier reply's message (a 403, offline) would read as part of these.
-      setError("");
+      setError('');
       const first = VENDOR_FIELDS.find((field) => checked.errors[field]);
       if (first) document.getElementById(fieldId(first))?.focus();
       return;
     }
     setErrors({});
-    setError("");
+    setError('');
     setBusy(setSaving, true);
 
     let current: Vendor;
@@ -217,9 +225,9 @@ export function VendorDialog({
       setSaved(current);
     }
 
-    if (logo.kind !== "keep") {
+    if (logo.kind !== 'keep') {
       const result =
-        logo.kind === "file"
+        logo.kind === 'file'
           ? await uploadVendorLogo(current.vendor_id, logo.file)
           : await removeVendorLogo(current.vendor_id);
       if (!result) return;
@@ -232,7 +240,7 @@ export function VendorDialog({
         // The card shows the saved fields; the dialog stays open for another try.
         if (fieldsSaved) onSaved(current, action, false);
         setLogoPending(true);
-        if (result.code === "invalid_logo") setLogoError(result.error);
+        if (result.code === 'invalid_logo') setLogoError(result.error);
         setError(LOGO_FAILED);
         return;
       }
@@ -246,7 +254,7 @@ export function VendorDialog({
 
   async function remove() {
     if (!saved || busyRef.current) return;
-    setError("");
+    setError('');
     setBusy(setDeleting, true);
     const result = await deleteVendor(saved.vendor_id);
     if (!result) return;
@@ -313,7 +321,7 @@ export function VendorDialog({
               aria-label="Delete vendor"
               aria-haspopup="dialog"
               onClick={() => {
-                setError("");
+                setError('');
                 setConfirming(true);
               }}
               disabled={busy}
@@ -336,7 +344,7 @@ export function VendorDialog({
         </div>
 
         <h2 id={titleId} className="mt-6 text-heading">
-          {saved ? "Edit vendor" : "Add vendor"}
+          {saved ? 'Edit vendor' : 'Add vendor'}
         </h2>
 
         <form noValidate onSubmit={save} className="mt-6 flex flex-col gap-5">
@@ -355,7 +363,7 @@ export function VendorDialog({
               >
                 <VendorAvatar
                   src={shownLogo}
-                  className={`size-20 rounded-input border group-hover:border-primary ${logoError ? "border-danger" : "border-strong"}`}
+                  className={`size-20 rounded-input border group-hover:border-primary ${logoError ? 'border-danger' : 'border-strong'}`}
                 />
                 <span
                   aria-hidden="true"
@@ -417,7 +425,7 @@ export function VendorDialog({
                   autoComplete="off"
                   aria-invalid={fieldError ? true : undefined}
                   aria-describedby={fieldError ? errorId : undefined}
-                  className={`${controlClass} ${fieldError ? "border-danger" : "border-strong focus-visible:border-primary"}`}
+                  className={`${controlClass} ${fieldError ? 'border-danger' : 'border-strong focus-visible:border-primary'}`}
                 />
                 {fieldError && (
                   <p id={errorId} className="text-body-sm text-danger">
@@ -438,7 +446,7 @@ export function VendorDialog({
             className={`w-full sm:w-auto sm:min-w-40 sm:self-end ${primaryButton}`}
           >
             {saving && <Spinner />}
-            {saving ? "Saving…" : "Save"}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </form>
       </dialog>
