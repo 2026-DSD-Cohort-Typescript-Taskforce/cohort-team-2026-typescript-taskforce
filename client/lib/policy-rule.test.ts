@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
+  DRAFT_STATUSES,
   GENERIC_NOT_COVERED,
   MODEL_OUTPUT_JSON_SCHEMA,
   NO_RULE_QUESTION,
@@ -280,4 +282,36 @@ test('json schema lists every property as required', () => {
   };
   walk(MODEL_OUTPUT_JSON_SCHEMA, 'root');
   assert.ok(seen.length >= 4, seen.join(','));
+});
+
+test('ADR examples are valid', () => {
+  const adr = readFileSync(
+    new URL('../../docs/adr/0003-policy-rule-schema.md', import.meta.url),
+    'utf8',
+  );
+  const blocks = [...adr.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => JSON.parse(m[1]!));
+  assert.equal(blocks.length, 4);
+  const keys = [
+    'vendor_id',
+    'revision',
+    'status',
+    'original_sentence',
+    'sentence',
+    'revised_sentence',
+    'interpretation',
+    'not_covered',
+    'rule',
+    'questions',
+    'unsupported',
+    'conflicts',
+    'answers',
+    'policy_updated_at',
+    'updated_at',
+  ];
+  for (const draft of blocks) {
+    assert.deepEqual(Object.keys(draft).sort(), [...keys].sort());
+    assert.ok((DRAFT_STATUSES as readonly string[]).includes(draft.status), draft.status);
+    if (draft.rule !== null) assert.ok(isPolicyRuleV1(draft.rule), JSON.stringify(draft.rule));
+  }
+  assert.deepEqual(blocks.map((d) => d.status).sort(), [...DRAFT_STATUSES].sort());
 });
