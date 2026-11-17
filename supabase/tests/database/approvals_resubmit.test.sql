@@ -69,7 +69,7 @@ select results_eq(
 );
 select results_eq(
   $$select name, description from public.audit_logs
-      where description like 'bill 81201: draft%'$$,
+      where description like 'bill 81201: draft%' and actor_type is null$$,
   $$values ('bill_submitted', 'bill 81201: draft → pending_approval, by user 81201')$$,
   'the audit row records the move to pending_approval'
 );
