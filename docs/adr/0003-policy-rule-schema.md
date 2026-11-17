@@ -73,6 +73,8 @@ The model puts these in `unsupported` instead of a rule.
 
 A draft is the interpretation of one sentence. It is stored in `public.policy_drafts`, one row per vendor. A draft is inactive: it never creates a policy, changes `policies.description` or turns anything on. DC-91 does that.
 
+`policy_drafts` is not authoritative. Any policy manager can write the table directly through PostgREST under row level security: any status, any rule JSON, even another `vendor_id`, because the shape checks live in the route by design. So before activating, DC-91 re-checks `isPolicyRuleV1(rule)`, `rule.vendor_id === vendor_id` and that `findConflicts(rule.rules)` is empty. DC-92 validates a rule before evaluating it.
+
 | Field               | Meaning                                                                                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `vendor_id`         | The vendor.                                                                                                                                                  |
@@ -111,6 +113,8 @@ Only a `complete` draft is eligible for DC-91's confirmation. DC-91 should also 
 - Property ids that are not in the property list the server sent are dropped, and the server asks "Which properties does this policy apply to? One of the properties named isn't in the list." (topic `property`).
 - A rule whose property list is entirely unknown ids is dropped, and that same question is asked. It is never widened to all properties.
 - Repeated ids and payment types are removed.
+- Conflicts are computed by server code (`findConflicts`), never taken from the model.
+- `unsupported` entries with a blank `text` or `reason`, or with either over 500 characters, are dropped (not truncated), so they never force the `unsupported` status.
 - A rule with both `property_ids` and `except_property_ids`, a fractional or negative amount, or a non-integer id makes the whole reply malformed (502). The server does not repair it.
 - `not_covered`: `null` when some rule has an empty `when`. Otherwise the model's text, or when it is blank, "Bills that match none of these rules aren't covered; they follow the normal flow."
 
@@ -138,11 +142,11 @@ Policy managers only (`financial_approver`, `system_admin`). Replies are 200 `{ 
 
 A body with a `revision` key is a **continue**. Any other body is a **start**.
 
-|          | Start                                                                                                | Continue                                                                                                                           |
-| -------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Body     | `{ sentence }`                                                                                       | `{ revision, answers?, sentence? }`                                                                                                |
-| Effect   | Replaces any existing draft for the vendor. `original_sentence` is the sentence; `answers` is empty. | Needs the stored draft at `revision`. New `answers` are appended. A new `sentence` replaces `sentence`; `original_sentence` stays. |
-| Required | `sentence`                                                                                           | `revision`, and at least one of `answers` or `sentence`                                                                            |
+|          | Start                                                                                                                                                                                                                       | Continue                                                                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Body     | `{ sentence }`                                                                                                                                                                                                              | `{ revision, answers?, sentence? }`                                                                                                |
+| Effect   | Replaces any existing draft for the vendor and bumps its revision (upsert plus trigger), so another client holding the old revision gets 409 on its next continue. `original_sentence` is the sentence; `answers` is empty. | Needs the stored draft at `revision`. New `answers` are appended. A new `sentence` replaces `sentence`; `original_sentence` stays. |
+| Required | `sentence`                                                                                                                                                                                                                  | `revision`, and at least one of `answers` or `sentence`                                                                            |
 
 Limits and body rules:
 
@@ -151,7 +155,7 @@ Limits and body rules:
 - `revision`: a whole number from 1 to 2147483647.
 - `sentence: null` on a continue is invalid. Omit the key to keep the sentence.
 - Unknown keys are invalid.
-- At most 30 answers are kept on a draft.
+- A draft holds at most 30 answers in total. A continue that would bring it over 30 is rejected with 422 `too_many_revisions`; nothing is trimmed.
 
 Checks run in this order:
 
@@ -159,23 +163,23 @@ Checks run in this order:
 2. Vendor id (404).
 3. Body shape (400).
 4. Vendor exists (404).
-5. `OPENROUTER_API_KEY` is set (503).
+5. `OPENROUTER_API_KEY` is set (503). The service logs "Set OPENROUTER_API_KEY. See client/.env.example." only at this step.
 6. Continue only: stored draft exists (404), revision matches (409), every `question_id` is a stored question (400), answer cap (422).
 7. The model call, then normalisation and conflict checks.
 8. The write. A continue writes only if the stored revision still equals `revision`. If it does not, another write landed during the model call: 409 with the current draft, or 404 `draft_not_found` if the draft is gone (the vendor was deleted).
 
-| Status | Code                         | Message                                                            | Extra                                                      |
-| ------ | ---------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| 200    |                              |                                                                    | `{ draft }`                                                |
-| 400    | `invalid_request`            | Some of the request's details aren't valid.                        | `fields`: names of the failing fields                      |
-| 401    |                              | You are not signed in.                                             |                                                            |
-| 403    | `forbidden`                  | Only financial approvers and system admins can change policies.    |                                                            |
-| 404    | `vendor_not_found`           | This vendor no longer exists.                                      |                                                            |
-| 404    | `draft_not_found`            | There's no draft for this policy yet. Start one with a sentence.   |                                                            |
-| 409    | `stale_draft`                | This draft changed since you loaded it. Review the latest version. | `draft`: the current draft                                 |
-| 422    | `too_many_revisions`         | This draft has too many answers. Start the policy again.           |                                                            |
-| 502    | `interpretation_failed`      | Couldn't interpret the policy. Try again.                          | `draft`: the stored draft, or `null`. Nothing was written. |
-| 503    | `interpretation_unavailable` | Policy interpretation isn't set up yet.                            |                                                            |
+| Status | Code                         | Message                                                            | Extra                                                                                                     |
+| ------ | ---------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| 200    |                              |                                                                    | `{ draft }`                                                                                               |
+| 400    | `invalid_request`            | Some of the request's details aren't valid.                        | `fields`: names of the failing fields                                                                     |
+| 401    |                              | You are not signed in.                                             |                                                                                                           |
+| 403    | `forbidden`                  | Only financial approvers and system admins can change policies.    |                                                                                                           |
+| 404    | `vendor_not_found`           | This vendor no longer exists.                                      |                                                                                                           |
+| 404    | `draft_not_found`            | There's no draft for this policy yet. Start one with a sentence.   |                                                                                                           |
+| 409    | `stale_draft`                | This draft changed since you loaded it. Review the latest version. | `draft`: the current draft                                                                                |
+| 422    | `too_many_revisions`         | This draft has too many answers. Start the policy again.           |                                                                                                           |
+| 502    | `interpretation_failed`      | Couldn't interpret the policy. Try again.                          | `draft`: the stored draft (for a start or a continue), or `null` when there is none. Nothing was written. |
+| 503    | `interpretation_unavailable` | Policy interpretation isn't set up yet.                            |                                                                                                           |
 
 A store failure on GET or POST returns the policy error mapping with "Couldn't load the policy draft. Try again." or "Couldn't save the policy draft. Try again."
 
