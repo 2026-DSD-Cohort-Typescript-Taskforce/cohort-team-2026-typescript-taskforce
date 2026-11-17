@@ -217,3 +217,140 @@ drop policy "authenticated users can update payments" on public.payments;
 
 revoke all on public.payments from anon, authenticated, service_role;
 grant select on public.payments to authenticated, service_role;
+
+-- Section 2: prepare_payment(). Only the trusted service (service_role) calls it. It creates
+-- the pending attempt a person later authorizes, with the summary fixed at this moment.
+-- Preparing again supersedes any earlier pending or authorized attempt for the bill.
+--
+-- Error contract (PostgREST answers PTxyz with HTTP xyz; error.code, .message, .details).
+-- Checked in this order:
+--   code   HTTP  message              details
+--   PT403  403   forbidden            null (p_prepared_by is NULL, unknown, or a viewer)
+--   PT400  400   invalid_payment      JSON array of the bad fields, in this order: fees_cents (NULL
+--                                     or negative), payment_date (NULL or not within one day of
+--                                     today), account_reference (over 100 characters once
+--                                     trimmed), policy_refs (NULL or not a JSON array)
+--   PT404  404   not_found            null (no such bill, or NULL)
+--   PT409  409   payment_in_progress  payment_id of the processing or unknown attempt
+--   PT409  409   already_paid         payment_id of the successful attempt
+--   PT409  409   not_payable          the bill's status, unless pending_payment or payment_failed
+-- The account reference is trimmed and blank becomes NULL. Audit text never holds amounts or
+-- the account reference.
+create function public.prepare_payment(
+  p_bill_id integer,
+  p_prepared_by integer,
+  p_fees_cents bigint,
+  p_payment_date date,
+  p_account_reference text default null,
+  p_policy_refs jsonb default '[]'::jsonb
+) returns public.payments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_marker text := current_setting('app.payments_write', true);
+  v_role text;
+  v_account text;
+  v_bad text[];
+  v_bill public.bills;
+  v_payment_id integer;
+  v_old record;
+  v_row public.payments;
+begin
+  select role into v_role from public.users where user_id = p_prepared_by;
+  if v_role is null or v_role not in ('billing_operator', 'financial_approver', 'system_admin') then
+    raise sqlstate 'PT403' using message = 'forbidden';
+  end if;
+
+  v_account := nullif(btrim(p_account_reference), '');
+  v_bad := array_remove(array[
+    case when p_fees_cents is null or p_fees_cents < 0 then 'fees_cents' end,
+    case when p_payment_date is null
+      or p_payment_date not between current_date - 1 and current_date + 1 then 'payment_date' end,
+    case when char_length(v_account) > 100 then 'account_reference' end,
+    case when jsonb_typeof(p_policy_refs) is distinct from 'array' then 'policy_refs' end
+  ], null);
+  if cardinality(v_bad) > 0 then
+    raise sqlstate 'PT400' using message = 'invalid_payment', detail = to_json(v_bad)::text;
+  end if;
+
+  -- Supabase (supautils) refuses a function-level `set app.payments_write`, so the write marker
+  -- is switched on here, for this transaction, and put back before returning. Any error rolls
+  -- it back with the rest of the call.
+  perform set_config('app.payments_write', 'on', true);
+
+  -- The row lock makes a concurrent preparation or payment on the same bill wait, then see it.
+  select * into v_bill from public.bills where bill_id = p_bill_id for update;
+  if not found then
+    raise sqlstate 'PT404' using message = 'not_found';
+  end if;
+
+  select payment_id into v_payment_id from public.payments
+    where bill_id = p_bill_id and status in ('processing', 'unknown');
+  if found then
+    raise sqlstate 'PT409' using message = 'payment_in_progress', detail = v_payment_id::text;
+  end if;
+
+  select payment_id into v_payment_id from public.payments
+    where bill_id = p_bill_id and status = 'success';
+  if found then
+    raise sqlstate 'PT409' using message = 'already_paid', detail = v_payment_id::text;
+  end if;
+
+  if v_bill.status not in ('pending_payment', 'payment_failed') then
+    raise sqlstate 'PT409' using message = 'not_payable', detail = v_bill.status;
+  end if;
+
+  -- Supersede earlier pending or authorized attempts, one audit row per transition.
+  for v_old in
+    select payment_id, status from public.payments
+      where bill_id = p_bill_id and status in ('pending', 'authorized')
+      order by payment_id for update
+  loop
+    update public.payments
+      set status = 'expired', outcome_code = 'superseded', outcome_at = now()
+      where payment_id = v_old.payment_id;
+    insert into public.audit_logs (name, description)
+      values ('payment_superseded', format('payment %s (bill %s): %s → expired, by user %s, outcome superseded',
+        v_old.payment_id, p_bill_id, v_old.status, p_prepared_by));
+  end loop;
+
+  -- The summary is fixed here; its hash comes from the exact values inserted.
+  v_row.bill_id := p_bill_id;
+  v_row.status := 'pending';
+  v_row.vendor_id := v_bill.vendor_id;
+  v_row.payment_method_id := v_bill.payment_method_id;
+  v_row.invoice_number := v_bill.invoice_number;
+  v_row.account_reference := v_account;
+  v_row.amount_cents := (v_bill.amount * 100)::bigint;
+  v_row.fees_cents := p_fees_cents;
+  v_row.total_cents := v_row.amount_cents + p_fees_cents;
+  v_row.currency := 'USD';
+  v_row.payment_date := p_payment_date;
+  v_row.policy_refs := p_policy_refs;
+  v_row.prepared_by := p_prepared_by;
+  v_row.summary_hash := public.payment_summary_hash(v_row);
+
+  insert into public.payments (bill_id, status, vendor_id, payment_method_id, invoice_number,
+    account_reference, amount_cents, fees_cents, total_cents, currency, payment_date,
+    summary_hash, policy_refs, prepared_by)
+  values (v_row.bill_id, v_row.status, v_row.vendor_id, v_row.payment_method_id, v_row.invoice_number,
+    v_row.account_reference, v_row.amount_cents, v_row.fees_cents, v_row.total_cents, v_row.currency,
+    v_row.payment_date, v_row.summary_hash, v_row.policy_refs, v_row.prepared_by)
+  returning * into v_row;
+
+  insert into public.audit_logs (name, description)
+    values ('payment_prepared', format('payment %s (bill %s): new → pending, by user %s, policies %s',
+      v_row.payment_id, p_bill_id, p_prepared_by, v_row.policy_refs));
+
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_row;
+end
+$$;
+
+-- New functions in public are executable by PUBLIC, and Supabase's default privileges also
+-- grant anon, authenticated and service_role explicitly. Service-only: revoke all, then grant.
+revoke execute on function public.prepare_payment(integer, integer, bigint, date, text, jsonb)
+  from public, anon, authenticated, service_role;
+grant execute on function public.prepare_payment(integer, integer, bigint, date, text, jsonb) to service_role;
