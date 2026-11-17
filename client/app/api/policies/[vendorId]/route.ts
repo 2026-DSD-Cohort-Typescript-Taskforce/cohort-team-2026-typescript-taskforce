@@ -1,5 +1,5 @@
-import type { NextRequest } from "next/server";
-import { createUserClient, readJsonObject, reply } from "@/lib/supabase";
+import type { NextRequest } from 'next/server';
+import { createUserClient, readJsonObject, reply } from '@/lib/supabase';
 import {
   invalidPolicy,
   parseVendorId,
@@ -8,12 +8,12 @@ import {
   SAVE_POLICY_FAILED,
   TOGGLE_POLICY_FAILED,
   type Policy,
-} from "@/lib/policies";
-import { parseActiveFlag, POLICY_FIELDS, validatePolicyInput } from "@/lib/policy-validation";
-import { POLICY_SELECT, replyWithPolicyError, requirePolicyManager } from "@/lib/policy-routes";
+} from '@/lib/policies';
+import { parseActiveFlag, POLICY_FIELDS, validatePolicyInput } from '@/lib/policy-validation';
+import { POLICY_SELECT, replyWithPolicyError, requirePolicyManager } from '@/lib/policy-routes';
 
 /** Adds a vendor's policy (201), or replaces its name and description (200). */
-export async function PUT(request: NextRequest, ctx: RouteContext<"/api/policies/[vendorId]">) {
+export async function PUT(request: NextRequest, ctx: RouteContext<'/api/policies/[vendorId]'>) {
   const supabase = createUserClient(request);
   if (supabase instanceof Response) return supabase;
 
@@ -26,14 +26,14 @@ export async function PUT(request: NextRequest, ctx: RouteContext<"/api/policies
   const body = await readJsonObject(request);
   if (!body) return reply(invalidPolicy(POLICY_FIELDS));
   const result = validatePolicyInput(body);
-  if ("errors" in result) return reply(invalidPolicy(Object.keys(result.errors)));
+  if ('errors' in result) return reply(invalidPolicy(Object.keys(result.errors)));
   const { name, description } = result.input;
 
   const update = () =>
     supabase
-      .from("policies")
+      .from('policies')
       .update({ name, description, updated_at: new Date().toISOString() })
-      .eq("vendor_id", vendorId)
+      .eq('vendor_id', vendorId)
       .select(POLICY_SELECT)
       .maybeSingle();
 
@@ -42,12 +42,12 @@ export async function PUT(request: NextRequest, ctx: RouteContext<"/api/policies
   if (updated.data) return reply({ body: { policy: updated.data as Policy } });
 
   const inserted = await supabase
-    .from("policies")
+    .from('policies')
     .insert({ vendor_id: vendorId, name, description })
     .select(POLICY_SELECT)
     .single();
   if (!inserted.error) return reply({ status: 201, body: { policy: inserted.data as Policy } });
-  if (inserted.error.code !== "23505") return replyWithPolicyError(inserted.error);
+  if (inserted.error.code !== '23505') return replyWithPolicyError(inserted.error);
 
   // Another manager added this vendor's policy a moment ago: update theirs once.
   const retried = await update();
@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest, ctx: RouteContext<"/api/policies
 }
 
 /** Turns a vendor's policy on or off. */
-export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/policies/[vendorId]">) {
+export async function PATCH(request: NextRequest, ctx: RouteContext<'/api/policies/[vendorId]'>) {
   const supabase = createUserClient(request);
   if (supabase instanceof Response) return supabase;
 
@@ -69,12 +69,12 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/polici
 
   const body = await readJsonObject(request);
   const isActive = body ? parseActiveFlag(body) : null;
-  if (isActive === null) return reply(invalidPolicy(["is_active"]));
+  if (isActive === null) return reply(invalidPolicy(['is_active']));
 
   const { data, error } = await supabase
-    .from("policies")
+    .from('policies')
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq("vendor_id", vendorId)
+    .eq('vendor_id', vendorId)
     .select(POLICY_SELECT)
     .maybeSingle();
   if (error) return replyWithPolicyError(error, TOGGLE_POLICY_FAILED);

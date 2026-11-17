@@ -6,7 +6,7 @@ select plan(13);
 
 -- Setup (as postgres): one payment method of our own (id 70001+ to stay clear of seeded
 -- rows), next to the ones the migrations seed.
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (70001, 'card', 'DC70 Test Card', '00000');
 create temp table payment_methods_before as select * from public.payment_methods;
 grant select on payment_methods_before to authenticated;
@@ -34,8 +34,8 @@ select policy_roles_are('public', 'payment_methods', 'authenticated users can re
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000070a1","role":"authenticated"}';
 select results_eq(
-  $$select payment_id, payment_type, name from public.payment_methods order by payment_id$$,
-  $$select payment_id, payment_type, name from payment_methods_before order by payment_id$$,
+  $$select payment_method_id, payment_type, name from public.payment_methods order by payment_method_id$$,
+  $$select payment_method_id, payment_type, name from payment_methods_before order by payment_method_id$$,
   'a signed-in user reads every payment method''s id, type and name'
 );
 select throws_ok($$select billing_zip from public.payment_methods$$, '42501', null, 'billing_zip is not readable');
@@ -45,8 +45,8 @@ select throws_ok(
   '42501', null,
   'inserting a payment method is refused'
 );
-select is(pg_temp.rows_changed($$update public.payment_methods set name = 'DC70 Renamed' where payment_id = 70001$$), 0, 'updating a payment method changes nothing (0 rows)');
-select is(pg_temp.rows_changed($$delete from public.payment_methods where payment_id = 70001$$), 0, 'deleting a payment method changes nothing (0 rows)');
+select is(pg_temp.rows_changed($$update public.payment_methods set name = 'DC70 Renamed' where payment_method_id = 70001$$), 0, 'updating a payment method changes nothing (0 rows)');
+select is(pg_temp.rows_changed($$delete from public.payment_methods where payment_method_id = 70001$$), 0, 'deleting a payment method changes nothing (0 rows)');
 select is((select count(*)::int from public.cards), 0, 'cards stay locked');
 select is((select count(*)::int from public.bank_accounts), 0, 'bank_accounts stay locked');
 reset role;
@@ -58,8 +58,8 @@ select is((select count(*)::int from public.payment_methods), 0, 'anon reads no 
 reset role;
 
 select results_eq(
-  $$select * from public.payment_methods order by payment_id$$,
-  $$select * from payment_methods_before order by payment_id$$,
+  $$select * from public.payment_methods order by payment_method_id$$,
+  $$select * from payment_methods_before order by payment_method_id$$,
   'the refused writes changed no payment method'
 );
 

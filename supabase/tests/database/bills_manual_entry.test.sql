@@ -21,7 +21,7 @@ begin
   perform set_config('dc21.vendor_a_name', (select name from public.vendors where vendor_id = v_vendor_a), true);
   perform set_config('dc21.vendor_b', (select min(vendor_id) from public.vendors where vendor_id > v_vendor_a)::text, true);
   perform set_config('dc21.user', (select min(user_id) from public.users)::text, true);
-  perform set_config('dc21.payment', (select min(payment_id) from public.payment_methods)::text, true);
+  perform set_config('dc21.payment', (select min(payment_method_id) from public.payment_methods)::text, true);
 end
 $$;
 
@@ -43,7 +43,7 @@ end
 $$;
 
 insert into public.properties (property_id, name) values (21001, 'DC21 Test Property');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
   values (21010, 'pending_payment', pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-010', 80.00),
          -- A draft with approval history, as after a denied bill is revised.
          (21011, 'draft', pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-011', 80.00);
@@ -64,12 +64,12 @@ select table_privs_are('public', 'bills', 'anon', ARRAY[]::text[], 'anon has no 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000021a1","role":"authenticated"}';
 select lives_ok(
-  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due)
+  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
     values (21001, pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), '  DC21-001  ', 150.25, current_date + 30)$$,
   'a signed-in user saves a draft bill for an existing vendor and property'
 );
 select results_eq(
-  $$select b.bill_id, b.vendor_id, v.name::text, b.property_id, p.name::text, b.user_id, b.payment_id,
+  $$select b.bill_id, b.vendor_id, v.name::text, b.property_id, p.name::text, b.user_id, b.payment_method_id,
            b.amount, b.status::text, b.invoice_number::text
     from public.bills b
     join public.vendors v on v.vendor_id = b.vendor_id
@@ -83,50 +83,54 @@ select is((select date_received from public.bills where bill_id = 21001), now(),
 
 -- References that don't exist, or are missing
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
     values (-1, 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
   '23503', 'insert or update on table "bills" violates foreign key constraint "bills_vendor_id_fkey"',
   'a vendor that does not exist is refused'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
     values (pg_temp.id('vendor_a'), -1, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
   '23503', 'insert or update on table "bills" violates foreign key constraint "bills_property_id_fkey"',
   'a property that does not exist is refused'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
     values (pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), -1, 1.00)$$,
-  '23503', 'insert or update on table "bills" violates foreign key constraint "bills_payment_id_fkey"',
+  '23503', 'insert or update on table "bills" violates foreign key constraint "bills_payment_method_id_fkey"',
   'a payment method that does not exist is refused'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
     values (pg_temp.id('vendor_a'), 21001, -1, pg_temp.id('payment'), 1.00)$$,
   '23503', 'insert or update on table "bills" violates foreign key constraint "bills_user_id_fkey"',
   'a user that does not exist is refused'
 );
+-- Drafts may be incomplete (20261111062000), but a bill past draft needs a vendor and property.
+-- Run as postgres: signed-in users can only insert drafts, so RLS would refuse first.
+reset role;
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
-    values (null, 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
-  '23502', 'null value in column "vendor_id" of relation "bills" violates not-null constraint',
-  'a bill without a vendor is refused'
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
+    values ('pending_approval', null, 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-014', 1.00)$$,
+  '23514', 'new row for relation "bills" violates check constraint "bills_complete_unless_draft"',
+  'a bill past draft without a vendor is refused'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
-    values (pg_temp.id('vendor_a'), null, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
-  '23502', 'null value in column "property_id" of relation "bills" violates not-null constraint',
-  'a bill without a property is refused'
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
+    values ('pending_approval', pg_temp.id('vendor_a'), null, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-015', 1.00)$$,
+  '23514', 'new row for relation "bills" violates check constraint "bills_complete_unless_draft"',
+  'a bill past draft without a property is refused'
 );
+set local role authenticated;
 
 -- DC-20 invoice number and date rules
 select lives_ok(
-  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (21002, pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), '   ', 1.00)$$,
   'a draft with a blank invoice number saves'
 );
 select lives_ok(
-  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (21003, pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), null, 1.00)$$,
   'a second draft at the same vendor with no invoice number saves'
 );
@@ -136,18 +140,18 @@ select is(
   'a blank invoice number is stored as NULL, and many drafts at one vendor can have none'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 'dc21-001', 1.00)$$,
   '23505', 'duplicate key value violates unique constraint "bills_vendor_id_invoice_number_key"',
   'the same invoice number at the same vendor, in another case, is refused'
 );
 select lives_ok(
-  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (bill_id, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values (21005, pg_temp.id('vendor_b'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-001', 1.00)$$,
   'the same invoice number at another vendor saves'
 );
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount, date_received)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount, date_received)
     values (pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00, now() + interval '1 day')$$,
   '23514', 'new row for relation "bills" violates check constraint "bills_date_received_not_future_check"',
   'a date_received in the future is refused'
@@ -156,13 +160,13 @@ reset role;
 
 -- Status rules, as postgres: signed-in users can only insert drafts.
 select throws_ok(
-  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, amount)
     values ('pending_approval', pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
   '23514', 'new row for relation "bills" violates check constraint "bills_invoice_number_required_check"',
   'a bill that is not a draft needs an invoice number'
 );
 select throws_ok(
-  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_id, invoice_number, amount)
+  $$insert into public.bills (status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount)
     values ('paid', pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 'DC21-008', 1.00)$$,
   '23514', 'new row for relation "bills" violates check constraint "bills_status_check"',
   'a status outside the bill lifecycle is refused'
@@ -191,7 +195,7 @@ set local role anon;
 set local request.jwt.claims = '{"role":"anon"}';
 select throws_ok($$select count(*) from public.bills$$, '42501', 'permission denied for table bills', 'anon cannot read bills');
 select throws_ok(
-  $$insert into public.bills (vendor_id, property_id, user_id, payment_id, amount)
+  $$insert into public.bills (vendor_id, property_id, user_id, payment_method_id, amount)
     values (pg_temp.id('vendor_a'), 21001, pg_temp.id('user'), pg_temp.id('payment'), 1.00)$$,
   '42501', 'permission denied for table bills',
   'anon cannot insert bills'

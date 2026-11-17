@@ -216,7 +216,7 @@ function Review({
   const rows: [string, string][] = [
     ['Invoice number', values.invoice_number || '—'],
     ['Amount', values.amount || '—'],
-    ['Payment type', pick(options.paymentMethods, values.payment_id, '')],
+    ['Payment type', pick(options.paymentMethods, values.payment_method_id, '')],
     ['Due date', values.date_due || '—'],
     ['Vendor', pick(options.vendors, values.vendor_id, values.new_vendor_name)],
     ['Property', pick(options.properties, values.property_id, values.new_property_name)],

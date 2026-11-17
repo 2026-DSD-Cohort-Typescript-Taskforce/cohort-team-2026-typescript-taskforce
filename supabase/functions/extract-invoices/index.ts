@@ -152,7 +152,7 @@ const IN_FLIGHT = new Set([
 const REQUIRED: Record<string, string> = {
   vendor_id: "vendor",
   property_id: "property",
-  payment_id: "payment type",
+  payment_method_id: "payment type",
   invoice_number: "invoice number",
   amount: "amount",
   date_due: "due date",
@@ -375,11 +375,11 @@ async function defaultPaymentId(supabase: SupabaseClient, supported: string | nu
   if (types.size === 0) return null;
   const { data } = await supabase
     .from("payment_methods")
-    .select("payment_id, payment_type")
+    .select("payment_method_id, payment_type")
     .eq("is_default", true);
   for (const type of PAYMENT_ORDER) {
     const method = types.has(type) && (data ?? []).find((row) => row.payment_type === type);
-    if (method) return method.payment_id;
+    if (method) return method.payment_method_id;
   }
   return null;
 }
@@ -438,7 +438,7 @@ Deno.serve(async (req) => {
   const fields: Row = {
     vendor_id: vendor?.vendor_id ?? null,
     property_id: property?.property_id ?? null,
-    payment_id: await defaultPaymentId(
+    payment_method_id: await defaultPaymentId(
       supabase,
       normalizeMethods(extracted?.supported_payment_methods) ?? vendor?.supported_payment_methods ?? null,
     ),

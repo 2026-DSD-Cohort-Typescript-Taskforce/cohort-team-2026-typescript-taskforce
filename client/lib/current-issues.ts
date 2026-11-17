@@ -20,14 +20,14 @@ export function billMissing(bill: Bill): BillField[] {
   return missingForSubmit({
     vendor_id: bill.vendor_id,
     property_id: bill.property_id,
-    payment_id: bill.payment_id,
+    payment_method_id: bill.payment_method_id,
     invoice_number: bill.invoice_number,
     amount: bill.amount == null ? null : String(bill.amount),
     date_due: bill.date_due,
   });
 }
 
-/** ["payment_id", "date_due"] -> "Missing payment type and due date." */
+/** ["payment_method_id", "date_due"] -> "Missing payment type and due date." */
 export function issueMessage(missing: BillField[]): string {
   if (missing.length === BILL_FIELDS.length) return UNREADABLE;
   const labels = missing.map((field) => FIELD_LABELS[field].toLowerCase());

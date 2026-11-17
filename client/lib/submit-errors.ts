@@ -15,18 +15,18 @@ export type ErrorResponse = {
 };
 
 // Express's wording (server/src/middleware/requireAuth.ts).
-export const SIGNED_OUT: ErrorResponse = { status: 401, body: { error: "You are not signed in." } };
+export const SIGNED_OUT: ErrorResponse = { status: 401, body: { error: 'You are not signed in.' } };
 
 export const BILL_NOT_FOUND: ErrorResponse = {
   status: 404,
-  body: { error: "Bill not found.", code: "not_found" },
+  body: { error: 'Bill not found.', code: 'not_found' },
 };
 
 export const SUBMIT_FAILED = "Couldn't submit the bill. Try again.";
 
 // PostgREST answers an invalid (PGRST301) or expired (PGRST303) JWT with a 401, as it does
 // a request with no JWT when anonymous access is off (PGRST302).
-const SESSION_ERROR_CODES = new Set(["PGRST301", "PGRST302", "PGRST303"]);
+const SESSION_ERROR_CODES = new Set(['PGRST301', 'PGRST302', 'PGRST303']);
 
 /**
  * Maps the error to a reply. The PTxyz codes come from submit_bill()
@@ -37,25 +37,28 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
   if (error.code && SESSION_ERROR_CODES.has(error.code)) return SIGNED_OUT;
 
   switch (error.code) {
-    case "PT400":
+    case 'PT400':
       return {
         status: 400,
         body: {
-          error: "This bill is missing required details.",
-          code: "incomplete_bill",
+          error: 'This bill is missing required details.',
+          code: 'incomplete_bill',
           fields: parseFields(error.details),
         },
       };
-    case "PT403":
-      return { status: 403, body: { error: "Only billing operators can submit bills.", code: "forbidden" } };
-    case "PT404":
+    case 'PT403':
+      return {
+        status: 403,
+        body: { error: 'Only billing operators can submit bills.', code: 'forbidden' },
+      };
+    case 'PT404':
       return BILL_NOT_FOUND;
-    case "PT409":
+    case 'PT409':
       return {
         status: 409,
         body: {
-          error: "Only draft bills can be submitted.",
-          code: "not_draft",
+          error: 'Only draft bills can be submitted.',
+          code: 'not_draft',
           ...(error.details ? { status: error.details } : {}),
         },
       };
@@ -68,8 +71,8 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
 // e.g. '["date_due"]'.
 export function parseFields(details: string | null | undefined): string[] {
   try {
-    const fields: unknown = JSON.parse(details ?? "");
-    if (Array.isArray(fields) && fields.every((field) => typeof field === "string")) return fields;
+    const fields: unknown = JSON.parse(details ?? '');
+    if (Array.isArray(fields) && fields.every((field) => typeof field === 'string')) return fields;
   } catch {}
   return [];
 }

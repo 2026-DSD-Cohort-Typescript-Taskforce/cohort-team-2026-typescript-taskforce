@@ -24,7 +24,8 @@ export async function getProfileByAuthUserId(
 ): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('users')
-    .select(`
+    .select(
+      `
       user_id,
       name,
       email,
@@ -32,7 +33,8 @@ export async function getProfileByAuthUserId(
       user_properties (
         property_id
       )
-    `)
+    `,
+    )
     .eq('auth_user_id', authUserId)
     .maybeSingle();
   if (error) throw error;

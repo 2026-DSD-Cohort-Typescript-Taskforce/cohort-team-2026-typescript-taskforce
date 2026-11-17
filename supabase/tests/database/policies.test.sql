@@ -13,11 +13,10 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000085a2', 'dc85-b@example.test'),
   ('00000000-0000-4000-8000-0000000085a3', 'dc85-c@example.test'),
   ('00000000-0000-4000-8000-0000000085a4', 'dc85-d@example.test');
-insert into public.properties (property_id, name) values (85001, 'DC85 Test Property');
-insert into public.users (user_id, name, email, role, property_id, auth_user_id) values
-  (85101, 'Operator A', 'dc85-a@example.test', 'billing_operator', 85001, '00000000-0000-4000-8000-0000000085a1'),
-  (85102, 'Approver B', 'dc85-b@example.test', 'financial_approver', 85001, '00000000-0000-4000-8000-0000000085a2'),
-  (85103, 'Admin C', 'dc85-c@example.test', 'system_admin', 85001, '00000000-0000-4000-8000-0000000085a3');
+insert into public.users (user_id, name, email, role, auth_user_id) values
+  (85101, 'Operator A', 'dc85-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000085a1'),
+  (85102, 'Approver B', 'dc85-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000085a2'),
+  (85103, 'Admin C', 'dc85-c@example.test', 'system_admin', '00000000-0000-4000-8000-0000000085a3');
 
 insert into public.policies (vendor_id, name, description, is_active)
 select vendor_id, 'DC85 fixture policy', 'Fixture policy for the read and write checks.', true

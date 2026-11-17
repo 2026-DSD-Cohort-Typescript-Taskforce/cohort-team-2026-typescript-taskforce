@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
-import { loadUserRole } from "@/lib/bill-api";
-import { loadVendors } from "@/lib/vendor-api";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
+import { loadUserRole } from '@/lib/bill-api';
+import { loadVendors } from '@/lib/vendor-api';
 import {
   VENDOR_NOT_FOUND,
   canManageVendors,
@@ -13,7 +13,7 @@ import {
   upsertVendor,
   vendorBanner,
   type Vendor,
-} from "@/lib/vendor-directory";
+} from '@/lib/vendor-directory';
 import {
   ErrorAlert,
   Spinner,
@@ -22,16 +22,24 @@ import {
   focusRing,
   primaryButton,
   secondaryButton,
-} from "@/app/ui";
-import { VendorCard } from "./vendor-card";
-import { VendorDialog } from "./vendor-dialog";
+} from '@/app/ui';
+import { VendorCard } from './vendor-card';
+import { VendorDialog } from './vendor-dialog';
 
 const searchClass = `h-12 w-full rounded-input border border-strong bg-background pr-4 pl-11 text-body text-foreground placeholder:text-secondary focus-visible:border-primary ${colorTransition} ${focusRing}`;
 
-const grid = "grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3";
+const grid = 'grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3';
 
 /** The load failed: its message and a Retry button. A failed reload keeps the grid shown. */
-function LoadError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+function LoadError({
+  message,
+  retrying,
+  onRetry,
+}: {
+  message: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
   return (
     <div className="flex flex-col items-start gap-3">
       <ErrorAlert message={message} />
@@ -43,7 +51,7 @@ function LoadError({ message, retrying, onRetry }: { message: string; retrying: 
         className={secondaryButton}
       >
         {retrying && <Spinner />}
-        {retrying ? "Retrying…" : "Retry"}
+        {retrying ? 'Retrying…' : 'Retry'}
       </button>
     </div>
   );
@@ -83,13 +91,13 @@ function GridSkeleton() {
 export function VendorsDirectory() {
   /** null until the first load succeeds. */
   const [vendors, setVendors] = useState<Vendor[] | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   /** null while the role loads; false if it can't manage vendors or didn't load. */
   const [canManage, setCanManage] = useState<boolean | null>(null);
-  const [query, setQuery] = useState("");
-  const [banner, setBanner] = useState("");
-  const [error, setError] = useState("");
+  const [query, setQuery] = useState('');
+  const [banner, setBanner] = useState('');
+  const [error, setError] = useState('');
   /** The open dialog: the vendor to edit, or null to add one. */
   const [dialog, setDialog] = useState<{ vendor: Vendor | null } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -108,7 +116,7 @@ export function VendorsDirectory() {
       if (!result || request !== latest.current) return;
       if (result.ok) {
         setVendors(sortVendorsByName(result.data));
-        setLoadError("");
+        setLoadError('');
       } else {
         setLoadError(result.error);
       }
@@ -137,14 +145,14 @@ export function VendorsDirectory() {
   }
 
   function clearSearch() {
-    setQuery("");
+    setQuery('');
     searchRef.current?.focus();
   }
 
   function openDialog(vendor: Vendor | null, opener: HTMLButtonElement) {
     // Cleared now, so the outcome of this dialog is announced even if it repeats the last one.
-    setBanner("");
-    setError("");
+    setBanner('');
+    setError('');
     openerRef.current = opener;
     setDialog({ vendor });
   }
@@ -166,7 +174,7 @@ export function VendorsDirectory() {
     headingRef.current?.focus();
   }
 
-  function saved(vendor: Vendor, action: "saved" | "added", done: boolean) {
+  function saved(vendor: Vendor, action: 'saved' | 'added', done: boolean) {
     // Committed now, so closeDialog sees whether the card is still in the grid.
     flushSync(() => {
       setVendors((current) => current && upsertVendor(current, vendor));
@@ -176,7 +184,7 @@ export function VendorsDirectory() {
 
   function deleted(vendor: Vendor) {
     setVendors((current) => current && removeVendor(current, vendor.vendor_id));
-    setBanner(vendorBanner("deleted", vendor.name));
+    setBanner(vendorBanner('deleted', vendor.name));
     focusHeading();
   }
 
@@ -188,7 +196,11 @@ export function VendorsDirectory() {
 
   let content: ReactNode;
   if (!vendors) {
-    content = loadError ? <LoadError message={loadError} retrying={loading} onRetry={reload} /> : <GridSkeleton />;
+    content = loadError ? (
+      <LoadError message={loadError} retrying={loading} onRetry={reload} />
+    ) : (
+      <GridSkeleton />
+    );
   } else {
     const shown = filterVendors(vendors, query);
     let cards: ReactNode;
@@ -256,7 +268,12 @@ export function VendorsDirectory() {
         )}
         <section aria-labelledby={headingId} className="flex flex-col gap-4">
           {/* tabIndex -1: takes focus when the card whose ⋮ had it goes away. */}
-          <h2 ref={headingRef} id={headingId} tabIndex={-1} className="text-subheading outline-none">
+          <h2
+            ref={headingRef}
+            id={headingId}
+            tabIndex={-1}
+            className="text-subheading outline-none"
+          >
             All Vendors ({vendors.length})
           </h2>
           {cards}
@@ -301,7 +318,7 @@ export function VendorsDirectory() {
               type="button"
               aria-label="Dismiss"
               onClick={() => {
-                setBanner("");
+                setBanner('');
                 headingRef.current?.focus();
               }}
               className={`absolute top-1 right-1 inline-flex size-8 items-center justify-center rounded-button text-success-foreground hover:bg-success-border ${colorTransition} ${focusRing}`}
@@ -325,7 +342,7 @@ export function VendorsDirectory() {
       </div>
       {dialog && (
         <VendorDialog
-          key={dialog.vendor?.vendor_id ?? "new"}
+          key={dialog.vendor?.vendor_id ?? 'new'}
           vendor={dialog.vendor}
           onClose={closeDialog}
           onSaved={saved}

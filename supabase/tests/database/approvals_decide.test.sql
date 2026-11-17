@@ -14,12 +14,12 @@ insert into auth.users (id, email) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (81001, 'DC81 Test Vendor', 'vendor-81001@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81001, 'DC81 Test Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (81001, 'card', 'DC81 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (81101, 'Operator A', 'dc81-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000081a1'),
   (81102, 'Approver B', 'dc81-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000081a2');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (81001, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-01', 120.00, current_date + 7),  -- approve, one pending row
   (81002, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-02', 120.00, current_date + 7),  -- needs revision, no approvals row
   (81003, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-03', 120.00, current_date + 7),  -- denied

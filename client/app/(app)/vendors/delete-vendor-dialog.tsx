@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useId, useRef, type RefObject } from "react";
-import { Spinner, colorTransition, focusRing, secondaryButton } from "@/app/ui";
+import { useEffect, useId, useRef, type RefObject } from 'react';
+import { Spinner, colorTransition, focusRing, secondaryButton } from '@/app/ui';
 
 // Dark text on the bright red: white on it is under 4.5:1.
 const dangerButton = `inline-flex h-12 items-center justify-center gap-2 rounded-button bg-danger-bright px-6 text-body font-semibold text-on-primary hover:bg-danger data-pending:cursor-wait data-pending:bg-danger-bright ${colorTransition} ${focusRing}`;
@@ -74,7 +74,7 @@ export function DeleteVendorDialog({
           className={dangerButton}
         >
           {deleting && <Spinner />}
-          {deleting ? "Deleting…" : "Delete vendor"}
+          {deleting ? 'Deleting…' : 'Delete vendor'}
         </button>
       </div>
     </dialog>
