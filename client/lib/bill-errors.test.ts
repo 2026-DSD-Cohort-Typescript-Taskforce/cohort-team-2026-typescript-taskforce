@@ -23,7 +23,7 @@ test("a duplicate invoice number for the vendor is a 409 on invoice_number", () 
 
 test("an unknown vendor, property or payment method is a 400 naming the field", () => {
   // As Postgres reports it under RLS: the details leave out the key.
-  for (const field of ["vendor_id", "property_id", "payment_id"]) {
+  for (const field of ["vendor_id", "property_id", "payment_method_id"]) {
     const reply = toWriteErrorResponse({
       code: "23503",
       message: `insert or update on table "bills" violates foreign key constraint "bills_${field}_fkey"`,

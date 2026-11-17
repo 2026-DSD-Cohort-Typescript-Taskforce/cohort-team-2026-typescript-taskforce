@@ -24,7 +24,7 @@ const draft: Bill = {
   date_received: "2026-11-05T15:00:00",
   vendor_id: 1,
   property_id: 2,
-  payment_id: 1,
+  payment_method_id: 1,
   vendor: { name: "Alder Creek Landscaping" },
   property: { name: "Alder Creek Workshop" },
   payment: null,
@@ -176,7 +176,7 @@ test("reset goes back to idle with the given bill", () => {
 });
 
 test("checkSubmittable names what a submit still needs", () => {
-  const input = validateBill({ amount: "5", vendor_id: "1", property_id: "2", payment_id: "3" }).input!;
+  const input = validateBill({ amount: "5", vendor_id: "1", property_id: "2", payment_method_id: "3" }).input!;
   assert.deepEqual(checkSubmittable(input), {
     type: "invalid",
     fieldErrors: {
@@ -189,7 +189,7 @@ test("checkSubmittable names what a submit still needs", () => {
     amount: "5",
     vendor_id: "1",
     property_id: "2",
-    payment_id: "3",
+    payment_method_id: "3",
     invoice_number: "A",
     date_due: "2026-12-01",
   }).input!;

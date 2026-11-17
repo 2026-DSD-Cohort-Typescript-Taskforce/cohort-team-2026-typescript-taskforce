@@ -14,7 +14,7 @@ function bill(overrides: Partial<Bill>): Bill {
     date_received: "2026-11-01T12:00:00",
     vendor_id: 1,
     property_id: 1,
-    payment_id: 1,
+    payment_method_id: 1,
     vendor: null,
     property: null,
     payment: null,

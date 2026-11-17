@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { missingForSubmit, submitHint, validateBill } from './bill-validation.ts';
 
 // The choices every draft needs, as the form's selects hold them.
-const ids = { vendor_id: '3', property_id: '5', payment_id: '2' };
+const ids = { vendor_id: '3', property_id: '5', payment_method_id: '2' };
 
 // Values as the bill form holds them: strings from its inputs and selects.
 const form = {
@@ -18,7 +18,7 @@ test('a complete form becomes the details to send', () => {
     input: {
       vendor_id: 3,
       property_id: 5,
-      payment_id: 2,
+      payment_method_id: 2,
       invoice_number: 'INV-1001',
       amount: '1234.50',
       date_due: '2026-11-16',
@@ -31,7 +31,7 @@ test('a draft may leave every field empty', () => {
     input: {
       vendor_id: null,
       property_id: null,
-      payment_id: null,
+      payment_method_id: null,
       invoice_number: null,
       amount: null,
       date_due: null,
@@ -41,7 +41,7 @@ test('a draft may leave every field empty', () => {
     input: {
       vendor_id: 3,
       property_id: 5,
-      payment_id: 2,
+      payment_method_id: 2,
       invoice_number: null,
       amount: '12.00',
       date_due: null,
@@ -142,7 +142,7 @@ test("ids are positive Postgres integers, from a select's string or a number", (
     'Choose a property from the list.',
   );
   assert.equal(
-    validateBill({ ...ids, amount: '1', payment_id: 'x' }).errors?.payment_id,
+    validateBill({ ...ids, amount: '1', payment_method_id: 'x' }).errors?.payment_method_id,
     'Choose a payment method from the list.',
   );
 });
@@ -164,8 +164,8 @@ test('partial (an edit) checks only the fields it is given', () => {
   assert.deepEqual(validateBill({}, { partial: true }), { input: {} });
   // An edit can clear a field: the bill stays a draft until it has everything.
   assert.deepEqual(validateBill({ amount: '' }, { partial: true }), { input: { amount: null } });
-  assert.deepEqual(validateBill({ payment_id: '' }, { partial: true }), {
-    input: { payment_id: null },
+  assert.deepEqual(validateBill({ payment_method_id: '' }, { partial: true }), {
+    input: { payment_method_id: null },
   });
 });
 
@@ -181,7 +181,7 @@ test("anything that isn't a bill field is dropped", () => {
     'amount',
     'date_due',
     'invoice_number',
-    'payment_id',
+    'payment_method_id',
     'property_id',
     'vendor_id',
   ]);
@@ -195,7 +195,7 @@ test('missingForSubmit lists what submit_bill() requires, in its order', () => {
   assert.deepEqual(missingForSubmit(validateBill({}).input!), [
     'vendor_id',
     'property_id',
-    'payment_id',
+    'payment_method_id',
     'invoice_number',
     'amount',
     'date_due',

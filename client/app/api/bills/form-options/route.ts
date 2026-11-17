@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     supabase.from("vendors").select("id:vendor_id, name, payment_portal_url").order("name"),
     supabase.from("properties").select("id:property_id, name").order("name"),
     // Only these three columns are readable (payment_methods_read_for_signed_in_users).
-    supabase.from("payment_methods").select("id:payment_id, type:payment_type, name").order("name"),
+    supabase.from("payment_methods").select("id:payment_method_id, type:payment_type, name").order("name"),
   ]);
   const error = vendors.error ?? properties.error ?? paymentMethods.error;
   if (error) return replyWithError(error, "Couldn't load the bill form's choices. Try again.");

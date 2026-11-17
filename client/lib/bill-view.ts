@@ -6,7 +6,7 @@
  * payment method's type and name embedded.
  */
 export const BILL_SELECT =
-  'bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor_id, property_id, payment_id, vendor:vendors(name), property:properties(name), payment:payment_methods(payment_type, name)';
+  'bill_id, status, invoice_number, amount, date_due, date_issued, date_received, vendor_id, property_id, payment_method_id, vendor:vendors(name), property:properties(name), payment:payment_methods(payment_type, name)';
 
 export type Bill = {
   bill_id: number;
@@ -20,7 +20,7 @@ export type Bill = {
   date_received: string;
   vendor_id: number | null;
   property_id: number | null;
-  payment_id: number | null;
+  payment_method_id: number | null;
   vendor: { name: string } | null;
   property: { name: string } | null;
   /** payment_type is card or bank (payment_methods' valid_payment_type). */
@@ -48,7 +48,7 @@ export function parseBillId(id: string): number | null {
 export const FIELD_LABELS: Record<string, string> = {
   vendor_id: 'Vendor',
   property_id: 'Property',
-  payment_id: 'Payment type',
+  payment_method_id: 'Payment type',
   invoice_number: 'Invoice number',
   amount: 'Amount',
   date_due: 'Due date',
