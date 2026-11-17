@@ -95,7 +95,12 @@ export function parseDraftBody(
 
   const revision = body.revision;
   const bad: string[] = [];
-  if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 1 || revision > MAX_INT4) {
+  if (
+    typeof revision !== 'number' ||
+    !Number.isSafeInteger(revision) ||
+    revision < 1 ||
+    revision > MAX_INT4
+  ) {
     bad.push('revision');
   }
 
@@ -118,7 +123,10 @@ export const DRAFT_VENDOR_NOT_FOUND: DraftReply = POLICY_VENDOR_NOT_FOUND;
 
 export const DRAFT_NOT_FOUND: DraftReply = {
   status: 404,
-  body: { error: "There's no draft for this policy yet. Start one with a sentence.", code: 'draft_not_found' },
+  body: {
+    error: "There's no draft for this policy yet. Start one with a sentence.",
+    code: 'draft_not_found',
+  },
 };
 
 export function invalidDraftRequest(fields: string[]): DraftReply {
@@ -141,13 +149,20 @@ export function staleDraft(draft: PolicyDraft): DraftReply {
 
 export const TOO_MANY_REVISIONS: DraftReply = {
   status: 422,
-  body: { error: 'This draft has too many answers. Start the policy again.', code: 'too_many_revisions' },
+  body: {
+    error: 'This draft has too many answers. Start the policy again.',
+    code: 'too_many_revisions',
+  },
 };
 
 export function interpretationFailed(draft: PolicyDraft | null): DraftReply {
   return {
     status: 502,
-    body: { error: "Couldn't interpret the policy. Try again.", code: 'interpretation_failed', draft },
+    body: {
+      error: "Couldn't interpret the policy. Try again.",
+      code: 'interpretation_failed',
+      draft,
+    },
   };
 }
 

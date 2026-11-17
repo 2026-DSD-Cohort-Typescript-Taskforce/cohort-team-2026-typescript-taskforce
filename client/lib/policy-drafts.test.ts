@@ -57,8 +57,13 @@ test('rejects bad bodies with the failing field names', () => {
   assert.deepEqual(fields({ revision: 1, answers: [] }), ['answers']);
   const eleven = Array.from({ length: 11 }, (_, i) => ({ question_id: `q${i}`, answer: 'x' }));
   assert.deepEqual(fields({ revision: 1, answers: eleven }), ['answers']);
-  assert.deepEqual(fields({ revision: 1, answers: [{ question_id: 'q1', answer: 'x'.repeat(501) }] }), ['answers']);
-  assert.deepEqual(fields({ revision: 1, answers: [{ question_id: 'q1', answer: '  ' }] }), ['answers']);
+  assert.deepEqual(
+    fields({ revision: 1, answers: [{ question_id: 'q1', answer: 'x'.repeat(501) }] }),
+    ['answers'],
+  );
+  assert.deepEqual(fields({ revision: 1, answers: [{ question_id: 'q1', answer: '  ' }] }), [
+    'answers',
+  ]);
   assert.deepEqual(fields({ revision: 1, answers: [{ ...a, extra: 1 }] }), ['answers']);
   assert.deepEqual(fields({ revision: 1, answers: [{ answer: 'x' }] }), ['answers']);
   assert.deepEqual(fields({ revision: 1, answers: [a, a] }), ['answers']);
@@ -75,5 +80,7 @@ test('reply bodies carry the exact copy and codes', () => {
     code: 'interpretation_failed',
     draft: null,
   });
-  assert.deepEqual((invalidDraftRequest(['sentence']).body as { fields: string[] }).fields, ['sentence']);
+  assert.deepEqual((invalidDraftRequest(['sentence']).body as { fields: string[] }).fields, [
+    'sentence',
+  ]);
 });
