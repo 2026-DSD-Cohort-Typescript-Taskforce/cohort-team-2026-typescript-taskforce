@@ -8,6 +8,9 @@ server/node_modules/
 .env.*
 !.env.example
 
+# Real production roster. Copy server/scripts/prod-users.example.json locally.
+server/scripts/prod-users.json
+
 # Local scratch. Holds access tokens, so it stays untracked.
 temp/
 
@@ -24,3 +27,9 @@ server/dist/
 
 CLAUDE.md
 .vscode/
+
+# CYC stays on this machine. Do not push the engine, skill, rule, or hook.
+.cyc/
+.agents/skills/cyc/
+.cursor/rules/cyc-delivery.mdc
+.cursor/hooks.json
