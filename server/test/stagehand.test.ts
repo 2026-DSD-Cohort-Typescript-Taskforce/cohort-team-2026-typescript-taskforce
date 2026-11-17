@@ -14,7 +14,7 @@ import { BrowserWorker, type PortalBrowser, type PortalSession } from '../src/pa
 import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
 import { StagehandBrowser } from '../src/payments/stagehand-browser';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const request = {
   billId: 7,
@@ -230,6 +230,65 @@ test('execution pins the validated profile across asynchronous configuration cha
     assert.equal(execution.unit, 'dollars');
     assert.equal(await execution.open(), f.session);
   });
+});
+
+test('a click profile without a vendor id or url still prepares execution', async () => {
+  await withWorker(async (_worker, path, f) => {
+    const file = join(path, 'profiles.json');
+    await writeFile(
+      file,
+      JSON.stringify([
+        {
+          amountUnit: 'dollars',
+          capture: [{ action: 'click', selector: "a[href='#business']" }],
+          pay: [{ action: 'click', selector: '#sample-details' }],
+          invoiceSelector: '#invoice',
+          totalSelector: '#total',
+          paySelector: '#pay',
+          confirmationSelector: '#confirmed',
+          confirmationInvoiceSelector: '#invoice',
+          confirmationTotalSelector: '#total',
+          confirmationReferenceSelector: '#reference',
+        },
+      ]),
+    );
+    const browser = new StagehandBrowser(file);
+    browser.open = async (_input, _mode, pinned) => {
+      assert.equal(pinned?.capture?.[0]?.selector, "a[href='#business']");
+      assert.equal(pinned?.pay?.[0]?.selector, '#sample-details');
+      return f.session;
+    };
+    const execution = await browser.prepareExecution({
+      ...request,
+      vendorId: 3,
+      portalUrl: 'https://copper-ridge-utility-demo.vercel.app',
+    });
+    assert.equal(execution.unit, 'dollars');
+    assert.equal(await execution.open(), f.session);
+  });
+});
+
+test('the portal file signs in from the shared footer and omits vendor id and url', async () => {
+  const profiles = JSON.parse(await readFile(join(__dirname, '../profiles.json'), 'utf8')) as {
+    portalUrl?: string;
+    vendorId?: number;
+    capture: { action: string; selector: string }[];
+    pay: { action: string; selector: string }[];
+  }[];
+  assert.equal(profiles.length, 1);
+  assert.equal(profiles[0].portalUrl, undefined);
+  assert.equal(profiles[0].vendorId, undefined);
+  assert.deepEqual(
+    [...profiles[0].capture, ...profiles[0].pay].map((step) => `${step.action} ${step.selector}`),
+    [
+      "click footer a[href='#signin/account']",
+      'login #login-form',
+      'wait .balance-amount',
+      "click a.button[href^='#pay/'], a.button[href^='#statement/']",
+      'click #sample-details',
+      "check input[name='authorized']",
+    ],
+  );
 });
 
 test('confirmed keys reject a changed amount convention instead of replaying the wrong amount', async () => {
