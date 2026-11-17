@@ -166,7 +166,7 @@ test('an approvals row flattens the names and labels the payment type', () => {
     date_received: '2026-11-01T00:00:00+00:00',
     vendor_id: 1,
     property_id: 2,
-    payment_id: 3,
+    payment_method_id: 3,
     vendor: { name: 'Acme' },
     property: { name: 'Elm Court' },
     payment: { payment_type: 'card', name: 'Visa' },

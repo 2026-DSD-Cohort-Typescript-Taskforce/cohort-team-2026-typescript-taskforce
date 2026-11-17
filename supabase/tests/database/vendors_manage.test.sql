@@ -13,7 +13,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000084a3', 'dc84-c@example.test'),
   ('00000000-0000-4000-8000-0000000084a4', 'dc84-d@example.test');
 insert into public.properties (property_id, name) values (84001, 'DC84 Test Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (84001, 'card', 'DC84 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (84101, 'Operator A', 'dc84-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000084a1'),
@@ -22,7 +22,7 @@ insert into public.users (user_id, name, email, role, auth_user_id) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods) values
   (84001, 'DC84 Vendor With Bill', 'bill@example.test', '1 Test Way', '555-0101', 'https://vendor.example.test', 'card'),
   (84002, 'DC84 Vendor No Bill', 'nobill@example.test', '2 Test Way', '555-0102', null, null);
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due)
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
   values (84001, 'draft', 84001, 84001, 84101, 84001, 'DC84-01', 10.00, current_date + 30);
 
 -- How many rows a statement changed (RLS can make an UPDATE or DELETE match none).

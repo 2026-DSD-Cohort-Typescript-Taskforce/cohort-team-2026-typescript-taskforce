@@ -13,7 +13,7 @@ const complete: Bill = {
   date_received: '2026-11-01T00:00:00+00:00',
   vendor_id: 1,
   property_id: 2,
-  payment_id: 3,
+  payment_method_id: 3,
   vendor: { name: 'Summit Trail' },
   property: { name: 'My Business' },
   payment: null,
@@ -21,7 +21,7 @@ const complete: Bill = {
 
 test('lists drafts missing details, saying what is missing', () => {
   const issues = currentIssues([
-    { ...complete, bill_id: 2, payment_id: null, date_due: null },
+    { ...complete, bill_id: 2, payment_method_id: null, date_due: null },
     complete,
     { ...complete, bill_id: 3, status: 'pending_payment' },
   ]);
@@ -40,7 +40,7 @@ test('a draft with no details at all could not be read', () => {
     ...complete,
     vendor_id: null,
     property_id: null,
-    payment_id: null,
+    payment_method_id: null,
     invoice_number: null,
     amount: null,
     date_due: null,

@@ -52,7 +52,7 @@ export function toWriteErrorResponse(error: SupabaseError, fallback = SAVE_FAILE
     // key out of the details, so the field comes from the constraint's name, e.g.
     // 'insert or update on table "bills" violates foreign key constraint "bills_vendor_id_fkey"'.
     case '23503': {
-      const field = /"bills_(vendor_id|property_id|payment_id)_fkey"/.exec(
+      const field = /"bills_(vendor_id|property_id|payment_method_id)_fkey"/.exec(
         error.message ?? '',
       )?.[1];
       return invalidBill(field ? [field] : []);

@@ -223,7 +223,7 @@ test('bill helpers obtain their own validated session', async (t) => {
     });
     await t.test('create, update, and delete use the same validated session', async () => {
       await request(() =>
-        createBill({ amount: 10, property_id: 1, vendor_id: 1, user_id: 12, payment_id: 1 }),
+        createBill({ amount: 10, property_id: 1, vendor_id: 1, user_id: 12, payment_method_id: 1 }),
       );
       assert.equal(calls.at(-1)?.init?.method, 'POST');
       assert.deepEqual(JSON.parse(String(calls.at(-1)?.init?.body)), {
@@ -231,7 +231,7 @@ test('bill helpers obtain their own validated session', async (t) => {
         property_id: 1,
         vendor_id: 1,
         user_id: 12,
-        payment_id: 1,
+        payment_method_id: 1,
       });
       await request(() => updateBill('1', { amount: 20 }));
       assert.equal(calls.at(-1)?.init?.method, 'PATCH');
@@ -247,7 +247,14 @@ test('bill helpers obtain their own validated session', async (t) => {
         authStatus = scenario === 'rejected' ? 401 : scenario === 'profile-missing' ? 403 : 200;
         for (const operation of [
           fetchBills,
-          () => createBill({ amount: 1, property_id: 1, vendor_id: 1, user_id: 12, payment_id: 1 }),
+          () =>
+            createBill({
+              amount: 1,
+              property_id: 1,
+              vendor_id: 1,
+              user_id: 12,
+              payment_method_id: 1,
+            }),
           () => updateBill('1', { amount: 1 }),
           () => deleteBill('1'),
         ]) {
