@@ -12,6 +12,9 @@ import { getDraft, postDraft } from '@/lib/policy-draft-service';
 import { LOAD_DRAFT_FAILED, SAVE_DRAFT_FAILED } from '@/lib/policy-drafts';
 import { callInterpreter, interpreterConfigFromEnv } from '@/lib/policy-interpreter';
 
+// The model call can take up to 30 s, plus the database round trips.
+export const maxDuration = 60;
+
 export async function GET(
   request: NextRequest,
   ctx: RouteContext<'/api/policies/[vendorId]/draft'>,
@@ -37,7 +40,6 @@ export async function POST(
     const vendorId = parseVendorId((await ctx.params).vendorId);
     const body = await readJsonObject(request);
     const config = interpreterConfigFromEnv(process.env);
-    if (!config) console.error('Set OPENROUTER_API_KEY. See client/.env.example.');
     const interpret = config
       ? (input: Parameters<typeof callInterpreter>[0]) => callInterpreter(input, config)
       : null;

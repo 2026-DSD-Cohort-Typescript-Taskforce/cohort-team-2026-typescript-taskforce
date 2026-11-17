@@ -65,7 +65,10 @@ export async function postDraft(
   const request = parsed.body;
   const vendor = await store.loadVendor(vendorId);
   if (vendor === null) return DRAFT_VENDOR_NOT_FOUND;
-  if (interpret === null) return INTERPRETATION_UNAVAILABLE;
+  if (interpret === null) {
+    log('Set OPENROUTER_API_KEY. See client/.env.example.');
+    return INTERPRETATION_UNAVAILABLE;
+  }
 
   let stored: PolicyDraft | null = null;
   let newAnswers: DraftAnswer[] = [];
@@ -87,6 +90,8 @@ export async function postDraft(
     }
   }
 
+  // Only for the failure replies: a restart replaces the draft but must show the old one on 502.
+  const replyDraft = stored ?? (await store.loadDraft(vendorId));
   const properties = await store.loadProperties();
   const original = stored?.original_sentence ?? (request.kind === 'start' ? request.sentence : '');
   const sentence =
@@ -108,7 +113,7 @@ export async function postDraft(
   });
   if (!outcome.ok) {
     log(`Policy interpretation failed: ${outcome.reason}`, outcome.detail);
-    return interpretationFailed(stored);
+    return interpretationFailed(replyDraft);
   }
 
   const normalized = normalizeModelOutput(outcome.output, {
@@ -117,7 +122,7 @@ export async function postDraft(
   });
   if (!normalized.ok) {
     log('Policy interpretation failed: malformed model output', normalized.reason);
-    return interpretationFailed(stored);
+    return interpretationFailed(replyDraft);
   }
 
   const values: DraftWrite = {

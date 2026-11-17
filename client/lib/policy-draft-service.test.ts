@@ -322,6 +322,62 @@ test('a failed interpretation writes nothing', async () => {
   assert.equal(JSON.stringify(contReply).includes('"x"'), false);
 });
 
+test('a failed restart over a stored draft replies with that draft and writes nothing', async () => {
+  const draft = storedDraft();
+  const { store, writes, state } = fakeStore({ draft });
+  const { interpret, inputs } = fakeInterpret({ ok: false, reason: 'schema', detail: 'x' });
+  const reply = await postDraft({ store, interpret, log: silent }, 7, { sentence: 'Restart' });
+  assert.deepEqual(reply, interpretationFailed(draft));
+  assert.deepEqual(writes, { start: [], continue: [] });
+  assert.equal(state.draft, draft);
+  // The stored draft only shapes the failure reply; it never feeds the new interpretation.
+  assert.equal(inputs[0]?.originalSentence, 'Restart');
+  assert.deepEqual(inputs[0]?.answers, []);
+  assert.equal(inputs[0]?.previousRule, null);
+});
+
+test('a malformed normalisation on restart replies with the stored draft', async () => {
+  const bad: ModelOutput = {
+    ...GOOD_OUTPUT,
+    rules: [
+      {
+        effect: 'block',
+        amount: null,
+        property_ids: [1],
+        except_property_ids: [2],
+        payment_types: null,
+      },
+    ],
+  };
+  const draft = storedDraft();
+  const { store, writes } = fakeStore({ draft });
+  const { interpret } = fakeInterpret({ ok: true, output: bad });
+  const reply = await postDraft({ store, interpret, log: silent }, 7, { sentence: 'Restart' });
+  assert.deepEqual(reply, interpretationFailed(draft));
+  assert.deepEqual(writes, { start: [], continue: [] });
+});
+
+test('logs the missing API key once, and only when the service reports it', async () => {
+  const logged: unknown[][] = [];
+  const log = (...args: unknown[]) => void logged.push(args);
+  const hint = 'Set OPENROUTER_API_KEY. See client/.env.example.';
+
+  const forbidden = fakeStore({ manager: false });
+  await postDraft({ store: forbidden.store, interpret: null, log }, 7, { sentence: 'S' });
+  assert.deepEqual(logged, []);
+
+  const bad = fakeStore();
+  await postDraft({ store: bad.store, interpret: null, log }, 7, { sentence: 5 });
+  assert.deepEqual(logged, []);
+
+  const unavailable = fakeStore();
+  const reply = await postDraft({ store: unavailable.store, interpret: null, log }, 7, {
+    sentence: 'S',
+  });
+  assert.deepEqual(reply, INTERPRETATION_UNAVAILABLE);
+  assert.deepEqual(logged, [[hint]]);
+});
+
 test('a malformed normalisation writes nothing', async () => {
   const bad: ModelOutput = {
     ...GOOD_OUTPUT,
