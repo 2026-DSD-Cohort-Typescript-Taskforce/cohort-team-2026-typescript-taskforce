@@ -1,5 +1,5 @@
-import type { SubmissionState } from "@/lib/bill-submission";
-import { ErrorAlert, Spinner, SuccessAlert } from "@/app/ui";
+import type { SubmissionState } from '@/lib/bill-submission';
+import { ErrorAlert, Spinner, SuccessAlert } from '@/app/ui';
 
 /**
  * The bill form's save and submit feedback (DC-76), from useBillSubmission(): a busy line
@@ -9,16 +9,16 @@ import { ErrorAlert, Spinner, SuccessAlert } from "@/app/ui";
 export function SubmissionStatus({
   state,
   message,
-  className = "",
+  className = '',
 }: {
   state: SubmissionState;
   message: string;
   className?: string;
 }) {
-  const busy = state === "saving" || state === "submitting";
-  const success = state === "saved" || state === "submitted";
+  const busy = state === 'saving' || state === 'submitting';
+  const success = state === 'saved' || state === 'submitted';
   // partial: the draft was saved, but submit_bill() refused it.
-  const failed = state === "error" || state === "partial";
+  const failed = state === 'error' || state === 'partial';
 
   return (
     <div className={className}>
@@ -30,8 +30,8 @@ export function SubmissionStatus({
           </p>
         )}
       </div>
-      <SuccessAlert message={success ? message : ""} />
-      <ErrorAlert message={failed ? message : ""} />
+      <SuccessAlert message={success ? message : ''} />
+      <ErrorAlert message={failed ? message : ''} />
     </div>
   );
 }

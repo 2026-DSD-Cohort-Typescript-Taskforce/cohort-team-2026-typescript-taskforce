@@ -1,30 +1,32 @@
 // What the bills list shows for each bill, and its search and status filter (DC-73).
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
-import { formatAmount, formatDate, statusLabel, type Bill } from "./bill-view.ts";
+import { formatAmount, formatDate, statusLabel, type Bill } from './bill-view.ts';
 
 // bills_status_check's order, so the status filter lists them as the lifecycle goes.
 const STATUS_ORDER = [
-  "draft",
-  "pending_approval",
-  "approval_denied",
-  "pending_payment",
-  "processing",
-  "payment_success",
-  "payment_failed",
+  'draft',
+  'pending_approval',
+  'approval_denied',
+  'pending_payment',
+  'processing',
+  'payment_success',
+  'payment_failed',
 ];
 
 /** The text of one row. payment is null when the bill has no payment method yet. */
 export function billRow(bill: Bill) {
   const vendor = bill.vendor?.name ?? null;
   return {
-    vendor: vendor ?? "No vendor",
+    vendor: vendor ?? 'No vendor',
     initials: initials(vendor),
-    property: bill.property?.name ?? "No property",
+    property: bill.property?.name ?? 'No property',
     // payment_type is card or bank.
-    payment: bill.payment ? `${capitalize(bill.payment.payment_type)} · ${bill.payment.name}` : null,
+    payment: bill.payment
+      ? `${capitalize(bill.payment.payment_type)} · ${bill.payment.name}`
+      : null,
     amount: formatAmount(bill.amount),
-    due: bill.date_due ? `Due ${formatDate(bill.date_due)}` : "No due date",
+    due: bill.date_due ? `Due ${formatDate(bill.date_due)}` : 'No due date',
   };
 }
 
@@ -57,12 +59,12 @@ export function statusOptions(bills: Bill[]): { value: string; label: string }[]
 
 // "Alder Creek Landscaping" → "AC", "Brightwater" → "B".
 function initials(name: string | null) {
-  if (!name) return "?";
+  if (!name) return '?';
   const words = name.split(/\s+/).filter((word) => /^[\p{L}\p{N}]/u.test(word));
   return words
     .slice(0, 2)
     .map((word) => word[0].toUpperCase())
-    .join("");
+    .join('');
 }
 
 function capitalize(text: string) {

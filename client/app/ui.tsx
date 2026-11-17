@@ -62,7 +62,7 @@ export function ErrorAlert({
 }
 
 // Mounted the same way as ErrorAlert, but role="status": a success is announced politely.
-export function SuccessAlert({ message, className = "" }: { message: string; className?: string }) {
+export function SuccessAlert({ message, className = '' }: { message: string; className?: string }) {
   return (
     <div role="status">
       {message && (

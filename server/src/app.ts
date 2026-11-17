@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env';
 import { errorHandler, notFound } from './middleware/errorHandler';
+import adminRoutes from './routes/admin.routes';
 import authRoutes from './routes/auth.routes';
 
 const app = express();
@@ -24,6 +25,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

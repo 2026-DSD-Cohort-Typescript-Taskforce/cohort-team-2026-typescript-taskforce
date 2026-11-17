@@ -287,6 +287,49 @@ Run mocked tests from the repo root:
 node --conditions=react-server --import ./server/node_modules/tsx/dist/loader.mjs --test client/tests/users.test.ts
 ```
 
+## Inviting users (DC-55)
+
+A system admin adds people from **Users** (profile menu → Manage Users). There is no
+self sign-up page.
+
+1. **Add a User** calls `POST /api/admin/users` (Express, `system_admin` only). It runs
+   `invite_user()` with the admin's own session, which adds the profile and its properties,
+   then emails a sign-in link. The row shows **Pending confirmation**.
+2. The invitee opens the link. Supabase Auth confirms the email, and a trigger links the
+   profile to the new login, so the row becomes active. Because sign-up is open, someone
+   could have created that login earlier with a password of their own; the trigger clears
+   it, so only the password set in step 3 works.
+3. The link lands on `/set-password`, where they choose a password
+   (`POST /api/auth/set-password`) and are signed in.
+
+**Expired or lost links.** A link lasts 24 hours and works once. On the Users page, a
+pending row has **Resend invite** (`POST /api/admin/users/:id/invite`), which emails a
+new link. Use it too when adding the user said the email couldn't be sent.
+
+**"That email already has a login".** Adding a user is refused when a confirmed login
+with that email exists but has no profile (someone signed up through Supabase Auth
+directly). Linking it would hand the profile to whoever set that login's password, so
+delete the login in Supabase (Authentication → Users) and add the user again.
+
+**Locally**, the emails go to Mailpit (`supabase status` shows its URL). `config.toml`
+already allows the `/set-password` redirect and sets the 24 hour expiry. After pulling it,
+run `npx supabase stop && npx supabase start` so Auth picks it up.
+
+**On the hosted project**, set these in the Supabase dashboard, since `config.toml`
+covers only the local stack:
+
+- Authentication → URL Configuration → Redirect URLs: add `<site>/set-password`.
+- Authentication → Sign In / Providers → Email: keep **Allow new users to sign up** on.
+  Invites create the login with the publishable key, which only works while sign-up is
+  allowed. A login with no profile still can't use the app.
+- Same page: keep **Confirm email** on. Invites rely on it: a profile only links to a
+  login whose email has been proven, and linking clears any password set before then.
+- Authentication → Emails → SMTP: set up a custom SMTP server. Supabase's built-in one
+  sends only a few emails an hour, so invites would soon come back "couldn't be sent".
+- Email OTP expiration: `86400` seconds.
+- Email templates: the **Confirm signup** and **Magic link** templates are what invitees
+  receive; `supabase/templates/invite.html` has the wording.
+
 ## Environment variables
 
 ### Server (`server/.env`)

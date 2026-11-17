@@ -2,15 +2,15 @@ import 'server-only';
 
 import { getSessionAccessToken } from './accessToken';
 
-import type {
-    Vendor,
-    CreateVendorInput
-} from "@/types/vendors";
+import type { Vendor, CreateVendorInput } from '@/types/vendors';
 
 export type UpdateVendorInput = Partial<CreateVendorInput>;
 
 export class VendorRequestError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'VendorRequestError';
   }
@@ -29,11 +29,14 @@ async function requestVendors(query: string, init?: RequestInit): Promise<Respon
   headers.set('apikey', SUPABASE_PUBLISHABLE_KEY);
   headers.set('Authorization', `Bearer ${accessToken}`);
 
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/vendors${query ? `?${query}` : ''}`, {
-    ...init,
-    cache: 'no-store',
-    headers,
-  });
+  const response = await fetch(
+    `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/vendors${query ? `?${query}` : ''}`,
+    {
+      ...init,
+      cache: 'no-store',
+      headers,
+    },
+  );
   if (!response.ok) {
     throw new VendorRequestError(response.status, `Vendor request failed: ${response.status}`);
   }
@@ -41,19 +44,19 @@ async function requestVendors(query: string, init?: RequestInit): Promise<Respon
 }
 
 export async function createVendor(data: CreateVendorInput): Promise<Vendor> {
-    const response = await requestVendors('', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation'},
-        body: JSON.stringify(data),
-    });
+  const response = await requestVendors('', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(data),
+  });
 
-    const vendors: Vendor[] = await response.json();
+  const vendors: Vendor[] = await response.json();
 
-    if (!vendors[0]) {
-        throw new Error('No created vendor was returned.');
-    }
+  if (!vendors[0]) {
+    throw new Error('No created vendor was returned.');
+  }
 
-    return vendors[0];
+  return vendors[0];
 }
 
 export function fetchVendors(): Promise<Vendor[]> {
@@ -70,10 +73,7 @@ async function getVendors<T>(query: string): Promise<T[]> {
   return response.json();
 }
 
-export async function updateVendor(
-  id: string,
-  data: UpdateVendorInput,
-): Promise<Vendor | null> {
+export async function updateVendor(id: string, data: UpdateVendorInput): Promise<Vendor | null> {
   const response = await requestVendors(`vendor_id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },

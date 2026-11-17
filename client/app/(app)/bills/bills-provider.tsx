@@ -1,8 +1,17 @@
-"use client";
+'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { loadBills } from "@/lib/bill-api";
-import type { Bill } from "@/lib/bill-view";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { loadBills } from '@/lib/bill-api';
+import type { Bill } from '@/lib/bill-view';
 
 type BillsContextValue = {
   /** null until the first load succeeds. */
@@ -22,7 +31,7 @@ const BillsContext = createContext<BillsContextValue | null>(null);
  */
 export function BillsProvider({ children }: { children: ReactNode }) {
   const [bills, setBills] = useState<Bill[] | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   // Only the newest load's answer is shown, if refreshes overlap.
   const latest = useRef(0);
@@ -34,7 +43,7 @@ export function BillsProvider({ children }: { children: ReactNode }) {
       if (!result || request !== latest.current) return;
       if (result.ok) {
         setBills(result.data);
-        setError("");
+        setError('');
       } else {
         setError(result.error);
       }
@@ -51,13 +60,16 @@ export function BillsProvider({ children }: { children: ReactNode }) {
     load();
   }, [load]);
 
-  const value = useMemo(() => ({ bills, error, loading, refresh }), [bills, error, loading, refresh]);
+  const value = useMemo(
+    () => ({ bills, error, loading, refresh }),
+    [bills, error, loading, refresh],
+  );
   return <BillsContext value={value}>{children}</BillsContext>;
 }
 
 export function useBills(): BillsContextValue {
   const value = useContext(BillsContext);
-  if (!value) throw new Error("useBills() needs a <BillsProvider> above it.");
+  if (!value) throw new Error('useBills() needs a <BillsProvider> above it.');
   return value;
 }
 
