@@ -1,8 +1,9 @@
 // Vendor types, role check, search, sort and the replies for /api/vendors (DC-84).
 // Only imports with a .ts extension, so `npm test` (node --test) can load it.
 
-import { toErrorResponse, type ErrorResponse, type SupabaseError } from "./submit-errors.ts";
-import { INVALID_LOGO } from "./vendor-validation.ts";
+import type { Role } from './roles.ts';
+import { toErrorResponse, type ErrorResponse, type SupabaseError } from './submit-errors.ts';
+import { INVALID_LOGO } from './vendor-validation.ts';
 
 export type Vendor = {
   vendor_id: number;
@@ -13,7 +14,10 @@ export type Vendor = {
   logo_url: string | null;
 };
 
-const MANAGER_ROLES = ["financial_approver", "system_admin"];
+const MANAGER_ROLES: readonly string[] = [
+  'financial_approver',
+  'system_admin',
+] satisfies readonly Role[];
 const MAX_ID = 2147483647;
 
 export function canManageVendors(role: string | null | undefined): boolean {
@@ -28,7 +32,7 @@ export function parseVendorId(raw: string): number | null {
 }
 
 const PHONE_QUERY = /^[\d +().-]+$/;
-const digitsOf = (value: string) => value.replace(/\D/g, "");
+const digitsOf = (value: string) => value.replace(/\D/g, '');
 
 /**
  * Searches name, address, email and phone. A query made only of phone characters (with a
@@ -40,10 +44,12 @@ export function matchesVendor(v: Vendor, query: string): boolean {
   if (!q) return true;
   if (PHONE_QUERY.test(q) && /\d/.test(q)) {
     const wanted = digitsOf(q);
-    if (digitsOf(v.phone ?? "").includes(wanted)) return true;
+    if (digitsOf(v.phone ?? '').includes(wanted)) return true;
   }
   const needle = q.toLowerCase();
-  return [v.name, v.address, v.email, v.phone].some((field) => field?.toLowerCase().includes(needle));
+  return [v.name, v.address, v.email, v.phone].some((field) =>
+    field?.toLowerCase().includes(needle),
+  );
 }
 
 export function filterVendors(list: Vendor[], query: string): Vendor[] {
@@ -52,27 +58,30 @@ export function filterVendors(list: Vendor[], query: string): Vendor[] {
 
 export function sortVendorsByName(list: Vendor[]): Vendor[] {
   return [...list].sort(
-    (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.vendor_id - b.vendor_id,
+    (a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.vendor_id - b.vendor_id,
   );
 }
 
 export function upsertVendor(list: Vendor[], v: Vendor): Vendor[] {
   const exists = list.some((item) => item.vendor_id === v.vendor_id);
-  return sortVendorsByName(exists ? list.map((item) => (item.vendor_id === v.vendor_id ? v : item)) : [...list, v]);
+  return sortVendorsByName(
+    exists ? list.map((item) => (item.vendor_id === v.vendor_id ? v : item)) : [...list, v],
+  );
 }
 
 export function removeVendor(list: Vendor[], id: number): Vendor[] {
   return list.filter((v) => v.vendor_id !== id);
 }
 
-export function vendorBanner(action: "saved" | "added" | "deleted", name: string): string {
-  const verb = { saved: "Saved", added: "Added", deleted: "Deleted" }[action];
+export function vendorBanner(action: 'saved' | 'added' | 'deleted', name: string): string {
+  const verb = { saved: 'Saved', added: 'Added', deleted: 'Deleted' }[action];
   return `${verb} ${name}.`;
 }
 
 /** A detail for display: an em dash when it is empty. */
 export function displayValue(value: string | null): string {
-  return value?.trim() ? value : "—";
+  return value?.trim() ? value : '—';
 }
 
 export const LOAD_VENDORS_FAILED = "Couldn't load vendors. Try again.";
@@ -82,50 +91,64 @@ export const LOGO_FAILED = "Vendor saved, but the logo didn't upload. Try again.
 
 export const VENDOR_FORBIDDEN: ErrorResponse = {
   status: 403,
-  body: { error: "Only financial approvers and system admins can change vendors.", code: "forbidden" },
+  body: {
+    error: 'Only financial approvers and system admins can change vendors.',
+    code: 'forbidden',
+  },
 };
 
 export const VENDOR_NOT_FOUND: ErrorResponse = {
   status: 404,
-  body: { error: "This vendor no longer exists.", code: "vendor_not_found" },
+  body: { error: 'This vendor no longer exists.', code: 'vendor_not_found' },
 };
 
 export const VENDOR_HAS_BILLS: ErrorResponse = {
   status: 409,
-  body: { error: "This vendor has bills, so it can't be deleted.", code: "vendor_has_bills" },
+  body: { error: "This vendor has bills, so it can't be deleted.", code: 'vendor_has_bills' },
 };
 
 export const DUPLICATE_VENDOR_NAME: ErrorResponse = {
   status: 409,
-  body: { error: "A vendor with this name already exists.", code: "duplicate_vendor_name", fields: ["name"] },
+  body: {
+    error: 'A vendor with this name already exists.',
+    code: 'duplicate_vendor_name',
+    fields: ['name'],
+  },
 };
 
 export const INVALID_LOGO_REPLY: ErrorResponse = {
   status: 400,
-  body: { error: INVALID_LOGO, code: "invalid_logo" },
+  body: { error: INVALID_LOGO, code: 'invalid_logo' },
 };
 
 /** A 400 naming the fields that failed; the form shows its own message for each. */
 export function invalidVendor(fields: string[]): ErrorResponse {
-  return { status: 400, body: { error: "Some of the vendor's details aren't valid.", code: "invalid_vendor", fields } };
+  return {
+    status: 400,
+    body: { error: "Some of the vendor's details aren't valid.", code: 'invalid_vendor', fields },
+  };
 }
 
 // The unique index on lower(name) (supabase/migrations/20261111170000_vendors_manage.sql).
-const NAME_INDEX = "vendors_name_lower_key";
+const NAME_INDEX = 'vendors_name_lower_key';
 
-export function toVendorErrorResponse(error: SupabaseError, fallback = SAVE_VENDOR_FAILED): ErrorResponse {
+export function toVendorErrorResponse(
+  error: SupabaseError,
+  fallback = SAVE_VENDOR_FAILED,
+): ErrorResponse {
   switch (error.code) {
-    case "23505":
+    case '23505':
       // Only a clash on the name index is a duplicate name; any other key (vendors_pkey)
       // falls through to the 500.
-      if (error.message?.includes(NAME_INDEX) || error.details?.includes(NAME_INDEX)) return DUPLICATE_VENDOR_NAME;
+      if (error.message?.includes(NAME_INDEX) || error.details?.includes(NAME_INDEX))
+        return DUPLICATE_VENDOR_NAME;
       break;
-    case "23503":
+    case '23503':
       return VENDOR_HAS_BILLS;
-    case "42501":
+    case '42501':
       return VENDOR_FORBIDDEN;
-    case "23514":
-    case "22001":
+    case '23514':
+    case '22001':
       return invalidVendor([]);
   }
   return toErrorResponse(error, fallback);

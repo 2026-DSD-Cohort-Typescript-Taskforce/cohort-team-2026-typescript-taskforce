@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
-import { VendorsDirectory } from "./vendors-directory";
+import type { Metadata } from 'next';
+import { VendorsDirectory } from './vendors-directory';
 
 export const metadata: Metadata = {
-  title: "Vendors",
+  title: 'Vendors',
 };
 
 // The vendors grid (DC-84): everyone signed in can read it; financial approvers and system

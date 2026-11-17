@@ -11,8 +11,10 @@ import { createUserClient } from '../config/supabase';
 import { HttpError } from '../middleware/errorHandler';
 import {
   emailInUse,
+  linkExpired,
   refreshSession,
   requestEmailChange,
+  setPasswordForSession,
   signIn,
   signOut,
 } from '../services/auth.service';
@@ -26,6 +28,14 @@ const loginSchema = z.object({
 // 255 is the length of users.email.
 const changeEmailSchema = z.object({
   email: z.email().max(255),
+});
+
+// The tokens come from the invite link's URL fragment. bcrypt, behind Supabase Auth, reads
+// at most 72 bytes of a password.
+const setPasswordSchema = z.object({
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  password: z.string().min(8).max(72),
 });
 
 // Supabase Auth sign-up is on for the demo, so a login can exist with no public.users row.
@@ -108,4 +118,31 @@ export async function changeEmail(req: Request, res: Response) {
     message:
       'Check both inboxes: open the link sent to your current email address and the one sent to the new address. Until both are opened, keep signing in with your current email.',
   });
+}
+
+/**
+ * The last step of an invite (DC-55): sets the password of the session from the invite link
+ * and signs the user in. Opening the link already linked the profile to the login.
+ */
+export async function setPassword(req: Request, res: Response) {
+  const parsed = setPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    if (parsed.error.issues.some((issue) => issue.path[0] === 'password'))
+      throw new HttpError(400, 'Choose a password of 8 to 72 characters.');
+    throw linkExpired();
+  }
+  const { accessToken, refreshToken, password } = parsed.data;
+
+  const session = await setPasswordForSession(accessToken, refreshToken, password);
+  const profile = await getProfileByAuthUserId(
+    createUserClient(session.access_token),
+    session.user.id,
+  );
+  if (!profile) {
+    await signOut(session.access_token);
+    throw noProfile();
+  }
+
+  setSessionCookies(res, session);
+  res.json({ user: profile });
 }
