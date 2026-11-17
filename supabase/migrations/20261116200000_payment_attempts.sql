@@ -354,3 +354,159 @@ $$;
 revoke execute on function public.prepare_payment(integer, integer, bigint, date, text, jsonb)
   from public, anon, authenticated, service_role;
 grant execute on function public.prepare_payment(integer, integer, bigint, date, text, jsonb) to service_role;
+
+-- Section 3: authorize_payment() and cancel_payment(), called by a signed-in billing_operator,
+-- financial_approver or system_admin. authorize_payment is the exact yes: the caller echoes the
+-- summary they saw, and it must equal the stored one, key for key and type for type (no
+-- coercion). cancel_payment withdraws a pending or authorized attempt.
+--
+-- authorize_payment(p_payment_id, p_summary jsonb) error contract, checked in this order:
+--   code   HTTP  message            details
+--   PT403  403   forbidden          null (no profile for this login, or a viewer)
+--   PT400  400   invalid_summary    null (NULL or not a JSON object), or a sorted JSON array of
+--                                   the missing and extra keys
+--   PT404  404   not_found          null (no such payment, or NULL)
+--   PT409  409   not_pending        the payment's status
+--   PT409  409   not_prepared       null (a legacy row never prepared through the trusted service)
+--   PT409  409   summary_mismatch   JSON array of the keys whose values differ, in summary order
+-- On success the attempt is authorized for 15 minutes.
+--
+-- cancel_payment(p_payment_id, p_note text default null) error contract, in this order:
+--   PT403 forbidden (null); PT400 invalid_note (null; note over 500 characters once trimmed);
+--   PT404 not_found (null); PT409 not_cancelable (the status, unless pending or authorized).
+-- The note is trimmed, blank becomes NULL, and is stored as outcome_message. Neither the note
+-- nor any amount goes into the audit text.
+create function public.authorize_payment(p_payment_id integer, p_summary jsonb)
+returns public.payments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  -- How long an authorization lasts before the attempt must be superseded or run.
+  c_lifetime constant interval := interval '15 minutes';
+  v_marker text := current_setting('app.payments_write', true);
+  v_user_id integer;
+  v_role text;
+  v_keys text[] := array['bill_id', 'vendor_id', 'invoice_number', 'account_reference',
+    'payment_method_id', 'amount_cents', 'fees_cents', 'total_cents', 'currency', 'payment_date'];
+  v_bad text[];
+  v_payment public.payments;
+  v_expected jsonb;
+  v_row public.payments;
+begin
+  select user_id, role into v_user_id, v_role
+    from public.users
+    where auth_user_id = (select auth.uid());
+  if v_role is null or v_role not in ('billing_operator', 'financial_approver', 'system_admin') then
+    raise sqlstate 'PT403' using message = 'forbidden';
+  end if;
+
+  if jsonb_typeof(p_summary) is distinct from 'object' then
+    raise sqlstate 'PT400' using message = 'invalid_summary';
+  end if;
+  select array_agg(k order by k collate "C") into v_bad from (
+    select k from unnest(v_keys) k where not p_summary ? k
+    union all
+    select k from jsonb_object_keys(p_summary) k where k <> all (v_keys)
+  ) d;
+  if cardinality(v_bad) > 0 then
+    raise sqlstate 'PT400' using message = 'invalid_summary', detail = to_json(v_bad)::text;
+  end if;
+
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  if not found then
+    raise sqlstate 'PT404' using message = 'not_found';
+  end if;
+
+  if v_payment.status <> 'pending' then
+    raise sqlstate 'PT409' using message = 'not_pending', detail = v_payment.status;
+  end if;
+  if v_payment.prepared_by is null then
+    raise sqlstate 'PT409' using message = 'not_prepared';
+  end if;
+
+  -- jsonb equality: "12000" does not equal 12000, and null only equals null.
+  v_expected := public.payment_summary(v_payment);
+  select array_agg(k order by o) into v_bad
+    from unnest(v_keys) with ordinality as t(k, o)
+    where p_summary -> k is distinct from v_expected -> k;
+  if cardinality(v_bad) > 0 then
+    raise sqlstate 'PT409' using message = 'summary_mismatch', detail = to_json(v_bad)::text;
+  end if;
+
+  -- Supabase (supautils) refuses a function-level `set app.payments_write`, so the write marker
+  -- is switched on here, for this transaction, and put back before returning.
+  perform set_config('app.payments_write', 'on', true);
+
+  update public.payments
+    set status = 'authorized', authorized_by = v_user_id, authorized_at = now(),
+        authorization_expires_at = now() + c_lifetime
+    where payment_id = v_payment.payment_id
+    returning * into v_row;
+
+  insert into public.audit_logs (name, description)
+    values ('payment_authorized', format('payment %s (bill %s): pending → authorized, by user %s, policies %s',
+      v_row.payment_id, v_row.bill_id, v_user_id, v_row.policy_refs));
+
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_row;
+end
+$$;
+
+create function public.cancel_payment(p_payment_id integer, p_note text default null)
+returns public.payments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_marker text := current_setting('app.payments_write', true);
+  v_user_id integer;
+  v_role text;
+  v_note text;
+  v_payment public.payments;
+  v_row public.payments;
+begin
+  select user_id, role into v_user_id, v_role
+    from public.users
+    where auth_user_id = (select auth.uid());
+  if v_role is null or v_role not in ('billing_operator', 'financial_approver', 'system_admin') then
+    raise sqlstate 'PT403' using message = 'forbidden';
+  end if;
+
+  v_note := nullif(btrim(p_note), '');
+  if char_length(v_note) > 500 then
+    raise sqlstate 'PT400' using message = 'invalid_note';
+  end if;
+
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  if not found then
+    raise sqlstate 'PT404' using message = 'not_found';
+  end if;
+
+  if v_payment.status not in ('pending', 'authorized') then
+    raise sqlstate 'PT409' using message = 'not_cancelable', detail = v_payment.status;
+  end if;
+
+  perform set_config('app.payments_write', 'on', true);
+
+  update public.payments
+    set status = 'canceled', canceled_by = v_user_id, outcome_at = now(), outcome_message = v_note
+    where payment_id = v_payment.payment_id
+    returning * into v_row;
+
+  insert into public.audit_logs (name, description)
+    values ('payment_canceled', format('payment %s (bill %s): %s → canceled, by user %s',
+      v_row.payment_id, v_row.bill_id, v_payment.status, v_user_id));
+
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_row;
+end
+$$;
+
+-- Signed-in users only: revoke what PUBLIC and Supabase's default privileges grant, then grant.
+revoke execute on function public.authorize_payment(integer, jsonb) from public, anon, authenticated, service_role;
+revoke execute on function public.cancel_payment(integer, text) from public, anon, authenticated, service_role;
+grant execute on function public.authorize_payment(integer, jsonb) to authenticated;
+grant execute on function public.cancel_payment(integer, text) to authenticated;
