@@ -130,9 +130,9 @@ select results_eq(
   $$select * from approvals_before order by approval_id$$,
   'refused calls change no approvals row'
 );
--- Rows written in this transaction have created_at = now(); seeded rows don't.
--- actor_type is null keeps to decide_bill's own rows; DC-101 trigger rows are tested in audit_logs.test.sql.
-select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 0, 'refused calls write no audit row');
+-- Rows written in this transaction have created_at = now(); seeded rows don't. The setup
+-- above ran as postgres, so its trigger rows are 'system'; anything else came from a call.
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is distinct from 'system'), 0, 'refused calls write no audit row');
 
 -- As approver B: approve a bill with one pending row. Times are cast to timestamptz so
 -- these pass whether the columns are timestamp or timestamptz.
@@ -152,9 +152,11 @@ select results_eq(
   'the pending row became approved by B, at now, with the trimmed note'
 );
 select results_eq(
-  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now() and actor_type is null$$,
-  $$values ('bill_approved', 'bill 81001: pending_approval → pending_payment, by user 81102', now())$$,
-  'exactly one audit row: bill_approved, naming this bill and B''s profile'
+  $$select name, actor_type, actor_user_id, entity_type, entity_id from public.audit_logs
+      where created_at = now() and actor_type is distinct from 'system' order by audit_log_id$$,
+  $$values ('approval_updated', 'user', 81102, 'approval', 81001),
+           ('bill_approved', 'user', 81102, 'bill', 81001)$$,
+  'the trigger logs the approval row and exactly one bill_approved row, by B, for this bill; decide_bill adds none'
 );
 
 -- Needs revision on a bill with no approvals row, blank note
@@ -172,11 +174,10 @@ select results_eq(
   $$values (81101, 81102, 'needs_revision', now(), null::text)$$,
   'with no approvals row, one is inserted: submitted by the bill''s user, decided by B, blank note stored as NULL'
 );
-select is(
-  (select count(*)::int from public.audit_logs where name = 'bill_needs_revision' and created_at = now() and actor_type is null
-     and description = 'bill 81002: pending_approval → draft, by user 81102'),
-  1,
-  'one bill_needs_revision audit row'
+select results_eq(
+  $$select actor_user_id, entity_type, entity_id from public.audit_logs where name = 'bill_needs_revision' and created_at = now()$$,
+  $$values (81102, 'bill', 81002)$$,
+  'one bill_needs_revision audit row, by B, for this bill'
 );
 
 -- Denied with a 500-emoji note (500 characters, more than 500 bytes)
@@ -194,11 +195,10 @@ select results_eq(
   $$values ('rejected', 500)$$,
   'the approvals row is rejected and keeps all 500 characters'
 );
-select is(
-  (select count(*)::int from public.audit_logs where name = 'bill_denied' and created_at = now() and actor_type is null
-     and description = 'bill 81003: pending_approval → approval_denied, by user 81102'),
-  1,
-  'one bill_denied audit row'
+select results_eq(
+  $$select actor_user_id, entity_type, entity_id from public.audit_logs where name = 'bill_denied' and created_at = now()$$,
+  $$values (81102, 'bill', 81003)$$,
+  'one bill_denied audit row, by B, for this bill'
 );
 
 -- Two pending rows: only the newer one is decided
@@ -212,7 +212,12 @@ select results_eq(
   $$values (81004, 'pending'), (81005, 'approved')$$,
   'only the newer pending row became approved'
 );
-select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 4, 'four decisions wrote exactly four audit rows');
+select is(
+  (select count(*)::int from public.audit_logs
+     where created_at = now() and name in ('bill_approved', 'bill_needs_revision', 'bill_denied')),
+  4,
+  'four decisions wrote exactly four bill decision rows'
+);
 
 -- Direct approvals writes are closed to signed-in users
 set local role authenticated;
