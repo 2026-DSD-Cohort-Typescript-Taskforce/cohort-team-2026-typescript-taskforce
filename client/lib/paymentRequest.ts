@@ -2,7 +2,7 @@ import 'server-only';
 
 import { getSessionAccessToken } from './accessToken';
 
-const PAYMENT_METHOD_FIELDS = 'payment_id,payment_type,name';
+const PAYMENT_METHOD_FIELDS = 'payment_method_id,payment_type,name';
 
 export class PaymentRequestError extends Error {
   constructor(

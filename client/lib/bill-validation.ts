@@ -10,7 +10,7 @@ import { FIELD_LABELS } from './bill-view.ts';
 export const BILL_FIELDS = [
   'vendor_id',
   'property_id',
-  'payment_id',
+  'payment_method_id',
   'invoice_number',
   'amount',
   'date_due',
@@ -22,7 +22,7 @@ export type BillField = (typeof BILL_FIELDS)[number];
 export type BillInput = {
   vendor_id: number | null;
   property_id: number | null;
-  payment_id: number | null;
+  payment_method_id: number | null;
   invoice_number: string | null;
   /** A decimal string with two places, e.g. "1234.50", so no precision is lost. */
   amount: string | null;
@@ -86,7 +86,7 @@ export function missingForSubmit(input: Partial<BillInput>): BillField[] {
   const missing: BillField[] = [];
   if (input.vendor_id == null) missing.push('vendor_id');
   if (input.property_id == null) missing.push('property_id');
-  if (input.payment_id == null) missing.push('payment_id');
+  if (input.payment_method_id == null) missing.push('payment_method_id');
   if (!input.invoice_number) missing.push('invoice_number');
   if (input.amount == null || Number(input.amount) <= 0) missing.push('amount');
   if (!input.date_due) missing.push('date_due');
@@ -107,7 +107,7 @@ type Checked<T> = { value: T } | { error: string };
 const checkers: Record<BillField, (value: unknown) => Checked<unknown>> = {
   vendor_id: (value) => checkOptionalId(value, 'Choose a vendor from the list.'),
   property_id: (value) => checkOptionalId(value, 'Choose a property from the list.'),
-  payment_id: (value) => checkOptionalId(value, 'Choose a payment method from the list.'),
+  payment_method_id: (value) => checkOptionalId(value, 'Choose a payment method from the list.'),
   invoice_number: checkInvoiceNumber,
   amount: checkAmount,
   date_due: checkDate,

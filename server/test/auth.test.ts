@@ -23,6 +23,8 @@ const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SEED_USER_PASSWORD } = process.e
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? 'alex.morgan@example.com';
 // A second seeded login, so changing its email doesn't affect the other tests.
 const CHANGE_USER_EMAIL = 'morgan.ellis@example.com';
+// A seeded system_admin (supabase/seed.sql), for the invite tests.
+const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL ?? 'sam.rivera@example.com';
 const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
 // Same default as src/config/env.ts. Email confirmation links redirect to its /login.
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:3000';
@@ -451,6 +453,243 @@ describe('PATCH /api/auth/email', () => {
     const restored = await login(CHANGE_USER_EMAIL, SEED_USER_PASSWORD);
     assert.equal(restored.status, 200);
     assert.equal((await restored.json()).user.email, CHANGE_USER_EMAIL);
+  });
+});
+
+// DC-55: inviting users. Each run adds two invited test profiles (dc55-...@example.com);
+// `supabase db reset` and seeding again clears them.
+describe('inviting users', () => {
+  let admin: Record<string, string>;
+  let operator: Record<string, string>;
+  /** The user the invite flow test creates, and its signed-in session, for the edit tests. */
+  let invitee: { userId: number; session: Record<string, string> } | undefined;
+
+  before(async () => {
+    admin = await signIn(ADMIN_EMAIL);
+    operator = await signIn();
+  });
+
+  const invite = (json: unknown, cookies: Record<string, string>) =>
+    api('/api/admin/users', { method: 'POST', json, cookies });
+
+  describe('POST /api/admin/users', () => {
+    it('returns 401 without a session', async () => {
+      const res = await invite({ name: 'X', email: 'dc55-x@example.com', role: 'viewer' }, {});
+      assert.equal(res.status, 401);
+    });
+
+    it('returns 403 forbidden to a user who is not a system admin, and sends nothing', async () => {
+      const email = `dc55-forbidden-${Date.now()}@example.com`;
+      const res = await invite({ name: 'X', email, role: 'viewer' }, operator);
+      assert.equal(res.status, 403);
+      assert.equal((await res.json()).code, 'forbidden');
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      assert.equal((await mailIds(email)).size, 0);
+    });
+
+    it('returns 400 for invalid details', async (t) => {
+      const valid = { name: 'Valid Name', email: 'dc55-valid@example.com', role: 'viewer' };
+      const cases: Array<[string, Request]> = [
+        ['no body', {}],
+        ['blank name', { json: { ...valid, name: '  ' } }],
+        ['invalid email', { json: { ...valid, email: 'not-an-email' } }],
+        ['unknown role', { json: { ...valid, role: 'superuser' } }],
+        ['property ids that are not integers', { json: { ...valid, propertyIds: ['1'] } }],
+        ['a property id past the integer column', { json: { ...valid, propertyIds: [3e9] } }],
+        ['malformed JSON', { rawBody: '{not json' }],
+      ];
+      for (const [name, request] of cases) {
+        await t.test(name, async () => {
+          const res = await api('/api/admin/users', { method: 'POST', cookies: admin, ...request });
+          assert.equal(res.status, 400);
+          assert.equal(typeof (await res.json()).error, 'string');
+        });
+      }
+    });
+
+    it('returns 409 email_in_use for an email a profile has, in any case', async () => {
+      const res = await invite(
+        { name: 'Dup', email: TEST_USER_EMAIL.toUpperCase(), role: 'viewer' },
+        admin,
+      );
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).code, 'email_in_use');
+    });
+
+    it('returns 409 login_exists for the email of a confirmed login with no profile', async () => {
+      // A self sign-up, confirmed by its owner (or by someone tricked into opening the link).
+      const email = `dc55-selfsignup-${Date.now()}@example.com`;
+      const anon = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      assert.ifError((await anon.auth.signUp({ email, password: SEED_USER_PASSWORD })).error);
+      await follow(await nextLink(email, new Set()));
+
+      const res = await invite({ name: 'Self Signup', email, role: 'viewer' }, admin);
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).code, 'login_exists');
+    });
+
+    it('returns 400 unknown_property for a property that does not exist', async () => {
+      const res = await invite(
+        {
+          name: 'No Such Property',
+          email: `dc55-noprop-${Date.now()}@example.com`,
+          role: 'viewer',
+          propertyIds: [999999999],
+        },
+        admin,
+      );
+      assert.equal(res.status, 400);
+      assert.equal((await res.json()).code, 'unknown_property');
+    });
+  });
+
+  it('the invitee opens the resent link, sets a password, becomes active and can sign in', async () => {
+    const email = `dc55-invitee-${Date.now()}@example.com`;
+    const res = await invite(
+      { name: ' Invited Person ', email: email.toUpperCase(), role: 'viewer', propertyIds: [] },
+      admin,
+    );
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.inviteSent, true);
+    assert.equal(body.user.email, email);
+    assert.equal(body.user.name, 'Invited Person');
+    assert.equal(body.user.auth_user_id, null, 'the new profile is pending');
+
+    const firstLink = await nextLink(email, new Set());
+    assert.equal(new URL(firstLink).searchParams.get('redirect_to'), `${CLIENT_URL}/set-password`);
+
+    // Resending to the pending user, before any link is opened, sends a new one.
+    const seen = await mailIds(email);
+    // Auth sends a user at most one email per max_frequency (1s in config.toml).
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const resent = await api(`/api/admin/users/${body.user.user_id}/invite`, {
+      method: 'POST',
+      cookies: admin,
+    });
+    assert.equal(resent.status, 202);
+    const link = await nextLink(email, seen);
+    assert.equal(new URL(link).searchParams.get('redirect_to'), `${CLIENT_URL}/set-password`);
+    const location = await follow(link);
+    assert.ok(location.startsWith(`${CLIENT_URL}/set-password#`), location);
+    const fragment = new URLSearchParams(new URL(location).hash.slice(1));
+
+    const password = `Invited-${Date.now()}!`;
+    const set = await api('/api/auth/set-password', {
+      method: 'POST',
+      json: {
+        accessToken: fragment.get('access_token'),
+        refreshToken: fragment.get('refresh_token'),
+        password,
+      },
+    });
+    assert.equal(set.status, 200);
+    assert.equal((await set.json()).user.email, email);
+    assert.ok(setCookies(set).get(ACCESS)?.value, 'the invitee is signed in');
+
+    const signedIn = await login(email, password);
+    assert.equal(signedIn.status, 200);
+    assert.equal((await signedIn.json()).user.role, 'viewer');
+    const cookies = setCookies(signedIn);
+    invitee = {
+      userId: body.user.user_id,
+      session: { [ACCESS]: cookies.get(ACCESS)!.value, [REFRESH]: cookies.get(REFRESH)!.value },
+    };
+  });
+
+  describe('PATCH /api/admin/users/:id', () => {
+    const edit = (id: number | string, json: unknown, cookies: Record<string, string>) =>
+      api(`/api/admin/users/${id}`, { method: 'PATCH', json, cookies });
+    const valid = { name: 'Edited Name', role: 'billing_operator', propertyIds: [] };
+
+    it('returns 403 forbidden to a user who is not a system admin', async () => {
+      const res = await edit(1, valid, operator);
+      assert.equal(res.status, 403);
+    });
+
+    it('returns 404 for a user that does not exist', async () => {
+      for (const id of ['999999999', 'abc', '3000000000']) {
+        assert.equal((await edit(id, valid, admin)).status, 404, id);
+      }
+    });
+
+    it('returns 400 for invalid details', async () => {
+      for (const json of [{ ...valid, name: ' ' }, { ...valid, role: 'superuser' }, {}]) {
+        assert.equal((await edit(1, json, admin)).status, 400, JSON.stringify(json));
+      }
+    });
+
+    it('returns 409 own_role when an admin would remove their own admin role', async () => {
+      const me = await (await api('/api/auth/me', { cookies: admin })).json();
+      const res = await edit(me.user.user_id, { ...valid, name: me.user.name }, admin);
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).code, 'own_role');
+    });
+
+    it('changes the name, phone, role and properties, and not the email', async (t) => {
+      if (!invitee) return t.skip('the invite flow test did not create a user');
+      const res = await edit(
+        invitee.userId,
+        {
+          name: ' Edited Person ',
+          phone: '214-555-0199',
+          role: 'billing_operator',
+          email: 'ignored@example.com',
+          propertyIds: [1, 2, 1],
+        },
+        admin,
+      );
+      assert.equal(res.status, 200);
+      const { user } = await res.json();
+      assert.equal(user.name, 'Edited Person');
+      assert.equal(user.phone, '214-555-0199');
+      assert.equal(user.role, 'billing_operator');
+      assert.match(user.email, /^dc55-invitee-/);
+
+      // The edited user sees the change on their next request.
+      const me = await (await api('/api/auth/me', { cookies: invitee.session })).json();
+      assert.equal(me.user.role, 'billing_operator');
+      assert.deepEqual(
+        me.user.user_properties.map((link: { property_id: number }) => link.property_id).sort(),
+        [1, 2],
+      );
+    });
+  });
+
+  describe('POST /api/admin/users/:id/invite', () => {
+    it('returns 403 forbidden to a user who is not a system admin', async () => {
+      const res = await api('/api/admin/users/1/invite', { method: 'POST', cookies: operator });
+      assert.equal(res.status, 403);
+    });
+
+    it('returns 404 for a user that does not exist', async () => {
+      for (const id of ['999999999', 'abc', '3000000000']) {
+        const res = await api(`/api/admin/users/${id}/invite`, { method: 'POST', cookies: admin });
+        assert.equal(res.status, 404, id);
+      }
+    });
+  });
+
+  describe('POST /api/auth/set-password', () => {
+    it('returns 400 for a password shorter than 8 characters', async () => {
+      const res = await api('/api/auth/set-password', {
+        method: 'POST',
+        json: { accessToken: 'a', refreshToken: 'r', password: 'short' },
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it('returns 401 link_expired for a session that is not valid', async () => {
+      const res = await api('/api/auth/set-password', {
+        method: 'POST',
+        json: { accessToken: 'not-a-jwt', refreshToken: 'not-a-token', password: 'long enough' },
+      });
+      assert.equal(res.status, 401);
+      assert.equal((await res.json()).code, 'link_expired');
+      assert.equal(setCookies(res).get(ACCESS)?.value || undefined, undefined);
+    });
   });
 });
 

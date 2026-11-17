@@ -161,7 +161,8 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000", "http://localhost:3000/login"]
+# /set-password is where invite links land (DC-55).
+additional_redirect_urls = ["https://127.0.0.1:3000", "http://localhost:3000/login", "http://localhost:3000/set-password", "http://127.0.0.1:3000/set-password"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -233,8 +234,9 @@ secure_password_change = false
 max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
-# Number of seconds before the email OTP expires (defaults to 1 hour).
-otp_expiry = 3600
+# Number of seconds before the email OTP expires (defaults to 1 hour). 24 hours, the most
+# Supabase allows, so an invite link (DC-55) lasts a day.
+otp_expiry = 86400
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]
@@ -246,10 +248,16 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# DC-55: an admin's invite sends the confirmation email to a new login and the magic link
+# email to one that is already confirmed (or on a resend). The app has no other sign-up or
+# magic link, so both carry the invite wording.
+[auth.email.template.confirmation]
+subject = "You've been invited"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.magic_link]
+subject = "You've been invited"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

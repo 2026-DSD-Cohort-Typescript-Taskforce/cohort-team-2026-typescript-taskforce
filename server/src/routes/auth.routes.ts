@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { changeEmail, login, logout, me } from '../controllers/auth.controller';
+import { changeEmail, login, logout, me, setPassword } from '../controllers/auth.controller';
 import { requireAuth } from '../middleware/requireAuth';
 
-// No sign-up route: logins are created by an admin or the local seed script.
+// No sign-up route: logins come from an admin's invite (/api/admin/users) or the local seed
+// script.
 const router = Router();
 
 router.use((_req, res, next) => {
@@ -12,6 +13,7 @@ router.use((_req, res, next) => {
 
 router.post('/login', login);
 router.post('/logout', logout);
+router.post('/set-password', setPassword);
 router.get('/me', requireAuth, me);
 router.patch('/email', requireAuth, changeEmail);
 

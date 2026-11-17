@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
-import { ApprovalsQueue } from "./approvals-queue";
+import type { Metadata } from 'next';
+import { ApprovalsQueue } from './approvals-queue';
 
 export const metadata: Metadata = {
-  title: "Approvals",
+  title: 'Approvals',
 };
 
 // The approvals queue (DC-81): bills waiting for a financial approver's decision. The data

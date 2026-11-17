@@ -13,12 +13,12 @@ insert into auth.users (id, email) values
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (81201, 'DC81 Resubmit Vendor', 'vendor-81201@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81201, 'DC81 Resubmit Property');
-insert into public.payment_methods (payment_id, payment_type, name, billing_zip)
+insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (81201, 'card', 'DC81 Resubmit Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (81201, 'Operator A', 'dc81-resubmit-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000081b1'),
   (81202, 'Approver B', 'dc81-resubmit-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000081b2');
-insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_id, invoice_number, amount, date_due) values
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (81201, 'pending_approval', 81201, 81201, 81201, 81201, 'DC81-21', 120.00, current_date + 7),  -- revise, edit, resubmit, approve
   (81202, 'draft',            81201, 81201, 81201, 81201, 'DC81-22', 120.00, current_date + 7),  -- never reviewed
   (81203, 'pending_approval', 81201, 81201, 81201, 81201, 'DC81-23', 120.00, current_date + 7);  -- revised twice
