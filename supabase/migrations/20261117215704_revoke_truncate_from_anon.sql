@@ -10,7 +10,7 @@
 --  - However, supabase test db broke due to changes in DC-109, which a separate branch is fixing.
 --  - Need to pull that before making a PR for this migration.
 
--- Removing the truncate privilege from X tables:
+-- Removing the truncate privilege from 8 tables:
 revoke truncate on table public.approvals       from anon, authenticated;
 revoke truncate on table public.bank_accounts   from anon, authenticated;
 revoke truncate on table public.cards           from anon, authenticated;
