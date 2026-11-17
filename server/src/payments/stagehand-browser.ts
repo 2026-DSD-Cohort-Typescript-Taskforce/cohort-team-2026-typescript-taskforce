@@ -122,6 +122,21 @@ export class StagehandBrowser implements PortalBrowser {
           );
           if (alreadyConfirmed)
             throw new HttpError(409, 'Portal already shows confirmation.', 'payment_mismatch');
+          // Hydrated checkouts may restore state before enabling payment. Wait before
+          // BrowserWorker persists submission intent; submit still rechecks atomically.
+          await page.waitForFunction(
+            (selector) => {
+              const buttons = document.querySelectorAll<HTMLElement>(selector);
+              return (
+                buttons.length === 1 &&
+                buttons[0].getClientRects().length > 0 &&
+                !buttons[0].matches(':disabled, [aria-disabled="true"]')
+              );
+            },
+            p.paySelector,
+            { timeout: 15000 },
+          );
+          guard!.check();
           return read(p.invoiceSelector, p.totalSelector);
         },
         async submit(expected) {

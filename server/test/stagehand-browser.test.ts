@@ -50,8 +50,11 @@ test(
       res.setHeader('content-type', 'text/html');
       res.end(`<!doctype html><body>
       <div id="invoice">INV-7</div><div id="total">$125.00</div>
-      <button id="pay" onclick="pay()">Pay</button>
-      <script>async function pay() {
+      <button id="pay" disabled onclick="pay()">Pay</button>
+      <script>
+      // Model checkout hydration restoring state before accepting Pay.
+      setTimeout(() => { document.querySelector("#pay").disabled = false; }, 2500);
+      async function pay() {
         await fetch('/submit', {method: 'POST'});
         document.body.innerHTML = '<div id="confirmed">Paid</div>' +
           '<div id="receipt-invoice">INV-7</div><div id="receipt-total">$125.00</div>' +
