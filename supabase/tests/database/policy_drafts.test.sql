@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(85);
+select plan(90);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. Vendor 90001 is a fixture (for the cascade check) and 90002 only
@@ -160,6 +160,13 @@ select is(pg_temp.rows_changed($$update public.policy_drafts set sentence = 'app
 select is((select revision from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), 2, 'the approver update bumps revision to 2');
 select is((select updated_by from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), 90102, 'updated_by is the approver''s user id on update');
 select throws_ok($$delete from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')$$, '42501', null, 'approver cannot delete drafts');
+-- A restart is an upsert: it must bump the revision, keep created_at and stamp the approver
+select set_config('dc90.created_at', (select created_at::text from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), false);
+select lives_ok($$insert into public.policy_drafts (vendor_id, status, original_sentence, sentence, revised_sentence, interpretation) values ((select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental'), 'complete', 'o2', 's2', 'r2', 'i2') on conflict (vendor_id) do update set status = excluded.status, original_sentence = excluded.original_sentence, sentence = excluded.sentence, revised_sentence = excluded.revised_sentence, interpretation = excluded.interpretation$$, 'approver can restart a draft with insert on conflict do update');
+select is((select revision from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), 3, 'the restart bumps revision from 2 to 3');
+select is((select created_at::text from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), current_setting('dc90.created_at'), 'the restart keeps created_at');
+select is((select updated_by from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), 90102, 'updated_by is the approver after the restart');
+select is((select sentence from public.policy_drafts where vendor_id = (select vendor_id from public.vendors where name = 'Summit Trail Equipment Rental')), 's2', 'the restart replaced the sentence');
 reset role;
 
 -- System admin C
