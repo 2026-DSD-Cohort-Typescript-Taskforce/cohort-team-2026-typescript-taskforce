@@ -57,6 +57,18 @@ The schema is strict: unknown keys are rejected. `isPolicyRuleV1` checks a value
 
 The model is given these readings. The tests pin them.
 
+## What v1 cannot express
+
+The model puts these in `unsupported` instead of a rule.
+
+| Category                    | Examples                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| Schedules and dates         | due dates, days of the week, "after the 15th"                                                     |
+| Per-user or per-role limits | "managers can pay up to $1,000"                                                                   |
+| Running totals              | a monthly or yearly total, "total spend"                                                          |
+| Other vendors               | a rule that involves a vendor besides the policy's own                                            |
+| Other actions               | anything besides allow, require approval or block, such as notifying, splitting payments or holds |
+
 ## Policy draft
 
 A draft is the interpretation of one sentence. It is stored in `public.policy_drafts`, one row per vendor. A draft is inactive: it never creates a policy, changes `policies.description` or turns anything on. DC-91 does that.

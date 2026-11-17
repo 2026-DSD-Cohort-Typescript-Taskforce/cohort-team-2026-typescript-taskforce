@@ -124,6 +124,18 @@ describe('prompt', () => {
     }
   });
 
+  it('the system prompt states the threshold readings', () => {
+    for (const reading of [
+      '"over $500" and "more than $500" mean gt 50000',
+      '"$500 or more" and "at least $500" mean gte 50000',
+      '"under $500" means lt 50000',
+      '"$500 or less" and "up to $500" mean lte 50000',
+      '"between $100 and $500" means gte 10000 and lte 50000',
+    ]) {
+      assert.ok(SYSTEM_PROMPT.includes(reading), `missing reading: ${reading}`);
+    }
+  });
+
   it('the user message carries the inputs as data', () => {
     const [system, user] = buildMessages(input);
     assert.equal(system.role, 'system');
