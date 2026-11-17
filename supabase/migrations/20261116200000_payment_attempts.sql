@@ -510,3 +510,189 @@ revoke execute on function public.authorize_payment(integer, jsonb) from public,
 revoke execute on function public.cancel_payment(integer, text) from public, anon, authenticated, service_role;
 grant execute on function public.authorize_payment(integer, jsonb) to authenticated;
 grant execute on function public.cancel_payment(integer, text) to authenticated;
+
+-- Section 4: start_payment_submission() and record_payment(). Only the trusted service
+-- (service_role) calls them. start_payment_submission is the atomic claim the worker makes
+-- before any charge: it moves an authorized attempt to processing, or refuses. record_payment
+-- records what happened afterwards (the "record_payment" of ADR 0002).
+--
+-- start_payment_submission(p_payment_id) locks the attempt, then its bill, so two concurrent
+-- claims serialize and the second sees processing. Error contract, in this order:
+--   code   HTTP  message                details
+--   PT404  404   not_found              null (no such payment, or NULL)
+--   PT409  409   not_authorized         the status, unless authorized
+--   PT409  409   authorization_expired  null (the 15 minutes are over)
+--   PT403  403   forbidden              null (the authorizer is no longer a billing_operator,
+--                                       financial_approver or system_admin)
+--   PT409  409   not_payable            the bill's status, unless pending_payment or payment_failed
+--   PT409  409   summary_stale          JSON array of the bill fields that no longer match the
+--                                       attempt, in this order: amount_cents, vendor_id,
+--                                       payment_method_id, invoice_number
+-- Success: the attempt is processing with submitted_at set, and the bill is processing.
+--
+-- record_payment(p_payment_id, p_outcome, p_outcome_code, p_transaction_reference, p_message)
+-- error contract, in this order:
+--   PT400  400   invalid_outcome  JSON array of the bad arguments, in this order: outcome (not
+--                                 success, failure or unknown), outcome_code (not one of that
+--                                 outcome's codes; skipped when the outcome is bad),
+--                                 transaction_reference (blank for success, or over 255
+--                                 characters once trimmed), message (over 500 once trimmed)
+--   PT404  404   not_found        null
+--   PT409  409   not_processing   the status, unless processing, or unknown with an outcome of
+--                                 success or failure (reconciling)
+-- Outcome codes: success confirmed; failure payment_mismatch, portal_rejected, portal_error,
+-- not_submitted; unknown outcome_unknown. A success sets the bill to payment_success and its
+-- date_paid; a failure sets payment_failed; unknown leaves the bill processing, and a new
+-- preparation stays blocked until it is reconciled. Audit text never holds the transaction
+-- reference or the message.
+create function public.start_payment_submission(p_payment_id integer)
+returns public.payments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_marker text := current_setting('app.payments_write', true);
+  v_payment public.payments;
+  v_bill public.bills;
+  v_role text;
+  v_bad text[];
+  v_row public.payments;
+begin
+  -- Lock the attempt first, then its bill, always in this order.
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  if not found then
+    raise sqlstate 'PT404' using message = 'not_found';
+  end if;
+  select * into v_bill from public.bills where bill_id = v_payment.bill_id for update;
+
+  if v_payment.status <> 'authorized' then
+    raise sqlstate 'PT409' using message = 'not_authorized', detail = v_payment.status;
+  end if;
+  if now() >= v_payment.authorization_expires_at then
+    raise sqlstate 'PT409' using message = 'authorization_expired';
+  end if;
+
+  select role into v_role from public.users where user_id = v_payment.authorized_by;
+  if v_role is null or v_role not in ('billing_operator', 'financial_approver', 'system_admin') then
+    raise sqlstate 'PT403' using message = 'forbidden';
+  end if;
+
+  if v_bill.status not in ('pending_payment', 'payment_failed') then
+    raise sqlstate 'PT409' using message = 'not_payable', detail = v_bill.status;
+  end if;
+
+  v_bad := array_remove(array[
+    case when (v_bill.amount * 100)::bigint is distinct from v_payment.amount_cents then 'amount_cents' end,
+    case when v_bill.vendor_id is distinct from v_payment.vendor_id then 'vendor_id' end,
+    case when v_bill.payment_method_id is distinct from v_payment.payment_method_id then 'payment_method_id' end,
+    case when v_bill.invoice_number is distinct from v_payment.invoice_number then 'invoice_number' end
+  ], null);
+  if cardinality(v_bad) > 0 then
+    raise sqlstate 'PT409' using message = 'summary_stale', detail = to_json(v_bad)::text;
+  end if;
+
+  perform set_config('app.payments_write', 'on', true);
+
+  update public.payments
+    set status = 'processing', submitted_at = now()
+    where payment_id = v_payment.payment_id
+    returning * into v_row;
+
+  update public.bills set status = 'processing', updated_at = now() where bill_id = v_payment.bill_id;
+
+  insert into public.audit_logs (name, description)
+    values ('payment_submitted', format('payment %s (bill %s): authorized → processing, by service',
+      v_row.payment_id, v_row.bill_id));
+
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_row;
+end
+$$;
+
+create function public.record_payment(
+  p_payment_id integer,
+  p_outcome text,
+  p_outcome_code text,
+  p_transaction_reference text default null,
+  p_message text default null
+) returns public.payments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_marker text := current_setting('app.payments_write', true);
+  v_reference text := nullif(btrim(p_transaction_reference), '');
+  v_message text := nullif(btrim(p_message), '');
+  v_codes text[];
+  v_bad text[];
+  v_payment public.payments;
+  v_row public.payments;
+begin
+  v_codes := case p_outcome
+    when 'success' then array['confirmed']
+    when 'failure' then array['payment_mismatch', 'portal_rejected', 'portal_error', 'not_submitted']
+    when 'unknown' then array['outcome_unknown']
+  end;
+  v_bad := array_remove(array[
+    case when v_codes is null then 'outcome' end,
+    case when v_codes is not null and not coalesce(p_outcome_code = any (v_codes), false) then 'outcome_code' end,
+    case when (p_outcome = 'success' and v_reference is null) or char_length(v_reference) > 255
+      then 'transaction_reference' end,
+    case when char_length(v_message) > 500 then 'message' end
+  ], null);
+  if cardinality(v_bad) > 0 then
+    raise sqlstate 'PT400' using message = 'invalid_outcome', detail = to_json(v_bad)::text;
+  end if;
+
+  -- Lock the attempt, then its bill, as start_payment_submission does.
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  if not found then
+    raise sqlstate 'PT404' using message = 'not_found';
+  end if;
+  perform 1 from public.bills where bill_id = v_payment.bill_id for update;
+
+  if not (v_payment.status = 'processing'
+          or (v_payment.status = 'unknown' and p_outcome <> 'unknown')) then
+    raise sqlstate 'PT409' using message = 'not_processing', detail = v_payment.status;
+  end if;
+
+  perform set_config('app.payments_write', 'on', true);
+
+  update public.payments
+    set status = p_outcome, outcome_code = p_outcome_code, outcome_message = v_message,
+        outcome_at = now(),
+        transaction_reference = case when p_outcome = 'success' then v_reference end,
+        time_paid = case when p_outcome = 'success' then now() end
+    where payment_id = v_payment.payment_id
+    returning * into v_row;
+
+  -- An unknown outcome leaves the bill processing.
+  if p_outcome = 'success' then
+    update public.bills set status = 'payment_success', date_paid = now(), updated_at = now()
+      where bill_id = v_payment.bill_id;
+  elsif p_outcome = 'failure' then
+    update public.bills set status = 'payment_failed', updated_at = now()
+      where bill_id = v_payment.bill_id;
+  end if;
+
+  insert into public.audit_logs (name, description)
+    values (
+      case p_outcome when 'success' then 'payment_succeeded' when 'failure' then 'payment_failed'
+        else 'payment_outcome_unknown' end,
+      format('payment %s (bill %s): %s → %s, by service, outcome %s',
+        v_row.payment_id, v_row.bill_id, v_payment.status, p_outcome, p_outcome_code));
+
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_row;
+end
+$$;
+
+-- Service only: revoke what PUBLIC and Supabase's default privileges grant, then grant.
+revoke execute on function public.start_payment_submission(integer)
+  from public, anon, authenticated, service_role;
+revoke execute on function public.record_payment(integer, text, text, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.start_payment_submission(integer) to service_role;
+grant execute on function public.record_payment(integer, text, text, text, text) to service_role;
