@@ -516,8 +516,12 @@ grant execute on function public.cancel_payment(integer, text) to authenticated;
 -- before any charge: it moves an authorized attempt to processing, or refuses. record_payment
 -- records what happened afterwards (the "record_payment" of ADR 0002).
 --
--- start_payment_submission(p_payment_id) locks the attempt, then its bill, so two concurrent
--- claims serialize and the second sees processing. Error contract, in this order:
+-- start_payment_submission(p_payment_id) locks the bill, then the attempt, so two concurrent
+-- claims serialize and the second sees processing. The order is the same as prepare_payment's,
+-- so a claim racing a re-preparation of the same bill waits instead of deadlocking. Every
+-- payment function that locks both rows locks the bill first (the attempt's bill_id never
+-- changes; authorize_payment and cancel_payment lock only the attempt). Error contract, in
+-- this order:
 --   code   HTTP  message                details
 --   PT404  404   not_found              null (no such payment, or NULL)
 --   PT409  409   not_authorized         the status, unless authorized
@@ -555,16 +559,18 @@ declare
   v_marker text := current_setting('app.payments_write', true);
   v_payment public.payments;
   v_bill public.bills;
+  v_bill_id integer;
   v_role text;
   v_bad text[];
   v_row public.payments;
 begin
-  -- Lock the attempt first, then its bill, always in this order.
-  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  -- Lock the bill first, then the attempt, as prepare_payment does (no deadlock when they race).
+  select bill_id into v_bill_id from public.payments where payment_id = p_payment_id;
   if not found then
     raise sqlstate 'PT404' using message = 'not_found';
   end if;
-  select * into v_bill from public.bills where bill_id = v_payment.bill_id for update;
+  select * into v_bill from public.bills where bill_id = v_bill_id for update;
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
 
   if v_payment.status <> 'authorized' then
     raise sqlstate 'PT409' using message = 'not_authorized', detail = v_payment.status;
@@ -628,6 +634,7 @@ declare
   v_codes text[];
   v_bad text[];
   v_payment public.payments;
+  v_bill_id integer;
   v_row public.payments;
 begin
   v_codes := case p_outcome
@@ -646,12 +653,13 @@ begin
     raise sqlstate 'PT400' using message = 'invalid_outcome', detail = to_json(v_bad)::text;
   end if;
 
-  -- Lock the attempt, then its bill, as start_payment_submission does.
-  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  -- Lock the bill first, then the attempt, as prepare_payment and start_payment_submission do.
+  select bill_id into v_bill_id from public.payments where payment_id = p_payment_id;
   if not found then
     raise sqlstate 'PT404' using message = 'not_found';
   end if;
-  perform 1 from public.bills where bill_id = v_payment.bill_id for update;
+  perform 1 from public.bills where bill_id = v_bill_id for update;
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
 
   if not (v_payment.status = 'processing'
           or (v_payment.status = 'unknown' and p_outcome <> 'unknown')) then
