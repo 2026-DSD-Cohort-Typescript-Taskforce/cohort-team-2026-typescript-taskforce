@@ -188,7 +188,12 @@ describe('callInterpreter', () => {
   describe('failures', () => {
     const { revised_sentence: _dropped, ...missingField } = validOutput;
     const cases: Array<
-      [string, () => Promise<Response> | Response, string, Partial<InterpreterConfig>?]
+      [
+        string,
+        (init: RequestInit) => Promise<Response> | Response,
+        string,
+        Partial<InterpreterConfig>?,
+      ]
     > = [
       [
         'network',
