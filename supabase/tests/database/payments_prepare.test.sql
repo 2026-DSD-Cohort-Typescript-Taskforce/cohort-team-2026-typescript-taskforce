@@ -2,7 +2,7 @@
 -- attempt. Run with `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(64);
+select plan(69);
 
 -- Setup (as postgres, marker on): one vendor, property and payment method, four users (one per
 -- role) and one bill per case (ids 89001+, users 89101+, to stay clear of seeded rows).
@@ -47,6 +47,8 @@ insert into public.payments (bill_id, status, vendor_id, payment_method_id, invo
   outcome_code, outcome_at, transaction_reference, time_paid)
 values (89015, 'success', 89001, 89001, 'DC89-89015', 12000, 0, 12000, 'USD', current_date, 'h', 89101, 89102, now(), now() + interval '15 minutes', now(),
   'confirmed', now(), 'TX-89015', now());
+-- An incomplete legacy pending row (bill 89018: prepared_by and the whole summary NULL).
+insert into public.payments (bill_id, status) values (89018, 'pending');
 reset app.payments_write;
 
 -- prepare_payment's error as {sqlstate, message, detail}, or null if it succeeds. Run as the
@@ -112,6 +114,7 @@ select is(pg_temp.prep_error(89016, 89101, null, current_date), ARRAY['PT400', '
 select is(pg_temp.prep_error(89016, 89101, 0, current_date + 2), ARRAY['PT400', 'invalid_payment', '["payment_date"]'], 'date two days ahead');
 select is(pg_temp.prep_error(89016, 89101, 0, current_date - 2), ARRAY['PT400', 'invalid_payment', '["payment_date"]'], 'date two days back');
 select is(pg_temp.prep_error(89016, 89101, 0, null), ARRAY['PT400', 'invalid_payment', '["payment_date"]'], 'NULL date');
+select is(pg_temp.prep_error(89016, 89101, 1000000000000, current_date), ARRAY['PT400', 'invalid_payment', '["fees_cents"]'], 'fees over 999999999999');
 select is(pg_temp.prep_error(89016, 89101, 0, current_date, repeat('x', 101)), ARRAY['PT400', 'invalid_payment', '["account_reference"]'], '101-character account reference');
 select is(pg_temp.prep_error(89016, 89101, 0, current_date, null, '{}'::jsonb), ARRAY['PT400', 'invalid_payment', '["policy_refs"]'], 'policy refs that are not an array');
 select is(pg_temp.prep_error(89016, 89101, 0, current_date, null, null), ARRAY['PT400', 'invalid_payment', '["policy_refs"]'], 'NULL policy refs');
@@ -165,11 +168,6 @@ select ok(
           and description like '%pending%'
      from public.audit_logs where name = 'payment_prepared' and created_at = now()),
   'its description names the bill, the preparer and the transition');
-select ok(
-  (select description not like '%12000%' and description not like '%120.00%' and description not like '%250%'
-          and description not like '%4321%'
-     from public.audit_logs where name = 'payment_prepared' and created_at = now()),
-  'its description holds no amount or account reference');
 select is(
   (select description from public.audit_logs where name = 'payment_prepared' and created_at = now()),
   format('payment %s (bill 89001): new → pending, by user 89101, policies [{"policy_id": 1}]',
@@ -190,9 +188,11 @@ select is(pg_temp.prep_error(89005, 89101, 0, current_date), null, 'the smallest
 select is(pg_temp.prep_error(89008, 89101, 0, current_date, '   '), null, 'a blank account reference can be prepared');
 select is(pg_temp.prep_error(89009, 89101, 0, current_date - 1), null, 'yesterday is allowed');
 select is(pg_temp.prep_error(89010, 89101, 0, current_date + 1), null, 'tomorrow is allowed');
+select is(pg_temp.prep_error(89017, 89101, 999999999999, current_date), null, 'the largest fee can be prepared');
 reset role;
 select is((select amount_cents from public.payments where bill_id = 89004), 999999999999::bigint, 'amount 9999999999.99 is 999999999999 cents');
 select is((select amount_cents from public.payments where bill_id = 89005), 1::bigint, 'amount 0.01 is 1 cent');
+select is((select total_cents from public.payments where bill_id = 89017), 1000000011999::bigint, 'amount plus the largest fee is the total');
 select is((select account_reference from public.payments where bill_id = 89008), null, 'a blank account reference is stored as NULL');
 select is((select prepared_by from public.payments where bill_id = 89006), 89102, 'prepared_by is the approver');
 select is((select prepared_by from public.payments where bill_id = 89007), 89103, 'prepared_by is the admin');
@@ -232,6 +232,16 @@ select results_eq(
   $$select status::text, outcome_code from public.payments where bill_id = 89012 and authorized_by is not null$$,
   $$values ('expired', 'superseded')$$, 'the authorized attempt is expired and superseded');
 select is((select count(*)::int from public.payments where bill_id = 89012 and status = 'pending'), 1, 'a new pending attempt exists');
+
+-- An incomplete legacy pending row is superseded like any other.
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select is(pg_temp.prep_error(89018, 89101, 0, current_date), null, 'preparing over an incomplete legacy pending row');
+reset role;
+select results_eq(
+  $$select status::text, outcome_code from public.payments where bill_id = 89018 and prepared_by is null$$,
+  $$values ('expired', 'superseded')$$, 'the incomplete legacy row is expired and superseded');
+select is((select count(*)::int from public.payments where bill_id = 89018 and status = 'pending'), 1, 'a complete pending attempt replaces it');
 
 select * from finish();
 rollback;

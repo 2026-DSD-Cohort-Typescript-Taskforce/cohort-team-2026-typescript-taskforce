@@ -3,7 +3,7 @@
 -- rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(88);
+select plan(93);
 
 -- Setup (as postgres, marker on): vendor, property, payment method, five logins (operator,
 -- approver, admin, viewer, and one with no profile) and one bill per case.
@@ -28,6 +28,31 @@ insert into public.bills (bill_id, status, vendor_id, property_id, user_id, paym
 select g, 'pending_payment', 89001, 89001, 89111, 89001, 'DC89-' || g, 120.00, current_date + 7
 from generate_series(89001, 89020) g;
 
+-- Builds a pending, prepared row with a complete summary and its correct hash for a bill, on a
+-- given payment date (the marker is on while this runs).
+create function pg_temp.insert_pending(p_bill integer, p_date date) returns void
+language plpgsql as $$
+declare
+  r public.payments;
+begin
+  r.bill_id := p_bill; r.vendor_id := 89001; r.payment_method_id := 89001;
+  r.invoice_number := 'DC89-' || p_bill; r.amount_cents := 12000; r.fees_cents := 0;
+  r.total_cents := 12000; r.currency := 'USD'; r.payment_date := p_date;
+  r.summary_hash := public.payment_summary_hash(r);
+  insert into public.payments (bill_id, status, vendor_id, payment_method_id, invoice_number,
+    amount_cents, fees_cents, total_cents, currency, payment_date, summary_hash, prepared_by)
+  values (r.bill_id, 'pending', r.vendor_id, r.payment_method_id, r.invoice_number,
+    r.amount_cents, r.fees_cents, r.total_cents, r.currency, r.payment_date, r.summary_hash, 89111);
+end
+$$;
+
+-- Deliberate bypass of prepare_payment (as postgres, marker on): stale preparations whose payment
+-- date is two days back (89017) and one day back (89018), and an incomplete legacy-style pending
+-- row (89019: prepared_by and the whole summary NULL).
+select pg_temp.insert_pending(89017, current_date - 2);
+select pg_temp.insert_pending(89018, current_date - 1);
+insert into public.payments (bill_id, status) values (89019, 'pending');
+
 -- An attempt that is already processing (bill 89016), built directly with the marker.
 insert into public.payments (bill_id, status, vendor_id, payment_method_id, invoice_number, amount_cents, fees_cents,
   total_cents, currency, payment_date, summary_hash, prepared_by, authorized_by, authorized_at, authorization_expires_at, submitted_at)
@@ -43,7 +68,7 @@ reset role;
 
 -- Payment ids by bill (readable by the roles under test).
 create temp table pay as
-select bill_id, payment_id from public.payments where bill_id between 89001 and 89016;
+select bill_id, payment_id from public.payments where bill_id between 89001 and 89019;
 grant select on pay to authenticated, anon, service_role;
 -- A seeded legacy pending attempt, never prepared through the service.
 create temp table legacy as
@@ -154,6 +179,8 @@ select is(pg_temp.auth_error((select payment_id from pg_temp.legacy),
   ARRAY['PT409', 'not_prepared', null], 'a legacy pending row (never prepared by the service) cannot be authorized');
 select is(pg_temp.auth_error(pg_temp.pid(89016), (select public.payment_summary(p) from public.payments p where bill_id = 89016)),
   ARRAY['PT409', 'not_pending', 'processing'], 'a processing attempt is not pending');
+select is(pg_temp.auth_error(pg_temp.pid(89017), (select public.payment_summary(p) from public.payments p where bill_id = 89017)),
+  ARRAY['PT409', 'summary_stale', '["payment_date"]'], 'a preparation two days old is stale');
 
 -- Mismatch (bill 89004: account reference ACC-1). One key at a time.
 select is(
@@ -202,8 +229,14 @@ set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000089b3","r
 select is(pg_temp.auth_error(pg_temp.pid(89003), (select public.payment_summary(p) from public.payments p where bill_id = 89003)), null, 'an admin authorizes');
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000089b1","role":"authenticated"}';
 select is(pg_temp.auth_error(pg_temp.pid(89005), jsonb_set((select public.payment_summary(p) from public.payments p where bill_id = 89005), '{account_reference}', 'null')), null, 'null matches a stored NULL account reference');
+select is(pg_temp.auth_error(pg_temp.pid(89018), (select public.payment_summary(p) from public.payments p where bill_id = 89018)),
+  null, 'a preparation one day old can still be authorized');
+select is(pg_temp.cancel_error(pg_temp.pid(89019), 'legacy row'), null, 'an incomplete legacy pending row can be canceled');
 reset role;
 
+select is((select status from public.payments where bill_id = 89018), 'authorized', 'one-day-old preparation: status authorized');
+select results_eq($$select status::text, outcome_message from public.payments where bill_id = 89019$$,
+  $$values ('canceled', 'legacy row')$$, 'the legacy row is canceled with its note');
 select is((select status from public.payments where bill_id = 89001), 'authorized', 'operator: status authorized');
 select is((select authorized_by from public.payments where bill_id = 89001), 89111, 'operator: authorized_by');
 select is((select authorized_by from public.payments where bill_id = 89002), 89112, 'approver: authorized_by');

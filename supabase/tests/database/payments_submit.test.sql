@@ -3,7 +3,7 @@
 -- `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(101);
+select plan(106);
 
 -- Setup (as postgres, marker on): vendor, property, two payment methods, operator and a second
 -- authorizer, and one bill per case.
@@ -23,6 +23,10 @@ insert into public.users (user_id, name, email, role, auth_user_id) values
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
 select g, 'pending_payment', 89001, 89001, 89121, 89001, 'DC89-' || g, 120.00, current_date + 7
 from generate_series(89001, 89015) g;
+-- An incomplete legacy processing row (bill 89016, processing): prepared_by and the whole summary NULL.
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
+  values (89016, 'processing', 89001, 89001, 89121, 89001, 'DC89-89016', 120.00, current_date + 7);
+insert into public.payments (bill_id, status, submitted_at) values (89016, 'processing', now());
 reset app.payments_write;
 
 -- Prepare every attempt as the trusted service. Bill 89003 is prepared twice, so its first
@@ -212,10 +216,10 @@ select ok(coalesce(current_setting('app.payments_write', true), '') <> 'on', 're
 
 -- failure, then retry to success (bill 89012)
 select is(pg_temp.start_error(pg_temp.pid(89012)), null, 'bill 89012 claimed');
-select is(pg_temp.record_error(pg_temp.pid(89012), 'failure', 'portal_rejected', null, 'card declined'), null, 'failure is recorded');
+select is(pg_temp.record_error(pg_temp.pid(89012), 'failure', 'portal_rejected', '  TX-REJ-1  ', 'card declined'), null, 'failure is recorded');
 select is((select status from public.payments where bill_id = 89012), 'failure', 'attempt is failure');
 select is((select outcome_message from public.payments where bill_id = 89012), 'card declined', 'failure message stored');
-select is((select transaction_reference from public.payments where bill_id = 89012), null, 'no reference on a failure');
+select is((select transaction_reference from public.payments where bill_id = 89012), 'TX-REJ-1', 'a failure stores its trimmed reference');
 select is((select status from public.bills where bill_id = 89012), 'payment_failed', 'bill is payment_failed');
 select is((select date_paid from public.bills where bill_id = 89012), null, 'no date_paid on a failure');
 select is(
@@ -252,14 +256,21 @@ select is(pg_temp.start_error(pg_temp.pid(89013)), ARRAY['PT409', 'not_authorize
 select is(pg_temp.record_error(pg_temp.pid(89013), 'unknown', 'outcome_unknown'), ARRAY['PT409', 'not_processing', 'unknown'], 'unknown cannot be recorded as unknown again');
 select is(pg_temp.record_error(pg_temp.pid(89013), 'success', 'confirmed', 'TX-RECON-1'), null, 'an unknown attempt reconciles to success');
 select is((select status from public.payments where bill_id = 89013), 'success', 'reconciled attempt is success');
+select is((select outcome_message from public.payments where bill_id = 89013), 'portal timed out', 'reconciling without a message keeps the earlier one');
 select is((select status from public.bills where bill_id = 89013), 'payment_success', 'bill is payment_success after reconciling');
 select isnt((select date_paid from public.bills where bill_id = 89013), null, 'date_paid set on reconciling');
 
 select is(pg_temp.start_error(pg_temp.pid(89014)), null, 'bill 89014 claimed');
-select is(pg_temp.record_error(pg_temp.pid(89014), 'unknown', 'outcome_unknown'), null, 'bill 89014 unknown');
-select is(pg_temp.record_error(pg_temp.pid(89014), 'failure', 'not_submitted'), null, 'an unknown attempt reconciles to failure');
+select is(pg_temp.record_error(pg_temp.pid(89014), 'unknown', 'outcome_unknown', 'TX-UNK-14', 'first note'), null, 'bill 89014 unknown, with a reference and a note');
+select is(pg_temp.record_error(pg_temp.pid(89014), 'failure', 'not_submitted', null, 'second note'), null, 'an unknown attempt reconciles to failure');
+select is((select outcome_message from public.payments where bill_id = 89014), 'second note', 'reconciling with a new message replaces the old one');
+select is((select transaction_reference from public.payments where bill_id = 89014), 'TX-UNK-14', 'reconciling without a reference keeps the earlier one');
 select is((select status from public.payments where bill_id = 89014), 'failure', 'reconciled attempt is failure');
 select is((select status from public.bills where bill_id = 89014), 'payment_failed', 'bill is payment_failed after reconciling');
+
+-- an incomplete legacy processing row can be recorded (bill 89016)
+select is(pg_temp.record_error((select payment_id from public.payments where bill_id = 89016), 'success', 'confirmed', 'TX-LEGACY'), null, 'an incomplete legacy processing row can be recorded');
+select is((select status || '/' || transaction_reference from public.payments where bill_id = 89016), 'success/TX-LEGACY', 'the legacy row is success with its reference');
 
 -- unknown blocks a new preparation (bill 89015)
 select is(pg_temp.start_error(pg_temp.pid(89015)), null, 'bill 89015 claimed');

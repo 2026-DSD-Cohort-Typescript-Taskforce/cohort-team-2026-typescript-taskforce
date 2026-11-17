@@ -239,6 +239,20 @@ describe('payment functions under concurrency', () => {
         assert.notEqual(error?.code, '40P01');
         if (error) assert.equal(error.code, 'PT409', JSON.stringify(error));
       }
+      // Exactly one wins: if prepare won, the claim sees the superseded attempt (not_authorized);
+      // if the claim won, prepare sees it processing (payment_in_progress).
+      const [prepareResult, startResult] = results.map(
+        (result) => (result as PromiseFulfilledResult<RpcResult>).value,
+      );
+      const succeeded = [prepareResult, startResult].filter((r) => !r.error);
+      assert.equal(succeeded.length, 1, `bill ${billId}: ${JSON.stringify(results)}`);
+      if (prepareResult.error) {
+        assert.equal(prepareResult.error.code, 'PT409');
+        assert.equal(prepareResult.error.message, 'payment_in_progress');
+      } else {
+        assert.equal(startResult.error?.code, 'PT409');
+        assert.equal(startResult.error?.message, 'not_authorized');
+      }
       const open = (await attempts(billId)).filter((row) => OPEN_STATUSES.includes(row.status));
       assert.ok(open.length <= 1, `bill ${billId} has ${open.length} open attempts`);
     }

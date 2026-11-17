@@ -2,7 +2,7 @@
 -- and guard trigger. Run with `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(78);
+select plan(85);
 
 -- Setup (as postgres, marker on): one vendor, property, payment method, user and one bill per
 -- case (ids 89001+, users 89101+, to stay clear of seeded rows).
@@ -48,11 +48,11 @@ declare
 begin
   insert into public.payments (bill_id, status, vendor_id, payment_method_id, invoice_number, account_reference,
     amount_cents, fees_cents, total_cents, currency, payment_date, summary_hash, policy_refs,
-    outcome_code, outcome_message, transaction_reference, submitted_at, outcome_at, canceled_by)
+    outcome_code, outcome_message, transaction_reference, submitted_at, outcome_at, canceled_by, prepared_by)
   select r.bill_id, r.status, r.vendor_id, r.payment_method_id, r.invoice_number, r.account_reference,
     r.amount_cents, coalesce(r.fees_cents, 0), r.total_cents, r.currency, r.payment_date, r.summary_hash,
     coalesce(r.policy_refs, '[]'::jsonb), r.outcome_code, r.outcome_message, r.transaction_reference,
-    r.submitted_at, r.outcome_at, r.canceled_by
+    r.submitted_at, r.outcome_at, r.canceled_by, r.prepared_by
   from jsonb_populate_record(null::public.payments, jsonb_build_object(
     'bill_id', p_bill, 'status', 'pending', 'vendor_id', 89001, 'payment_method_id', 89001,
     'invoice_number', 'DC89', 'amount_cents', 12000, 'fees_cents', 0, 'total_cents', 12000,
@@ -118,7 +118,10 @@ select is((pg_temp.insert_error(89001, jsonb_build_object('account_reference', r
 select is((pg_temp.insert_error(89001, jsonb_build_object('outcome_message', repeat('a', 501))))[1], '23514', 'outcome_message max 500');
 select is((pg_temp.insert_error(89001, jsonb_build_object('transaction_reference', repeat('a', 256))))[1], '23514', 'transaction_reference max 255');
 select is((pg_temp.insert_error(89001, '{"outcome_code":"nope"}'))[1], '23514', 'outcome_code is one of the known codes');
-select is((pg_temp.insert_error(89001, '{"amount_cents":null,"total_cents":null}'))[1], '23514', 'new rows must be summary-complete');
+select is((pg_temp.insert_error(89001, '{"amount_cents":null,"total_cents":null,"prepared_by":89101}'))[1], '23514', 'a prepared row must be summary-complete');
+select is((pg_temp.insert_error(89001, '{"vendor_id":null,"prepared_by":89101}'))[1], '23514', 'a prepared row with a NULL vendor is refused');
+select is(pg_temp.insert_error(89007, '{"vendor_id":null,"payment_method_id":null,"invoice_number":null,"amount_cents":null,"total_cents":null,"currency":null,"payment_date":null,"summary_hash":null}'),
+  null, 'a legacy-style row (prepared_by NULL) may have an empty summary');
 
 -- One open-or-paid row per bill.
 select is(pg_temp.insert_error(89001, '{"status":"processing","submitted_at":"2026-11-16T10:00:00Z"}'), null, 'processing row inserts');
@@ -156,6 +159,9 @@ select policies_are('public', 'payments', array['authenticated users can view pa
 select table_privs_are('public', 'payments', 'anon', array[]::text[]);
 select table_privs_are('public', 'payments', 'authenticated', array['SELECT']);
 select table_privs_are('public', 'payments', 'service_role', array['SELECT']);
+select sequence_privs_are('public', 'payments_payment_id_seq', 'anon', array[]::text[]);
+select sequence_privs_are('public', 'payments_payment_id_seq', 'authenticated', array[]::text[]);
+select sequence_privs_are('public', 'payments_payment_id_seq', 'service_role', array[]::text[]);
 
 set local role anon;
 select is((pg_temp.sql_error('select 1 from public.payments'))[1], '42501', 'anon can not read payments');
@@ -177,7 +183,12 @@ reset role;
 
 -- Guard trigger. A pending row for bill 89003 with an old updated_at.
 select is(pg_temp.insert_error(89003, '{}'), null, 'guard fixture row');
+-- Deliberate bypass (as postgres, marker on): with the updated_at trigger off, give the row an old
+-- updated_at, so the legal update below can be seen to advance it.
+set local app.payments_write = 'on';
+alter table public.payments disable trigger payments_set_updated_at;
 update public.payments set updated_at = '2020-01-01T00:00:00Z' where bill_id = 89003;
+alter table public.payments enable trigger payments_set_updated_at;
 
 set local app.payments_write = 'off';
 select is(pg_temp.insert_error(89004), array['42501', 'payments_write_forbidden', null], 'insert without marker refused');
@@ -192,7 +203,11 @@ select is(pg_temp.sql_error('update public.payments set fees_cents = 5, total_ce
 select is(pg_temp.sql_error('update public.payments set status = ''canceled'' where bill_id = 89003'),
   array['P0001', 'payment_incomplete', 'canceled_by'], 'canceled needs canceled_by');
 select is(pg_temp.sql_error('update public.payments set status = ''canceled'', canceled_by = 89101 where bill_id = 89003'), null, 'pending to canceled with canceled_by');
-select ok((select updated_at > '2020-01-01T00:00:00Z' from public.payments where bill_id = 89003), 'updated_at advances');
+select ok((select updated_at = now() and updated_at <> '2020-01-01T00:00:00Z' from public.payments where bill_id = 89003), 'updated_at advances to now()');
+
+-- TRUNCATE is refused for every role, even with the marker on (cascade included).
+select is(pg_temp.sql_error('truncate public.payments'), array['42501', 'payments_write_forbidden', null], 'truncate payments refused even with marker');
+select is(pg_temp.sql_error('truncate public.bills cascade'), array['42501', 'payments_write_forbidden', null], 'truncate bills cascade refused');
 
 select * from finish();
 rollback;

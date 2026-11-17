@@ -5,7 +5,7 @@
 -- users and service_role can only read it, and every write goes through the security
 -- definer functions below (added section by section), which set app.payments_write = 'on'.
 -- The payments_guard trigger is the backstop: it refuses any write without that marker,
--- any DELETE, any illegal status change, any change to the authorized summary, and any
+-- any DELETE and any TRUNCATE (a second trigger), any illegal status change, any change to the authorized summary, and any
 -- row missing the columns its status needs.
 --
 -- Statuses and transitions:
@@ -47,7 +47,7 @@ alter table public.payments
 -- read; the writer functions call them as owner. The jsonb is the exact thing a client
 -- echoes back to authorize, so keep its keys and formats stable.
 create function public.payment_summary(p public.payments) returns jsonb
-language sql immutable
+language sql stable
 set search_path = ''
 as $$
   select jsonb_build_object(
@@ -65,7 +65,7 @@ as $$
 $$;
 
 create function public.payment_summary_hash(p public.payments) returns text
-language sql immutable
+language sql stable
 set search_path = ''
 as $$
   select encode(sha256(convert_to(public.payment_summary(p)::text, 'UTF8')), 'hex')
@@ -77,7 +77,10 @@ grant execute on function public.payment_summary(public.payments) to authenticat
 grant execute on function public.payment_summary_hash(public.payments) to authenticated, service_role;
 
 -- Backfill legacy rows from their bill (whole dollars-and-cents amounts as cents, no fees).
--- They were never prepared through the trusted service, so prepared_by stays NULL.
+-- They were never prepared through the trusted service, so prepared_by stays NULL. Only rows
+-- whose bill has a positive amount, a vendor, a payment method and an invoice number are
+-- backfilled; any other legacy row keeps a NULL summary and NULL hash, so the migration can not
+-- abort on data we have not seen (those rows can still be superseded, canceled or recorded).
 update public.payments p
    set vendor_id = b.vendor_id,
        payment_method_id = b.payment_method_id,
@@ -89,7 +92,11 @@ update public.payments p
        payment_date = p.created_at::date
   from public.bills b
  where b.bill_id = p.bill_id
-   and p.amount_cents is null;
+   and p.amount_cents is null
+   and b.amount > 0
+   and b.vendor_id is not null
+   and b.payment_method_id is not null
+   and b.invoice_number is not null;
 
 update public.payments p
    set summary_hash = public.payment_summary_hash(p)
@@ -101,7 +108,8 @@ alter table public.payments drop constraint status_values;
 alter table public.payments add constraint payments_status_values
   check (status in ('pending', 'authorized', 'processing', 'success', 'failure', 'unknown', 'canceled', 'expired'));
 
--- Value checks. NULL passes each one; the summary-complete check below covers required values.
+-- Value checks. NULL passes each one; the summary-complete check below covers required values
+-- of prepared rows.
 alter table public.payments
   add constraint payments_total_matches check (total_cents = amount_cents + fees_cents),
   add constraint payments_currency_usd check (currency = 'USD'),
@@ -115,12 +123,12 @@ alter table public.payments
     'confirmed', 'payment_mismatch', 'portal_rejected', 'portal_error', 'not_submitted',
     'outcome_unknown', 'superseded'));
 
--- Every new or changed row carries a complete summary. NOT VALID: legacy rows whose bill had
--- no amount or invoice number yet are left alone.
+-- Every row prepared through the trusted service (prepared_by set) carries a complete summary.
+-- Legacy rows (prepared_by NULL) are exempt: some may have no complete summary to backfill.
 alter table public.payments add constraint payments_summary_complete
-  check (vendor_id is not null and payment_method_id is not null and invoice_number is not null
-    and amount_cents is not null and total_cents is not null and currency is not null
-    and payment_date is not null and summary_hash is not null) not valid;
+  check (prepared_by is null or (vendor_id is not null and payment_method_id is not null
+    and invoice_number is not null and amount_cents is not null and total_cents is not null
+    and currency is not null and payment_date is not null and summary_hash is not null));
 
 -- One open-or-paid attempt per bill. Fail clearly if existing data already breaks that.
 do $$
@@ -201,6 +209,23 @@ $$;
 
 revoke execute on function public.payments_guard() from public, anon, authenticated, service_role;
 
+-- TRUNCATE skips row triggers and the DELETE refusal, so it gets its own statement trigger. It
+-- always refuses (cascades from bills included).
+create function public.payments_refuse_truncate() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  raise exception 'payments_write_forbidden' using errcode = '42501';
+end
+$$;
+
+revoke execute on function public.payments_refuse_truncate() from public, anon, authenticated, service_role;
+
+create trigger payments_refuse_truncate
+  before truncate on public.payments
+  for each statement execute function public.payments_refuse_truncate();
+
 create trigger payments_guard
   before insert or update or delete on public.payments
   for each row execute function public.payments_guard();
@@ -217,6 +242,8 @@ drop policy "authenticated users can update payments" on public.payments;
 
 revoke all on public.payments from anon, authenticated, service_role;
 grant select on public.payments to authenticated, service_role;
+-- The writer functions run as the owner, so nobody else needs the id sequence either.
+revoke all on sequence public.payments_payment_id_seq from anon, authenticated, service_role;
 
 -- Section 2: prepare_payment(). Only the trusted service (service_role) calls it. It creates
 -- the pending attempt a person later authorizes, with the summary fixed at this moment.
@@ -226,8 +253,8 @@ grant select on public.payments to authenticated, service_role;
 -- Checked in this order:
 --   code   HTTP  message              details
 --   PT403  403   forbidden            null (p_prepared_by is NULL, unknown, or a viewer)
---   PT400  400   invalid_payment      JSON array of the bad fields, in this order: fees_cents (NULL
---                                     or negative), payment_date (NULL or not within one day of
+--   PT400  400   invalid_payment      JSON array of the bad fields, in this order: fees_cents (NULL,
+--                                     negative or over 999999999999), payment_date (NULL or not within one day of
 --                                     today), account_reference (over 100 characters once
 --                                     trimmed), policy_refs (NULL or not a JSON array)
 --   PT404  404   not_found            null (no such bill, or NULL)
@@ -265,7 +292,7 @@ begin
 
   v_account := nullif(btrim(p_account_reference), '');
   v_bad := array_remove(array[
-    case when p_fees_cents is null or p_fees_cents < 0 then 'fees_cents' end,
+    case when p_fees_cents is null or p_fees_cents < 0 or p_fees_cents > 999999999999 then 'fees_cents' end,
     case when p_payment_date is null
       or p_payment_date not between current_date - 1 and current_date + 1 then 'payment_date' end,
     case when char_length(v_account) > 100 then 'account_reference' end,
@@ -368,6 +395,8 @@ grant execute on function public.prepare_payment(integer, integer, bigint, date,
 --   PT404  404   not_found          null (no such payment, or NULL)
 --   PT409  409   not_pending        the payment's status
 --   PT409  409   not_prepared       null (a legacy row never prepared through the trusted service)
+--   PT409  409   summary_stale      ["payment_date"] (the stored payment date is no longer within
+--                                   one day of today)
 --   PT409  409   summary_mismatch   JSON array of the keys whose values differ, in summary order
 -- On success the attempt is authorized for 15 minutes.
 --
@@ -424,6 +453,11 @@ begin
   end if;
   if v_payment.prepared_by is null then
     raise sqlstate 'PT409' using message = 'not_prepared';
+  end if;
+  -- The same window prepare_payment accepts: an old preparation can not be authorized and charged today.
+  if v_payment.payment_date is null
+     or v_payment.payment_date not between current_date - 1 and current_date + 1 then
+    raise sqlstate 'PT409' using message = 'summary_stale', detail = '["payment_date"]';
   end if;
 
   -- jsonb equality: "12000" does not equal 12000, and null only equals null.
@@ -544,6 +578,8 @@ grant execute on function public.cancel_payment(integer, text) to authenticated;
 --   PT404  404   not_found        null
 --   PT409  409   not_processing   the status, unless processing, or unknown with an outcome of
 --                                 success or failure (reconciling)
+-- A trimmed transaction reference and message are stored for every outcome when given. Reconciling
+-- an unknown attempt keeps its earlier reference and message when the new ones are NULL or blank.
 -- Outcome codes: success confirmed; failure payment_mismatch, portal_rejected, portal_error,
 -- not_submitted; unknown outcome_unknown. A success sets the bill to payment_success and its
 -- date_paid; a failure sets payment_failed; unknown leaves the bill processing, and a new
@@ -669,9 +705,10 @@ begin
   perform set_config('app.payments_write', 'on', true);
 
   update public.payments
-    set status = p_outcome, outcome_code = p_outcome_code, outcome_message = v_message,
+    set status = p_outcome, outcome_code = p_outcome_code,
+        outcome_message = coalesce(v_message, v_payment.outcome_message),
         outcome_at = now(),
-        transaction_reference = case when p_outcome = 'success' then v_reference end,
+        transaction_reference = coalesce(v_reference, v_payment.transaction_reference),
         time_paid = case when p_outcome = 'success' then now() end
     where payment_id = v_payment.payment_id
     returning * into v_row;
