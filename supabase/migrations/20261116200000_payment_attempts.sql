@@ -1,0 +1,219 @@
+-- DC-89: payment attempts and explicit payment authorization. A payments row is one
+-- attempt to pay one bill. It records the exact summary a person authorized (vendor,
+-- invoice, account reference, method, amount, fees, total, currency, date) plus its hash,
+-- and moves through a fixed set of statuses. Nobody writes to payments directly: signed-in
+-- users and service_role can only read it, and every write goes through the security
+-- definer functions below (added section by section), which set app.payments_write = 'on'.
+-- The payments_guard trigger is the backstop: it refuses any write without that marker,
+-- any DELETE, any illegal status change, any change to the authorized summary, and any
+-- row missing the columns its status needs.
+--
+-- Statuses and transitions:
+--   pending    -> authorized | canceled | expired
+--   authorized -> processing | canceled | expired
+--   processing -> success | failure | unknown
+--   unknown    -> success | failure
+--
+-- Section 1: schema, value checks, one open attempt per bill, summary functions, guard
+-- trigger and privileges.
+
+-- New columns. Legacy rows get their summary backfilled from the bill below.
+alter table public.payments
+  add column idempotency_key uuid not null default gen_random_uuid() unique,
+  add column vendor_id integer references public.vendors (vendor_id),
+  add column payment_method_id integer references public.payment_methods (payment_method_id),
+  add column invoice_number text,
+  add column account_reference text,
+  add column amount_cents bigint,
+  add column fees_cents bigint not null default 0,
+  add column total_cents bigint,
+  add column currency char(3),
+  add column payment_date date,
+  add column summary_hash text,
+  add column policy_refs jsonb not null default '[]'::jsonb,
+  add column prepared_by integer references public.users (user_id),
+  add column authorized_by integer references public.users (user_id),
+  add column canceled_by integer references public.users (user_id),
+  add column authorized_at timestamptz,
+  add column authorization_expires_at timestamptz,
+  add column submitted_at timestamptz,
+  add column outcome_at timestamptz,
+  add column outcome_code text,
+  add column outcome_message text,
+  add column transaction_reference text,
+  add column updated_at timestamptz not null default now();
+
+-- The authorized summary and its hash. Read-only functions of a row the caller can already
+-- read; the writer functions call them as owner. The jsonb is the exact thing a client
+-- echoes back to authorize, so keep its keys and formats stable.
+create function public.payment_summary(p public.payments) returns jsonb
+language sql immutable
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'bill_id', p.bill_id,
+    'vendor_id', p.vendor_id,
+    'invoice_number', p.invoice_number,
+    'account_reference', p.account_reference,
+    'payment_method_id', p.payment_method_id,
+    'amount_cents', p.amount_cents,
+    'fees_cents', p.fees_cents,
+    'total_cents', p.total_cents,
+    'currency', p.currency::text,
+    'payment_date', to_char(p.payment_date::timestamp, 'YYYY-MM-DD')
+  )
+$$;
+
+create function public.payment_summary_hash(p public.payments) returns text
+language sql immutable
+set search_path = ''
+as $$
+  select encode(sha256(convert_to(public.payment_summary(p)::text, 'UTF8')), 'hex')
+$$;
+
+revoke execute on function public.payment_summary(public.payments) from public, anon;
+revoke execute on function public.payment_summary_hash(public.payments) from public, anon;
+grant execute on function public.payment_summary(public.payments) to authenticated, service_role;
+grant execute on function public.payment_summary_hash(public.payments) to authenticated, service_role;
+
+-- Backfill legacy rows from their bill (whole dollars-and-cents amounts as cents, no fees).
+-- They were never prepared through the trusted service, so prepared_by stays NULL.
+update public.payments p
+   set vendor_id = b.vendor_id,
+       payment_method_id = b.payment_method_id,
+       invoice_number = b.invoice_number,
+       amount_cents = (b.amount * 100)::bigint,
+       fees_cents = 0,
+       total_cents = (b.amount * 100)::bigint,
+       currency = 'USD',
+       payment_date = p.created_at::date
+  from public.bills b
+ where b.bill_id = p.bill_id
+   and p.amount_cents is null;
+
+update public.payments p
+   set summary_hash = public.payment_summary_hash(p)
+ where p.amount_cents is not null
+   and p.summary_hash is null;
+
+-- Statuses.
+alter table public.payments drop constraint status_values;
+alter table public.payments add constraint payments_status_values
+  check (status in ('pending', 'authorized', 'processing', 'success', 'failure', 'unknown', 'canceled', 'expired'));
+
+-- Value checks. NULL passes each one; the summary-complete check below covers required values.
+alter table public.payments
+  add constraint payments_total_matches check (total_cents = amount_cents + fees_cents),
+  add constraint payments_currency_usd check (currency = 'USD'),
+  add constraint payments_amount_positive check (amount_cents > 0),
+  add constraint payments_fees_not_negative check (fees_cents >= 0),
+  add constraint payments_policy_refs_array check (jsonb_typeof(policy_refs) = 'array'),
+  add constraint payments_account_reference_length check (char_length(account_reference) <= 100),
+  add constraint payments_outcome_message_length check (char_length(outcome_message) <= 500),
+  add constraint payments_transaction_reference_length check (char_length(transaction_reference) <= 255),
+  add constraint payments_outcome_code_values check (outcome_code in (
+    'confirmed', 'payment_mismatch', 'portal_rejected', 'portal_error', 'not_submitted',
+    'outcome_unknown', 'superseded'));
+
+-- Every new or changed row carries a complete summary. NOT VALID: legacy rows whose bill had
+-- no amount or invoice number yet are left alone.
+alter table public.payments add constraint payments_summary_complete
+  check (vendor_id is not null and payment_method_id is not null and invoice_number is not null
+    and amount_cents is not null and total_cents is not null and currency is not null
+    and payment_date is not null and summary_hash is not null) not valid;
+
+-- One open-or-paid attempt per bill. Fail clearly if existing data already breaks that.
+do $$
+declare
+  v_bills text;
+begin
+  select string_agg(bill_id::text, ', ' order by bill_id) into v_bills
+    from (select bill_id from public.payments
+           where status in ('pending', 'authorized', 'processing', 'unknown', 'success')
+           group by bill_id having count(*) > 1) d;
+  if v_bills is not null then
+    raise exception 'payments_one_open_attempt_per_bill: bills with more than one open or paid payment: %', v_bills;
+  end if;
+end
+$$;
+
+create unique index payments_one_open_attempt_per_bill on public.payments (bill_id)
+  where status in ('pending', 'authorized', 'processing', 'unknown', 'success');
+
+-- Guard trigger. Checked in this order: write marker (and no DELETE), status transition,
+-- immutable columns, columns the new status needs. An INSERT may use any status; only
+-- prepare_payment inserts, always as pending.
+create function public.payments_guard() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_col text;
+  v_new jsonb;
+  v_old jsonb;
+begin
+  if tg_op = 'DELETE' or current_setting('app.payments_write', true) is distinct from 'on' then
+    raise exception 'payments_write_forbidden' using errcode = '42501';
+  end if;
+
+  v_new := to_jsonb(new);
+
+  if tg_op = 'UPDATE' then
+    v_old := to_jsonb(old);
+
+    if new.status <> old.status and not (
+      (old.status = 'pending' and new.status in ('authorized', 'canceled', 'expired'))
+      or (old.status = 'authorized' and new.status in ('processing', 'canceled', 'expired'))
+      or (old.status = 'processing' and new.status in ('success', 'failure', 'unknown'))
+      or (old.status = 'unknown' and new.status in ('success', 'failure'))
+    ) then
+      raise exception 'illegal_payment_transition' using errcode = 'P0001',
+        detail = old.status || ' → ' || new.status;
+    end if;
+
+    foreach v_col in array array['bill_id', 'vendor_id', 'invoice_number', 'account_reference',
+      'payment_method_id', 'amount_cents', 'fees_cents', 'total_cents', 'currency', 'payment_date',
+      'summary_hash', 'idempotency_key', 'policy_refs', 'prepared_by', 'created_at'] loop
+      if v_new -> v_col is distinct from v_old -> v_col then
+        raise exception 'payment_summary_immutable' using errcode = 'P0001', detail = v_col;
+      end if;
+    end loop;
+  end if;
+
+  foreach v_col in array case new.status
+    when 'authorized' then array['authorized_by', 'authorized_at', 'authorization_expires_at']
+    when 'processing' then array['submitted_at']
+    when 'success' then array['transaction_reference', 'time_paid', 'outcome_code', 'outcome_at']
+    when 'failure' then array['outcome_code', 'outcome_at']
+    when 'unknown' then array['outcome_code', 'outcome_at']
+    when 'canceled' then array['canceled_by']
+    when 'expired' then array['outcome_code']
+    else array[]::text[]
+  end loop
+    if v_new ->> v_col is null then
+      raise exception 'payment_incomplete' using errcode = 'P0001', detail = v_col;
+    end if;
+  end loop;
+
+  return new;
+end
+$$;
+
+revoke execute on function public.payments_guard() from public, anon, authenticated, service_role;
+
+create trigger payments_guard
+  before insert or update or delete on public.payments
+  for each row execute function public.payments_guard();
+
+create trigger payments_set_updated_at
+  before update on public.payments
+  for each row execute function public.set_updated_at();
+
+-- Replaces the open insert and update policies from
+-- 20261102174727_create_approvals_and_payments.sql, and takes every write privilege away
+-- (including from service_role and anon's read). The SELECT policy stays.
+drop policy "authenticated users can insert payments" on public.payments;
+drop policy "authenticated users can update payments" on public.payments;
+
+revoke all on public.payments from anon, authenticated, service_role;
+grant select on public.payments to authenticated, service_role;
