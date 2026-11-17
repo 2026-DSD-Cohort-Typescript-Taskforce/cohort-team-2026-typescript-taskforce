@@ -3,8 +3,12 @@
 -- Last Updated:    11/17/26
 -- Ticket:          DC-110 Revoke TRUNCATE from anon and authenticated on domain tables
 -- Description:     Removes the ability for anonymous and authenticated users to truncate (aka delete) tables.
---                      Why? so unverified users can't delete data.
+--                      Why? so non-admin users can't just delete data.
 
+-- Notes:
+--  - Tested my changes and they all work.
+--  - However, supabase test db broke due to changes in DC-109, which a separate branch is fixing.
+--  - Need to pull that before making a PR for this migration.
 
 -- Removing the truncate privilege from X tables:
 revoke truncate on table public.approvals       from anon, authenticated;
