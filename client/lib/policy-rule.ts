@@ -289,10 +289,10 @@ export function normalizeModelOutput(
     questionTexts.push({ topic: q.topic, question });
   }
   const conflicts = findConflicts(rules);
-  const unsupported = output.unsupported.map((u) => ({
-    text: u.text.trim(),
-    reason: u.reason.trim(),
-  }));
+  // Blank or overlong (over 500 characters) entries are dropped, not truncated.
+  const unsupported = output.unsupported
+    .map((u) => ({ text: u.text.trim(), reason: u.reason.trim() }))
+    .filter((u) => u.text && u.reason && [...u.text].length <= 500 && [...u.reason].length <= 500);
   if (questionTexts.length === 0 && unsupported.length === 0 && conflicts.length === 0 && !rule) {
     questionTexts.push({ topic: 'effect', question: NO_RULE_QUESTION });
   }

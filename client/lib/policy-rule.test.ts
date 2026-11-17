@@ -154,6 +154,38 @@ test('drops unknown property ids and asks', () => {
   assert.equal(draft.status, 'needs_clarification');
 });
 
+test('drops a rule whose property ids are all unknown, never widening it', () => {
+  for (const scoped of [{ property_ids: [999] }, { except_property_ids: [999] }]) {
+    const draft = draftOf({ rules: [modelRule(scoped)] });
+    assert.equal(draft.rule, null);
+    assert.equal(draft.status, 'needs_clarification');
+    assert.notEqual(draft.status, 'complete');
+    assert.deepEqual(draft.questions, [
+      { id: 'q1', topic: 'property', question: UNKNOWN_PROPERTY_QUESTION },
+    ]);
+  }
+  const mixed = draftOf({
+    rules: [modelRule({ property_ids: [999] }), modelRule({ amount: null, property_ids: [1] })],
+  });
+  assert.equal(mixed.rule?.rules.length, 1);
+  assert.deepEqual(mixed.rule?.rules[0]?.when.property_ids, [1]);
+  assert.equal(mixed.status, 'needs_clarification');
+});
+
+test('ignores blank or overlong unsupported entries', () => {
+  const blank = [{ text: '', reason: ' ' }];
+  assert.notEqual(draftOf({ unsupported: blank }).status, 'unsupported');
+  assert.deepEqual(draftOf({ unsupported: blank }).unsupported, []);
+  const half = [{ text: 'every Friday', reason: '  ' }];
+  assert.deepEqual(draftOf({ unsupported: half }).unsupported, []);
+  const long = [{ text: 'x'.repeat(501), reason: 'Too long.' }];
+  assert.deepEqual(draftOf({ unsupported: long }).unsupported, []);
+  const good = { text: 'every Friday', reason: 'Dates are not supported.' };
+  const kept = draftOf({ unsupported: [...blank, good] });
+  assert.equal(kept.status, 'unsupported');
+  assert.deepEqual(kept.unsupported, [good]);
+});
+
 test('numbers questions q1..qn and keeps at most 5', () => {
   const questions = Array.from({ length: 7 }, (_, i) => ({
     topic: 'amount' as const,
