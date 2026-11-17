@@ -33,6 +33,7 @@ export function DataTable<T extends object>({
   initialSorting = [],
   filterable = true,
   rowAction,
+  getRowId,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -40,6 +41,8 @@ export function DataTable<T extends object>({
   initialSorting?: SortingState;
   filterable?: boolean;
   rowAction?: RowAction<T>;
+  /** A stable key per row, so a row keeps its element (and focus) when a reload reorders rows. */
+  getRowId?: (row: T) => string;
 }) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [filters, setFilters] = useState<ColumnFiltersState>([]);
@@ -60,6 +63,7 @@ export function DataTable<T extends object>({
 
   const table = useReactTable({
     data: rows,
+    getRowId,
     columns: defs,
     state: { sorting, columnFilters: filters },
     onSortingChange: setSorting,

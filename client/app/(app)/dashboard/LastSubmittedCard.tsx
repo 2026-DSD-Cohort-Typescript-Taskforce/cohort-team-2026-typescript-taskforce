@@ -2,7 +2,6 @@ import { cookies } from 'next/headers';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { fetchLastSubmittedBill } from '@/lib/bills';
 
-
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 const tone = (status: string) =>

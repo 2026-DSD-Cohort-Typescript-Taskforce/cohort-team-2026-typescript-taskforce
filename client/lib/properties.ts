@@ -6,7 +6,10 @@ import type { Property, CreatePropertyInput } from '@/types/properties';
 export type UpdatePropertyInput = Partial<CreatePropertyInput>;
 
 export class PropertyRequestError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'PropertyRequestError';
   }
@@ -25,11 +28,14 @@ async function requestProperties(query: string, init?: RequestInit): Promise<Res
   headers.set('apikey', SUPABASE_PUBLISHABLE_KEY);
   headers.set('Authorization', `Bearer ${accessToken}`);
 
-  const response = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/properties${query ? `?${query}` : ''}`, {
-    ...init,
-    cache: 'no-store',
-    headers,
-  });
+  const response = await fetch(
+    `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/properties${query ? `?${query}` : ''}`,
+    {
+      ...init,
+      cache: 'no-store',
+      headers,
+    },
+  );
   if (!response.ok) {
     throw new PropertyRequestError(response.status, `Property request failed: ${response.status}`);
   }
@@ -58,7 +64,10 @@ export async function createProperty(data: CreatePropertyInput): Promise<Propert
   return properties[0];
 }
 
-export async function updateProperty(id: string, data: UpdatePropertyInput): Promise<Property | null> {
+export async function updateProperty(
+  id: string,
+  data: UpdatePropertyInput,
+): Promise<Property | null> {
   const response = await requestProperties(`property_id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
@@ -69,6 +78,8 @@ export async function updateProperty(id: string, data: UpdatePropertyInput): Pro
 }
 
 export async function deleteProperty(id: string): Promise<number> {
-  const response = await requestProperties(`property_id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const response = await requestProperties(`property_id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
   return response.status;
 }

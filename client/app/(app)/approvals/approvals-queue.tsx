@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   APPROVALS_DEFAULT_SORT,
   FINANCIAL_APPROVER,
@@ -9,40 +9,42 @@ import {
   decisionBanner,
   type ApprovalRow,
   type Decision,
-} from "@/lib/approvals";
-import { loadApprovals, loadUserRole } from "@/lib/bill-api";
-import { formatDate, type Bill } from "@/lib/bill-view";
-import { ErrorAlert, SuccessAlert, colorTransition, focusRing } from "@/app/ui";
-import { LoadError } from "../bills/bills-list";
-import { StatusChip } from "../bills/status-chip";
-import { AmountPill, ReviewDialog } from "./review-dialog";
+} from '@/lib/approvals';
+import { loadApprovals, loadUserRole } from '@/lib/bill-api';
+import { formatDate, type Bill } from '@/lib/bill-view';
+import { ErrorAlert, SuccessAlert, colorTransition, focusRing } from '@/app/ui';
+import { LoadError } from '../bills/bills-list';
+import { StatusChip } from '../bills/status-chip';
+import { AmountPill, ReviewDialog } from './review-dialog';
 
 // Module scope, so DataTable's column definitions stay the same between renders.
 const columns: Column<ApprovalRow>[] = [
-  { key: "bill_id", label: "Bill ID" },
-  { key: "vendor", label: "Vendor Name" },
-  { key: "property", label: "Property Name" },
+  { key: 'bill_id', label: 'Bill ID' },
+  { key: 'vendor', label: 'Vendor Name' },
+  { key: 'property', label: 'Property Name' },
   {
-    key: "date_due",
-    label: "Bill Due Date",
-    render: (row) => <span className="whitespace-nowrap">{row.date_due ? formatDate(row.date_due) : "—"}</span>,
+    key: 'date_due',
+    label: 'Bill Due Date',
+    render: (row) => (
+      <span className="whitespace-nowrap">{row.date_due ? formatDate(row.date_due) : '—'}</span>
+    ),
   },
-  { key: "payment_type", label: "Bill Payment Type" },
-  { key: "amount", label: "Amount Due", render: (row) => <AmountPill amount={row.amount} /> },
-  { key: "status", label: "Bill Status", render: (row) => <StatusChip status={row.status} /> },
+  { key: 'payment_type', label: 'Bill Payment Type' },
+  { key: 'amount', label: 'Amount Due', render: (row) => <AmountPill amount={row.amount} /> },
+  { key: 'status', label: 'Bill Status', render: (row) => <StatusChip status={row.status} /> },
 ];
 
 /** The bills waiting for an approval decision, and the review modal (DC-81). */
 export function ApprovalsQueue() {
   /** null until the first load succeeds. */
   const [bills, setBills] = useState<Bill[] | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
   /** null while the role loads; false if it isn't financial_approver or didn't load. */
   const [canDecide, setCanDecide] = useState<boolean | null>(null);
   const [reviewing, setReviewing] = useState<Bill | null>(null);
-  const [success, setSuccess] = useState("");
-  const [error, setError] = useState("");
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
   const headingRef = useRef<HTMLHeadingElement>(null);
   // The ⋮ button that opened the modal, which gets focus back when it closes.
   const openerRef = useRef<HTMLButtonElement | null>(null);
@@ -56,7 +58,7 @@ export function ApprovalsQueue() {
       if (!result || request !== latest.current) return;
       if (result.ok) {
         setBills(result.data);
-        setLoadError("");
+        setLoadError('');
       } else {
         setLoadError(result.error);
       }
@@ -88,8 +90,8 @@ export function ApprovalsQueue() {
 
   function openReview(bill: Bill, opener: HTMLButtonElement) {
     // Cleared now, so the outcome of this review is announced even if it repeats the last one.
-    setSuccess("");
-    setError("");
+    setSuccess('');
+    setError('');
     openerRef.current = opener;
     setReviewing(bill);
   }
@@ -144,7 +146,7 @@ export function ApprovalsQueue() {
             initialSorting={APPROVALS_DEFAULT_SORT}
             filterable={false}
             rowAction={{
-              label: "Review",
+              label: 'Review',
               render: (row) => (
                 <button
                   type="button"
@@ -153,7 +155,12 @@ export function ApprovalsQueue() {
                   onClick={(event) => openReview(row.bill, event.currentTarget)}
                   className={`inline-flex size-10 items-center justify-center rounded-button text-secondary hover:bg-overlay hover:text-foreground ${colorTransition} ${focusRing}`}
                 >
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="size-5">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    className="size-5"
+                  >
                     <circle cx="12" cy="5" r="1.75" />
                     <circle cx="12" cy="12" r="1.75" />
                     <circle cx="12" cy="19" r="1.75" />
