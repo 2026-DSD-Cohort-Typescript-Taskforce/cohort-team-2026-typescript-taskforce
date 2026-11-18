@@ -15,6 +15,7 @@ import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
 import {
   parsePortalProfiles,
+  preparationSteps,
   selectObserveProfile,
   StagehandBrowser,
 } from '../src/payments/stagehand-browser';
@@ -189,13 +190,28 @@ test('observation rejects a URL absent from operator portal profiles before Chro
   }
 });
 
-test('the shared sign-in profile is valid for observe on any host', async () => {
+test('checked-in portal profiles are pinned to exact vendor URLs', async () => {
   const profiles = parsePortalProfiles(await readFile(join(__dirname, '../profiles.json'), 'utf8'));
-  const profile = selectObserveProfile(profiles, 'https://copper-ridge.example/pay');
+  assert.equal(profiles.length, 9);
+  assert.ok(profiles.every((profile) => profile.portalUrl && profile.vendorId));
+
+  const profile = selectObserveProfile(profiles, 'https://copper-ridge-utility-demo.vercel.app');
   assert.ok(profile);
-  assert.equal(profile.portalUrl, undefined);
+  assert.equal(profile.vendorId, 3);
   assert.equal(profile.capture?.[0]?.selector, "footer a[href='#signin/account']");
-  assert.equal(selectObserveProfile(profiles, 'https://brightwater.example/'), profile);
+  assert.equal(selectObserveProfile(profiles, 'https://unconfigured.example'), undefined);
+});
+
+test('execution prepares login and checkout but leaves the final payment click to submit', async () => {
+  const profiles = parsePortalProfiles(await readFile(join(__dirname, '../profiles.json'), 'utf8'));
+  const profile = selectObserveProfile(profiles, 'https://brightwater-utility-demo.vercel.app');
+  assert.ok(profile);
+
+  assert.deepEqual(preparationSteps(profile, 'observe'), profile.capture);
+  assert.deepEqual(preparationSteps(profile, 'execute'), [...profile.capture!, ...profile.pay!]);
+  assert.ok(
+    !preparationSteps(profile, 'execute').some((step) => step.selector === profile.paySelector),
+  );
 });
 
 test('exact decimal parsing never rounds or accepts ambiguous amounts', () => {

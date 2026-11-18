@@ -37,12 +37,14 @@ const profileSchema = z
 export type PortalProfile = z.infer<typeof profileSchema>;
 export type CaptureStep = z.infer<typeof stepSchema>;
 
-/** The profile for this observe call: an exact portal URL, or the one shared sign-in script. */
+/** Observation is limited to an exact operator-configured portal URL. */
 export function selectObserveProfile(profiles: PortalProfile[], portalUrl: string) {
-  const exact = profiles.find((profile) => profile.portalUrl === portalUrl);
-  if (exact) return exact;
-  const shared = profiles.filter((profile) => profile.portalUrl === undefined);
-  return shared.length === 1 ? shared[0] : undefined;
+  return profiles.find((profile) => profile.portalUrl === portalUrl);
+}
+
+/** Profile-owned steps that prepare a portal without performing the final payment click. */
+export function preparationSteps(profile: PortalProfile, mode: 'observe' | 'execute') {
+  return [...(profile.capture ?? []), ...(mode === 'execute' ? (profile.pay ?? []) : [])];
 }
 
 export function parsePortalProfiles(text: string) {
@@ -161,8 +163,9 @@ export class StagehandBrowser implements PortalBrowser {
       const response = await page.goto(input.portalUrl, { timeout: 30000 });
       guard.check();
       if (!response || response.status() >= 400) throw new Error('Portal failed to load');
-      if (mode === 'observe' && profile.capture?.length) {
-        await runCapture(page, profile.capture);
+      const steps = preparationSteps(profile, mode);
+      if (steps.length) {
+        await runCapture(page, steps);
         guard.check();
       }
 
