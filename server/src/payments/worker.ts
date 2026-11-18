@@ -16,7 +16,7 @@ export interface PortalSession {
     expected: { invoice: string; cents: number },
     markSubmitting: () => Promise<void>,
   ): Promise<void>;
-  confirm(expected: { invoice: string; cents: number }): Promise<void>;
+  confirm(expected: { invoice: string; cents: number }): Promise<string>;
   captureReceipt?(expected: {
     invoice: string;
     cents: number;
@@ -72,8 +72,10 @@ export class BrowserWorker implements StagehandWorker {
         await claim.submitting();
         submissionPossible = true;
       });
-      await session.confirm(expected);
-      const result: ExecuteResponse = { confirmed: true };
+      const result: ExecuteResponse = {
+        confirmed: true,
+        transactionReference: await session.confirm(expected),
+      };
       // Confirmation is durable before any optional screenshot work can fail.
       await claim.confirmed(result);
       if (session.captureReceipt) {
