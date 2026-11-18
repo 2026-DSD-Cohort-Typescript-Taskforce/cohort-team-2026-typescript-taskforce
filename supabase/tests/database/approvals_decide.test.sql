@@ -2,15 +2,16 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(46);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C has no
--- profile. One vendor, property and payment method, and one bill per case (ids 81001+,
+-- profile, D a system admin. One vendor, property and payment method, and one bill per case (ids 81001+,
 -- users 81101+, to stay clear of seeded rows).
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000081a1', 'dc81-a@example.test'),
   ('00000000-0000-4000-8000-0000000081a2', 'dc81-b@example.test'),
-  ('00000000-0000-4000-8000-0000000081a3', 'dc81-c@example.test');
+  ('00000000-0000-4000-8000-0000000081a3', 'dc81-c@example.test'),
+  ('00000000-0000-4000-8000-0000000081a4', 'dc81-d@example.test');
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (81001, 'DC81 Test Vendor', 'vendor-81001@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (81001, 'DC81 Test Property');
@@ -18,14 +19,16 @@ insert into public.payment_methods (payment_method_id, payment_type, name, billi
   values (81001, 'card', 'DC81 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (81101, 'Operator A', 'dc81-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000081a1'),
-  (81102, 'Approver B', 'dc81-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000081a2');
+  (81102, 'Approver B', 'dc81-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000081a2'),
+  (81103, 'Admin D', 'dc81-d@example.test', 'system_admin', '00000000-0000-4000-8000-0000000081a4');
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (81001, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-01', 120.00, current_date + 7),  -- approve, one pending row
   (81002, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-02', 120.00, current_date + 7),  -- needs revision, no approvals row
   (81003, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-03', 120.00, current_date + 7),  -- denied
   (81004, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-04', 120.00, current_date + 7),  -- two pending rows
   (81005, 'draft',            81001, 81001, 81101, 81001, 'DC81-05', 120.00, current_date + 7),  -- not pending approval
-  (81006, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-06', 120.00, current_date + 7);  -- refused calls
+  (81006, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-06', 120.00, current_date + 7),  -- refused calls
+  (81007, 'pending_approval', 81001, 81001, 81101, 81001, 'DC81-07', 120.00, current_date + 7);  -- decided by a system admin
 insert into public.approvals (approval_id, bill_id, submitted_by, status, created_at, notes) values
   (81001, 81001, 81101, 'pending', now() - interval '1 day', 'Submitted for approval'),
   (81004, 81004, 81101, 'pending', now() - interval '2 days', 'older'),
@@ -242,6 +245,13 @@ reset role;
 
 select is((select status::text from public.approvals where approval_id = 81004), 'pending', 'direct update attempts left the older row pending');
 select is((select status::text from public.bills where bill_id = 81006), 'pending_approval', 'the untouched bill is still pending_approval');
+
+-- A system admin can do everything a financial approver can, including deciding bills.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000081a4","role":"authenticated"}';
+select is((select status::text from public.decide_bill(81007, 'approved', null)), 'pending_payment', 'a system admin can approve a bill');
+reset role;
+select is((select approved_by from public.approvals where bill_id = 81007), 81103, 'the admin is recorded as the approver');
 
 select * from finish();
 rollback;
