@@ -201,8 +201,11 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** The model's reading of the PDF, or null when it couldn't read it. */
-async function readInvoice(pdf: Uint8Array, apiKey: string): Promise<Extracted | null> {
+/** The model's reading of the PDF, or why it couldn't read it. */
+async function readInvoice(
+  pdf: Uint8Array,
+  apiKey: string,
+): Promise<{ invoice: Extracted } | { reason: string }> {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     signal: AbortSignal.timeout(120_000),
@@ -239,10 +242,10 @@ async function readInvoice(pdf: Uint8Array, apiKey: string): Promise<Extracted |
     console.error("OpenRouter request failed:", error);
     return null;
   });
-  if (!response) return null;
+  if (!response) return { reason: "The model request failed." };
   if (!response.ok) {
     console.error("OpenRouter answered", response.status, await response.text().catch(() => ""));
-    return null;
+    return { reason: `The model answered HTTP ${response.status}.` };
   }
 
   const body: unknown = await response.json().catch(() => null);
@@ -254,23 +257,24 @@ async function readInvoice(pdf: Uint8Array, apiKey: string): Promise<Extracted |
   const content = choice.success ? choice.data.choices[0].message.content : null;
   if (!content) {
     console.error("OpenRouter returned no content:", body);
-    return null;
+    return { reason: "The model returned no content." };
   }
 
+  // Reasons never quote the reply: it can hold the portal login.
   try {
     const invoice = invoiceSchema.safeParse(JSON.parse(content));
     if (!invoice.success) {
       console.error("The reply did not match the invoice schema:", content);
-      return null;
+      return { reason: "The model's reply did not match the invoice schema." };
     }
     const cleaned: Row = { ...invoice.data };
     for (const [key, value] of Object.entries(cleaned)) {
       if (typeof value === "string") cleaned[key] = blankToNull(value);
     }
-    return cleaned as Extracted;
+    return { invoice: cleaned as Extracted };
   } catch {
     console.error("The model did not return JSON:", content);
-    return null;
+    return { reason: "The model did not return JSON." };
   }
 }
 
@@ -401,8 +405,9 @@ Deno.serve(async (req) => {
   const path = typeof body?.path === "string" ? body.path : "";
   const replaceBillId = Number.isInteger(body?.replaceBillId) ? (body?.replaceBillId as number) : null;
 
+  // x-audit-actor marks this function's writes as the extraction agent's (DC-99).
   const supabase = createClient(supabaseUrl, supabaseAnon, {
-    global: { headers: { Authorization: authHeader } },
+    global: { headers: { Authorization: authHeader, "x-audit-actor": "agent/extraction" } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: auth } = await supabase.auth.getUser();
@@ -417,22 +422,54 @@ Deno.serve(async (req) => {
   const match = new RegExp(`^pending/${profile.user_id}/([0-9a-f]{64})\\.pdf$`).exec(path);
   if (!match) return reply("failed", "Upload the PDF again.", {}, 400);
 
+  // Audit events for this upload (DC-103), tied together by the PDF's SHA-256. A logging
+  // error is only printed: it never fails the upload.
+  const log = async (name: string, description: string, details: Row, billId: number | null = null) => {
+    const { error } = await supabase.rpc("log_event", {
+      p_name: name,
+      p_description: description,
+      p_entity_type: billId ? "bill" : null,
+      p_entity_id: billId,
+      p_details: { pdf_sha256: match[1], ...details },
+    });
+    if (error) console.error(`Logging ${name} failed:`, error);
+  };
+  const fail = async (reason: string, message: string, status: number) => {
+    await log("extraction_failed", `Extraction failed: ${reason}`, { reason });
+    return reply("failed", message, {}, status);
+  };
+  const duplicate = async (outcome: Outcome, message: string, bill: Row, matchedOn: string) => {
+    await log("duplicate_detected", message, { matched_on: matchedOn, outcome }, bill.bill_id);
+    return reply(outcome, message, { bill });
+  };
+  await log("extraction_started", "Extraction started", {});
+
   const { data: file, error: downloadError } = await supabase.storage.from(BUCKET).download(path);
   if (downloadError || !file) {
-    return reply("failed", "Couldn't find the uploaded PDF. Upload it again.", {}, 404);
+    return fail("The uploaded PDF wasn't found.", "Couldn't find the uploaded PDF. Upload it again.", 404);
   }
   const pdf = new Uint8Array(await file.arrayBuffer());
   const sha256 = await sha256Hex(pdf);
-  if (sha256 !== match[1]) return reply("failed", "The uploaded PDF changed. Upload it again.", {}, 400);
+  if (sha256 !== match[1]) {
+    return fail("The PDF doesn't match its upload name.", "The uploaded PDF changed. Upload it again.", 400);
+  }
 
   const { data: sameFile } = await supabase
     .from("bills")
     .select("bill_id, status")
     .eq("pdf_sha256", sha256)
     .maybeSingle();
-  if (sameFile) return reply("duplicate", "This PDF was already uploaded.", { bill: sameFile });
+  if (sameFile) return duplicate("duplicate", "This PDF was already uploaded.", sameFile, "pdf_sha256");
 
-  const extracted = await readInvoice(pdf, apiKey);
+  const read = await readInvoice(pdf, apiKey);
+  const extracted = "invoice" in read ? read.invoice : null;
+  if ("reason" in read) {
+    await log("extraction_failed", `Extraction failed: ${read.reason}`, { model: MODEL, reason: read.reason });
+  } else {
+    // Field names only: the values can include the portal login.
+    const fields = Object.keys(withoutNulls(read.invoice));
+    await log("extraction_succeeded", `Extraction succeeded with ${MODEL}`, { model: MODEL, fields });
+  }
   const vendor = extracted ? await findOrCreateVendor(supabase, extracted) : null;
   const property = extracted ? await findOrCreateProperty(supabase, extracted) : null;
   const fields: Row = {
@@ -458,29 +495,35 @@ Deno.serve(async (req) => {
       .ilike("invoice_number", escapeLike(fields.invoice_number))
       .maybeSingle();
     if (same?.status === "payment_success") {
-      return reply("rejected", "This invoice was already paid. Nothing was saved.", { bill: same });
+      return duplicate("rejected", "This invoice was already paid. Nothing was saved.", same, "invoice_number");
     }
     if (same && IN_FLIGHT.has(same.status)) {
-      return reply("needs_review", "This invoice is already in progress, so its original PDF was kept.", {
-        bill: same,
-      });
+      return duplicate(
+        "needs_review",
+        "This invoice is already in progress, so its original PDF was kept.",
+        same,
+        "invoice_number",
+      );
     }
     if (same && same.bill_id !== replaceBillId) {
-      return reply("confirm_replace", "A draft for this invoice already exists. Replace its PDF?", {
-        bill: same,
-      });
+      return duplicate(
+        "confirm_replace",
+        "A draft for this invoice already exists. Replace its PDF?",
+        same,
+        "invoice_number",
+      );
     }
     if (same) replacing = same.bill_id;
   }
 
-const pdfPath = `bills/${sha256}.pdf`;
-const { error: moveError } = await supabase.storage.from(BUCKET).move(path, pdfPath);
-// Same name means the same bytes: a file left by an earlier attempt is this PDF.
-const alreadyFiled = (moveError as { code?: string } | null)?.code === "KeyAlreadyExists";
-if (moveError && !alreadyFiled) {
-  console.error("Filing the PDF failed:", moveError);
-  return reply("failed", "Couldn't file the PDF. Try again.", {}, 500);
-}
+  const pdfPath = `bills/${sha256}.pdf`;
+  const { error: moveError } = await supabase.storage.from(BUCKET).move(path, pdfPath);
+  // Same name means the same bytes: a file left by an earlier attempt is this PDF.
+  const alreadyFiled = (moveError as { code?: string } | null)?.code === "KeyAlreadyExists";
+  if (moveError && !alreadyFiled) {
+    console.error("Filing the PDF failed:", moveError);
+    return fail("The PDF couldn't be filed.", "Couldn't file the PDF. Try again.", 500);
+  }
 
   const row = { ...fields, pdf_path: pdfPath, pdf_sha256: sha256 };
   const saved = replacing
@@ -497,7 +540,7 @@ if (moveError && !alreadyFiled) {
       .single();
   if (saved.error || !saved.data) {
     console.error("Saving the bill failed:", saved.error);
-    return reply("failed", "Couldn't save the bill. Try again.", {}, 500);
+    return fail("The bill couldn't be saved.", "Couldn't save the bill. Try again.", 500);
   }
   const bill = saved.data;
 
