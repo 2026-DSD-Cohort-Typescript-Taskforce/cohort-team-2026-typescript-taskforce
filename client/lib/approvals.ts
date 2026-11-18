@@ -36,6 +36,10 @@ export const DECISIONS: { value: Decision; label: string; description: string }[
 /** users.role of the people who may decide bills. */
 export const FINANCIAL_APPROVER: Role = 'financial_approver';
 
+/** Mirrors decide_bill()'s role check. */
+export const canDecideBills = (role: string | null | undefined): boolean =>
+  role === FINANCIAL_APPROVER || role === 'system_admin';
+
 /** decide_bill() refuses a longer note (counted as char_length, i.e. code points). */
 export const NOTE_MAX = 500;
 

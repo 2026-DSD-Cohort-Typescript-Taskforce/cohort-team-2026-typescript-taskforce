@@ -5,6 +5,7 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   APPROVALS_DEFAULT_SORT,
   approvalRow,
+  canDecideBills,
   decisionBanner,
   type ApprovalRow,
   type Decision,
@@ -40,7 +41,7 @@ export function ApprovalsQueue() {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
-  /** null while the role loads; false if it isn't financial_approver or didn't load. */
+  /** null while the role loads; false if it can't decide bills or didn't load. */
   const [canDecide, setCanDecide] = useState<boolean | null>(null);
   const [reviewing, setReviewing] = useState<Bill | null>(null);
   const [success, setSuccess] = useState('');
