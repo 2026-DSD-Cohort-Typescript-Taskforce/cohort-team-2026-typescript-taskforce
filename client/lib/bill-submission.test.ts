@@ -103,16 +103,16 @@ test('submitting: the draft is stored, then the bill is submitted for payment', 
   assert.equal(submitted.bill?.bill_id, 41);
 });
 
-test('resubmitting a bill the approver sent back for revision says it went back for approval', () => {
+test('a bill submitted for approval (asked for, or resubmitted after revision) says so', () => {
   const resubmitted = run([
     { type: 'start', action: 'submit' },
     { type: 'stored', bill: draft },
     { type: 'submitted', status: 'pending_approval' },
   ]);
   assert.equal(resubmitted.state, 'submitted');
-  assert.equal(resubmitted.message, 'Bill resubmitted for approval.');
+  assert.equal(resubmitted.message, 'Bill submitted for approval.');
   assert.equal(resubmitted.bill?.status, 'pending_approval');
-  assert.equal(submittedMessage('pending_approval'), 'Bill resubmitted for approval.');
+  assert.equal(submittedMessage('pending_approval'), 'Bill submitted for approval.');
   assert.equal(submittedMessage('pending_payment'), 'Bill submitted for payment.');
 });
 

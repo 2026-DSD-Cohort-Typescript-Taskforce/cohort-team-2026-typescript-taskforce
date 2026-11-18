@@ -1,7 +1,8 @@
 'use client';
 
 // Enter Bill Details, opened by "+ Add a Bill": a bill entered by hand in three steps, the
-// details, an optional bill document, then a review with Save draft or Submit for payment.
+// details, an optional bill document, then a review with Save draft, Submit for approval or
+// Submit for payment.
 // Nothing is saved before step 3. A new vendor or property typed in the form is added
 // first, and the PDF is attached to the saved draft before it's submitted.
 
@@ -72,7 +73,7 @@ export function AddBillForm() {
     setFile(message ? null : picked);
   }
 
-  async function finish(action: 'save' | 'submit') {
+  async function finish(action: 'save' | 'submit' | 'approval') {
     if (!options || submission.busy) return;
     setProblem('');
     const resolved = await resolveChoices(values, options);
@@ -84,7 +85,7 @@ export function AddBillForm() {
     setValues(resolved.values);
     const billValues = toBillValues(resolved.values);
     if (action === 'save') await submission.saveDraft(billValues);
-    else await submission.submit(billValues);
+    else await submission.submit(billValues, action === 'approval');
   }
 
   return (
@@ -176,14 +177,24 @@ export function AddBillForm() {
                 Save draft
               </button>
               {submission.canSubmit && (
-                <button
-                  type="button"
-                  onClick={() => finish('submit')}
-                  disabled={submission.busy}
-                  className={primaryButton}
-                >
-                  Submit for payment
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => finish('approval')}
+                    disabled={submission.busy}
+                    className={secondaryButton}
+                  >
+                    Submit for approval
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => finish('submit')}
+                    disabled={submission.busy}
+                    className={primaryButton}
+                  >
+                    Submit for payment
+                  </button>
+                </>
               )}
             </>
           )}

@@ -102,10 +102,10 @@ export function updateDraftBill(billId: number, input: Partial<BillInput>) {
 }
 
 /** submit_bill() returns the bills row, without the embedded names. */
-export function submitBill(billId: number) {
+export function submitBill(billId: number, needsApproval = false) {
   return call(
     `/api/bills/${billId}/submit`,
-    { method: 'POST' },
+    sendJson('POST', { needsApproval }),
     (body: { bill: { status: string } }) => body.bill.status,
     SUBMIT_FAILED,
   );
