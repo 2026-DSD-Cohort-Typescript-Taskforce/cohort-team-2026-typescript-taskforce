@@ -1,7 +1,8 @@
 'use client';
 
 // The View Bill page's content: one bill's details and status. A draft can be edited
-// here. A complete draft can be submitted for payment after a confirmation; a draft
+// here. A complete draft can be submitted, for payment or for approval first, after a
+// confirmation; a draft
 // that's still missing details offers "Finish this bill" instead, which opens its
 // fix form on the Bills page.
 
@@ -37,6 +38,7 @@ export function BillDetails({ id }: { id: string }) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [needsApproval, setNeedsApproval] = useState(false);
   const [editing, setEditing] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -60,7 +62,11 @@ export function BillDetails({ id }: { id: string }) {
     setError('');
     setSubmitting(true);
     try {
-      const res = await apiFetch(`/api/bills/${bill.bill_id}/submit`, { method: 'POST' });
+      const res = await apiFetch(`/api/bills/${bill.bill_id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ needsApproval }),
+      });
       if (!res) return;
       const body = await res.json().catch(() => null);
       if (res.ok) {
@@ -157,7 +163,7 @@ export function BillDetails({ id }: { id: string }) {
                   onClick={() => dialogRef.current?.showModal()}
                   className={primaryButton}
                 >
-                  Submit for payment
+                  Submit bill
                 </button>
               )}
             </div>
@@ -202,7 +208,7 @@ export function BillDetails({ id }: { id: string }) {
         className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-card border border-strong bg-overlay p-6 text-foreground shadow-l4 backdrop:bg-background/80 sm:p-8"
       >
         <h2 id="submit-title" className="text-subheading">
-          Submit this bill for payment?
+          Submit this bill?
         </h2>
         <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-body">
           {required.map(([label, value]) => (
@@ -214,8 +220,21 @@ export function BillDetails({ id }: { id: string }) {
             </Fragment>
           ))}
         </dl>
-        <p id="submit-warning" className="mt-6 text-body-sm text-secondary">
-          This sends the bill for payment with no approval step. You can&apos;t edit it afterwards.
+        <label className="mt-6 flex items-center gap-3 text-body">
+          <input
+            type="checkbox"
+            checked={needsApproval}
+            onChange={(event) => setNeedsApproval(event.target.checked)}
+            disabled={submitting}
+            className="size-4"
+          />
+          Needs approval before payment
+        </label>
+        <p id="submit-warning" className="mt-4 text-body-sm text-secondary">
+          {needsApproval
+            ? 'This sends the bill to a financial approver first.'
+            : 'This sends the bill for payment with no approval step.'}{' '}
+          You can&apos;t edit it afterwards.
         </p>
         <div className="mt-8 flex flex-col-reverse gap-4 sm:flex-row sm:justify-end">
           <button
