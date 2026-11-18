@@ -10,6 +10,16 @@ import { StagehandBrowser } from '../payments/stagehand-browser';
 
 export function createStagehandRoutes(worker: StagehandWorker, secret: () => string | undefined) {
   const router = Router();
+  const jsonBody = express.json({ limit: '16kb' });
+  const parseJson: RequestHandler = (req, res, next) => {
+    jsonBody(req, res, (error) => {
+      if (error?.type === 'entity.parse.failed') {
+        next(new HttpError(400, 'The request body is not valid JSON.', 'invalid_request'));
+        return;
+      }
+      next(error);
+    });
+  };
   const authenticate: RequestHandler = (req, res, next) => {
     const expected = secret();
     const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -27,7 +37,7 @@ export function createStagehandRoutes(worker: StagehandWorker, secret: () => str
     next();
   };
   for (const path of ['/observe', '/execute'] as const) {
-    router.all(path, authenticate, express.json({ limit: '16kb' }), async (req, res) => {
+    router.all(path, authenticate, parseJson, async (req, res) => {
       if (path === '/observe') {
         const parsed = observeSchema.safeParse(req.body);
         if (!parsed.success)

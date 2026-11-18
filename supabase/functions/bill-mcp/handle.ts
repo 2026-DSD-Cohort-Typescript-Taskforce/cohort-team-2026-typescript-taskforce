@@ -170,6 +170,16 @@ async function readPortal(deps: BillMcpDeps, bill: Bill) {
   return { portalUrl, text: pageText(await response.text()) };
 }
 
+async function workerFailure(response: Response) {
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    if (body.code === 'outcome_unknown') return { error: 'outcome_unknown' as const };
+  } catch {
+    // A non-JSON worker failure stays generic.
+  }
+  return { error: 'worker failed' as const };
+}
+
 async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
   const billId = integer(field(args, 'bill_id', 'billId'));
   if (billId === null) return { error: 'invalid arguments' };
@@ -185,11 +195,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.canRecord) {
     return { error: 'worker not configured' };
   }
-  const suppliedKey = field(args, 'idempotency_key', 'idempotencyKey');
-  const idempotencyKey =
-    typeof suppliedKey === 'string' && suppliedKey.trim() !== ''
-      ? suppliedKey.trim()
-      : `portal-${bill.bill_id}`;
+  const idempotencyKey = `portal-${bill.bill_id}`;
   const portalUrl = portal.portalUrl;
   const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/execute'), {
     method: 'POST',
@@ -206,7 +212,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
       idempotencyKey,
     }),
   });
-  if (!response.ok) return { error: 'worker failed' };
+  if (!response.ok) return workerFailure(response);
   const recorded = await deps.recordPayment({
     billId: bill.bill_id,
     amount: Number(bill.amount),

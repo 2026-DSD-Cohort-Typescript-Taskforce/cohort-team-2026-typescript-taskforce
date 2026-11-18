@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { HttpError } from '../middleware/errorHandler';
 import type { ExecuteRequest, ExecuteResponse } from './payment-contract';
 
 interface RecordData {
   fingerprint: string;
-  state: 'claimed' | 'submitting' | 'confirmed' | 'blocked';
+  state: 'claimed' | 'submitting' | 'confirmed' | 'blocked' | 'retryable';
   result?: ExecuteResponse;
 }
 
@@ -14,7 +14,7 @@ export interface ExecutionClaim {
   replay?: ExecuteResponse;
   submitting(): Promise<void>;
   confirmed(result: ExecuteResponse): Promise<void>;
-  blocked(): Promise<void>;
+  retryable(): Promise<void>;
 }
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -36,6 +36,29 @@ export class ExecutionStore {
         cents,
       ]),
     );
+    const save = async (state: RecordData['state'], result?: ExecuteResponse) => {
+      const file = await open(join(location, 'record.tmp'), 'w', 0o600);
+      try {
+        await file.writeFile(JSON.stringify({ fingerprint, state, result }));
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await rename(join(location, 'record.tmp'), join(location, 'record.json'));
+      await this.syncDirectory(location);
+    };
+    const retryLock = join(location, 'retry-claim');
+    const handle = (releaseRetryLock: boolean): ExecutionClaim => ({
+      submitting: () => save('submitting'),
+      confirmed: (result) => save('confirmed', result),
+      retryable: async () => {
+        await save('retryable');
+        if (releaseRetryLock) {
+          await rmdir(retryLock);
+          await this.syncDirectory(location);
+        }
+      },
+    });
     try {
       await mkdir(location, { mode: 0o700 });
       await this.syncDirectory(this.directory);
@@ -59,8 +82,23 @@ export class ExecutionStore {
           replay: previous.result,
           submitting: async () => {},
           confirmed: async () => {},
-          blocked: async () => {},
+          retryable: async () => {},
         };
+      }
+      if (previous.state === 'retryable') {
+        try {
+          await mkdir(retryLock, { mode: 0o700 });
+          await this.syncDirectory(location);
+        } catch (retryError) {
+          if ((retryError as NodeJS.ErrnoException).code !== 'EEXIST') throw retryError;
+          throw new HttpError(
+            409,
+            'This request is already retrying or needs reconciliation.',
+            'outcome_unknown',
+          );
+        }
+        await save('claimed');
+        return handle(true);
       }
       throw new HttpError(
         409,
@@ -68,24 +106,8 @@ export class ExecutionStore {
         'outcome_unknown',
       );
     }
-
-    const save = async (state: RecordData['state'], result?: ExecuteResponse) => {
-      const file = await open(join(location, 'record.tmp'), 'w', 0o600);
-      try {
-        await file.writeFile(JSON.stringify({ fingerprint, state, result }));
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await rename(join(location, 'record.tmp'), join(location, 'record.json'));
-      await this.syncDirectory(location);
-    };
     await save('claimed');
-    return {
-      submitting: () => save('submitting'),
-      confirmed: (result) => save('confirmed', result),
-      blocked: () => save('blocked'),
-    };
+    return handle(false);
   }
 
   private async syncDirectory(path: string) {
