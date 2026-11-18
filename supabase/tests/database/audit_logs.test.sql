@@ -161,8 +161,13 @@ update public.bills set status = 'pending_approval' where bill_id = 100101;
 insert into public.approvals (approval_id, bill_id, submitted_by, status) values (100101, 100101, 100101, 'pending');
 update public.approvals set status = 'approved', approved_by = 100102 where approval_id = 100101;
 update public.bills set status = 'pending_payment' where bill_id = 100101;
+-- DC-89: payments is written only through the payment functions; its guard trigger refuses
+-- direct writes and every delete. This file tests the audit trigger, not the payment flow,
+-- so it turns the guard off around its direct payments writes (the transaction rolls back).
+alter table public.payments disable trigger payments_guard;
 insert into public.payments (payment_id, bill_id, status) values (100101, 100101, 'pending');
 update public.payments set status = 'success' where payment_id = 100101;
+alter table public.payments enable trigger payments_guard;
 
 set local role authenticated;
 update public.vendors set phone = '555-0101', updated_at = now() + interval '1 second' where vendor_id = 100101;
@@ -174,7 +179,9 @@ update public.policies set is_active = false where policy_id = 100101;
 update public.payment_methods set name = 'DC101 Card 2' where payment_method_id = 100101;
 update public.cards set cvc = '654' where payment_method_id = 100101;
 update public.bank_accounts set account_number = '000999888777' where payment_method_id = 100102;
+alter table public.payments disable trigger payments_guard;
 delete from public.payments where payment_id = 100101;
+alter table public.payments enable trigger payments_guard;
 delete from public.approvals where approval_id = 100101;
 delete from public.bills where bill_id = 100101;
 delete from public.policies where policy_id = 100101;
