@@ -55,15 +55,16 @@ export class StagehandBrowser implements PortalBrowser {
     mode: 'observe' | 'execute',
     pinnedProfile?: PortalProfile,
   ): Promise<PortalSession> {
-    const profile = mode === 'execute' ? pinnedProfile : undefined;
-    if (mode === 'execute' && !profile)
-      throw new HttpError(503, 'Execution profile was not validated.', 'portal_error');
+    const profile = mode === 'execute' ? pinnedProfile : await this.profile(input);
+    if (!profile) throw new HttpError(503, 'Execution profile was not validated.', 'portal_error');
     const { localBrowser, Stagehand } = await import('@browserbasehq/stagehand');
     // New temporary Chrome profile per request. No shared login/session state.
     const browser = await localBrowser.launch({ headless: true });
     let guard: Awaited<ReturnType<typeof guardNavigation>> | undefined;
     let stagehand: Awaited<ReturnType<typeof Stagehand.create>> | undefined;
     try {
+      // Stagehand v4 must attach before browser.context is available, even though
+      // payment actions below deliberately use deterministic browser APIs.
       stagehand = await Stagehand.create({
         browser,
         model: {
@@ -76,7 +77,10 @@ export class StagehandBrowser implements PortalBrowser {
       if (!browser.cdpUrl) throw new Error('Browser has no local CDP endpoint');
       guard = await guardNavigation(
         browser.cdpUrl,
-        [input.portalUrl, ...(profile?.confirmationUrl ? [profile.confirmationUrl] : [])],
+        [
+          input.portalUrl,
+          ...(mode === 'execute' && profile.confirmationUrl ? [profile.confirmationUrl] : []),
+        ],
         mode === 'observe',
       );
       const [page] = await browser.context.pages();

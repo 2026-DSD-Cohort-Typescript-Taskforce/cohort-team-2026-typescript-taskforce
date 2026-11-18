@@ -120,6 +120,19 @@ test('HTTP routes enforce bearer authentication and strict request bodies', asyn
       ])
         assert.equal((await post('/observe', body)).status, 400);
       assert.equal((await post('/execute', { ...request, steps: ['pay'] })).status, 400);
+      const malformed = await fetch(url + '/observe', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer shared-secret',
+        },
+        body: '{',
+      });
+      assert.equal(malformed.status, 400);
+      assert.deepEqual(await malformed.json(), {
+        error: 'The request body is not valid JSON.',
+        code: 'invalid_request',
+      });
       assert.equal(f.calls.opened, 0);
       const observed = await post('/observe', { billId: 7, portalUrl: request.portalUrl });
       assert.equal(observed.status, 200);
@@ -140,6 +153,37 @@ test('HTTP routes enforce bearer authentication and strict request bodies', asyn
   });
 });
 
+test('observation rejects a URL absent from operator portal profiles before Chrome opens', async () => {
+  const path = await mkdtemp(join(tmpdir(), 'stagehand-profile-test-'));
+  try {
+    const profiles = join(path, 'profiles.json');
+    await writeFile(
+      profiles,
+      JSON.stringify([
+        {
+          portalUrl: request.portalUrl,
+          vendorId: 9,
+          amountUnit: 'dollars',
+          invoiceSelector: '#invoice',
+          totalSelector: '#total',
+          paySelector: '#pay',
+          confirmationSelector: '#confirmed',
+          confirmationInvoiceSelector: '#receipt-invoice',
+          confirmationTotalSelector: '#receipt-total',
+          confirmationReferenceSelector: '#reference',
+        },
+      ]),
+    );
+    const browser = new StagehandBrowser(profiles);
+    await assert.rejects(
+      browser.open({ billId: 7, portalUrl: 'http://127.0.0.1:3000/internal' }, 'observe'),
+      { status: 422, code: 'invalid_request' },
+    );
+  } finally {
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
 test('exact decimal parsing never rounds or accepts ambiguous amounts', () => {
   assert.equal(dollarsToCents('$1,234.50'), 123450);
   assert.equal(dollarsToCents('USD 0.01'), 1);
@@ -158,6 +202,37 @@ test('mismatching invoice or total never submits', async () => {
       assert.equal(f.calls.closed, 1);
     });
   }
+});
+
+test('a known pre-submission failure permits the same request to retry safely', async () => {
+  await withWorker(async (worker, _path, f) => {
+    const originalReview = f.session.review;
+    let attempts = 0;
+    f.session.review = async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('portal was not ready');
+      return originalReview();
+    };
+
+    await assert.rejects(worker.execute(request), { code: 'portal_error' });
+    assert.equal(f.calls.submitted, 0);
+    assert.deepEqual(await worker.execute(request), { confirmed: true });
+    assert.equal(f.calls.submitted, 1);
+  });
+});
+
+test('concurrent retries after a known pre-submission failure still submit once', async () => {
+  await withWorker(async (worker, _path, f) => {
+    f.session.review = async () => {
+      throw new Error('portal was not ready');
+    };
+    await assert.rejects(worker.execute(request), { code: 'portal_error' });
+    f.session.review = async () => f.review;
+
+    const results = await Promise.allSettled([worker.execute(request), worker.execute(request)]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(f.calls.submitted, 1);
+  });
 });
 
 test('concurrent requests with one key submit once; confirmed result survives restart', async () => {

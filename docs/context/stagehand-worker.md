@@ -12,9 +12,9 @@ The existing Express app exposes POST `/observe` and `/execute` for bill-mcp. `c
 
 `StagehandBrowser` uses installed Stagehand 4.4.0 and local Chrome through dynamic import in this CommonJS server. It attaches a Stagehand client but disables model-driven actions. Deterministic selectors are server configuration, never request fields. Each browser has a fresh temporary profile; authenticated portals requiring login/MFA need a portal-specific extension. Do not enable an arbitrary live portal with untested selectors.
 
-`navigation-guard.ts` intercepts Chrome document requests, including redirects and new pages, before network navigation. Observation permits only its supplied URL and blocks mutation HTTP methods. Execution additionally permits an explicitly configured confirmation URL. Network assets may load; the worker never generates a destination or follows model-provided steps.
+`navigation-guard.ts` intercepts Chrome document requests, including redirects and new pages, before network navigation. Observation first requires an exact URL match in the operator-owned portal profiles, then permits only that URL and blocks mutation HTTP methods. Execution additionally permits an explicitly configured confirmation URL. Network assets may load; the worker never generates a destination or follows model-provided steps.
 
-`ExecutionStore` uses exclusive hashed-key directories and atomically renamed, fsynced records. A matching confirmed key replays confirmation without opening Chrome. Conflicting payloads, in-progress keys, incomplete records, and ambiguous submissions fail closed. A failed/preparation key is not automatically reused. Keep the state directory on a durable local filesystem shared by every server process; this is not a distributed multi-host lock. Do not delete state or use a new key to bypass reconciliation. bill-mcp remains responsible for bill-level authorization and avoiding another payment with a different key.
+`ExecutionStore` uses exclusive hashed-key directories and atomically renamed, fsynced records. A matching confirmed key replays confirmation without opening Chrome. A failure before submission intent is explicitly retryable with the same request and key; an exclusive retry claim prevents concurrent retries from submitting twice. Conflicting payloads, in-progress keys, incomplete records, and any failure after submission intent remain `outcome_unknown` and fail closed. Keep the state directory on a durable local filesystem shared by every server process; this is not a distributed multi-host lock. Do not delete state or use a new key to bypass reconciliation. bill-mcp remains responsible for bill-level authorization and avoiding another payment with a different key.
 
 ### Configuration
 
@@ -43,7 +43,7 @@ Example profile for a synthetic portal (replace every URL, vendor ID, and select
 
 ### Checks and limitations
 
-Run server build, typecheck, lint, and `npm --prefix server test`. Auth tests require local Supabase and seeded users. The real-browser test is opt-in: from `server/`, run `STAGEHAND_BROWSER_TEST=1 node --import tsx --test test/stagehand-browser.test.ts`. It launches Chrome against temporary local fixtures, not a live vendor. Regular tests exercise HTTP authorization, strict bodies, mismatches, concurrency, durable replay, unknown outcomes, and confirmation ordering.
+Run server build, typecheck, lint, and `npm --prefix server test`. Auth tests require local Supabase and seeded users. The real-browser test is opt-in: from `server/`, run `STAGEHAND_BROWSER_TEST=1 node --import tsx --test test/stagehand-browser.test.ts`. It launches Chrome against temporary local fixtures, not a live vendor. Regular tests exercise HTTP authorization, strict bodies and malformed JSON, configured observation URLs, safe retry concurrency, mismatches, durable replay, unknown outcomes, and confirmation ordering.
 
 The real demo portal, its authentication flow, and bill-mcp's final amount convention remain unverified. The worker cannot independently prove the caller read a URL from the database; the shared secret authenticates that trust boundary. Keep portal configuration and state private, and do not expose these endpoints or browser session material to the client. No live payment has been attempted.
 
@@ -51,6 +51,7 @@ The real demo portal, its authentication flow, and bill-mcp's final amount conve
 
 - 2026-11-15 · run e30488e3: Stagehand v4's browser handle needs an attached Stagehand client before page access; deterministic browser APIs do not require giving an LLM permission to pay.
 - 2026-11-15 · run e30488e3: Persist an exclusive key claim and submission intent before clicking. An ambiguous outcome must remain blocked across process restarts.
+- 2026-11-17 · run 05303049: Validate observation destinations before Chrome starts. Persist known pre-submission failures as retryable, but claim each retry exclusively and never reopen an uncertain post-intent execution.
 
 ## History
 

@@ -22,3 +22,9 @@
   No new run or gate bypass was attempted. Product checks continue independently.
 - Repository-wide format check flags existing local CYC files plus paymentMethods.ts and the
   payment contract ADR. No unrelated formatting was changed.
+
+## 2026-11-17 — DC-95 review fixes
+
+- PR review showed that observation bypassed the execution profile lookup, so an authenticated caller could open an arbitrary HTTP(S) destination. Observation now requires an exact operator-profile URL before Chrome launches; the regression rejects an unconfigured loopback URL.
+- Pre-submission failures were persisted as permanently blocked even though Pay could not have been clicked. The journal now records them as retryable and uses an exclusive retry claim; concurrent retry coverage proves one submission, while post-intent failures remain `outcome_unknown`.
+- Route-local JSON parsing previously fell through to the generic Express error shape. The Stagehand parser now returns `code: invalid_request` without changing other app routes.

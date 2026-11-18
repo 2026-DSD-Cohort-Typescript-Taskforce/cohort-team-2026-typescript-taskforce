@@ -71,7 +71,7 @@ export class BrowserWorker implements StagehandWorker {
           'outcome_unknown',
         );
       }
-      await claim.blocked();
+      await claim.retryable();
       if (error instanceof HttpError) throw error;
       const failure = new HttpError(502, 'Portal could not prepare the payment.', 'portal_error');
       failure.cause = error;
