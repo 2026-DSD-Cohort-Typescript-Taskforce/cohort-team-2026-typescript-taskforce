@@ -559,14 +559,17 @@ grant execute on function public.cancel_payment(integer, text) to authenticated;
 --   code   HTTP  message                details
 --   PT404  404   not_found              null (no such payment, or NULL)
 --   PT409  409   not_authorized         the status, unless authorized
---   PT409  409   authorization_expired  null (the 15 minutes are over)
+--   PT409  409   authorization_expired  null (the 15 minutes are over, by the wall clock read
+--                                       after both locks are held)
 --   PT403  403   forbidden              null (the authorizer is no longer a billing_operator,
 --                                       financial_approver or system_admin)
 --   PT409  409   not_payable            the bill's status, unless pending_payment or payment_failed
 --   PT409  409   summary_stale          JSON array of the bill fields that no longer match the
 --                                       attempt, in this order: amount_cents, vendor_id,
 --                                       payment_method_id, invoice_number
--- Success: the attempt is processing with submitted_at set, and the bill is processing.
+-- Success: the attempt is processing with submitted_at set to that same wall-clock time, and
+-- the bill is processing. The check can't use now(): it is frozen at the start of the
+-- transaction, so a claim that waited for a lock would still see an expired yes as valid.
 --
 -- record_payment(p_payment_id, p_outcome, p_outcome_code, p_transaction_reference, p_message)
 -- error contract, in this order:
@@ -599,6 +602,7 @@ declare
   v_role text;
   v_bad text[];
   v_row public.payments;
+  v_claimed_at timestamptz;
 begin
   -- Lock the bill first, then the attempt, as prepare_payment does (no deadlock when they race).
   select bill_id into v_bill_id from public.payments where payment_id = p_payment_id;
@@ -607,11 +611,13 @@ begin
   end if;
   select * into v_bill from public.bills where bill_id = v_bill_id for update;
   select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  -- Read the clock only now that both locks are held (now() is the transaction's start).
+  v_claimed_at := clock_timestamp();
 
   if v_payment.status <> 'authorized' then
     raise sqlstate 'PT409' using message = 'not_authorized', detail = v_payment.status;
   end if;
-  if now() >= v_payment.authorization_expires_at then
+  if v_claimed_at >= v_payment.authorization_expires_at then
     raise sqlstate 'PT409' using message = 'authorization_expired';
   end if;
 
@@ -637,7 +643,7 @@ begin
   perform set_config('app.payments_write', 'on', true);
 
   update public.payments
-    set status = 'processing', submitted_at = now()
+    set status = 'processing', submitted_at = v_claimed_at
     where payment_id = v_payment.payment_id
     returning * into v_row;
 

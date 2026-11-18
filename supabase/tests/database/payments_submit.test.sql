@@ -3,7 +3,7 @@
 -- `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(106);
+select plan(109);
 
 -- Setup (as postgres, marker on): vendor, property, two payment methods, operator and a second
 -- authorizer, and one bill per case.
@@ -22,23 +22,24 @@ insert into public.users (user_id, name, email, role, auth_user_id) values
   (89122, 'Approver', 'dc89-c2@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000089c2');
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
 select g, 'pending_payment', 89001, 89001, 89121, 89001, 'DC89-' || g, 120.00, current_date + 7
-from generate_series(89001, 89015) g;
+from generate_series(89001, 89017) g where g <> 89016;
 -- An incomplete legacy processing row (bill 89016, processing): prepared_by and the whole summary NULL.
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
   values (89016, 'processing', 89001, 89001, 89121, 89001, 'DC89-89016', 120.00, current_date + 7);
 insert into public.payments (bill_id, status, submitted_at) values (89016, 'processing', now());
 reset app.payments_write;
 
--- Prepare every attempt as the trusted service. Bill 89003 is prepared twice, so its first
--- attempt is superseded (expired). Bill 89002 keeps its pending attempt.
+-- Prepare every attempt as the trusted service (bill 89016 is the legacy row). Bill 89003 is
+-- prepared twice, so its first attempt is superseded (expired). Bill 89002 keeps its pending
+-- attempt.
 set local role service_role;
 set local request.jwt.claims = '{"role":"service_role"}';
 select public.prepare_payment(g, 89121, 0, current_date, case when g = 89011 then 'ACC-SECRET' end)
-  from generate_series(89001, 89015) g;
+  from generate_series(89001, 89017) g where g <> 89016;
 reset role;
 
 create temp table pay as
-select bill_id, payment_id from public.payments where bill_id between 89001 and 89015;
+select bill_id, payment_id from public.payments where bill_id between 89001 and 89017 and bill_id <> 89016;
 grant select on pay to authenticated, anon, service_role;
 
 set local role service_role;
@@ -51,7 +52,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000089c1","role":"authenticated"}';
 select public.authorize_payment(payment_id, public.payment_summary(p))
   from public.payments p
-  where bill_id in (89001, 89004, 89005, 89007, 89008, 89009, 89010, 89011, 89012, 89013, 89014, 89015)
+  where bill_id in (89001, 89004, 89005, 89007, 89008, 89009, 89010, 89011, 89012, 89013, 89014, 89015, 89017)
     and status = 'pending';
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000089c2","role":"authenticated"}';
 select public.authorize_payment(payment_id, public.payment_summary(p))
@@ -61,7 +62,9 @@ reset role;
 -- Deliberate bypass of the guard (as postgres, marker on) to build edge states, then reset.
 set local app.payments_write = 'on';
 update public.payments set authorization_expires_at = now() where bill_id = 89004;
-update public.payments set authorization_expires_at = now() + interval '1 second' where bill_id = 89005;
+update public.payments set authorization_expires_at = now() + interval '1 minute' where bill_id = 89005;
+-- Bill 89017 expires 200 ms from now on the wall clock, after this transaction began.
+update public.payments set authorization_expires_at = clock_timestamp() + interval '200 milliseconds' where bill_id = 89017;
 reset app.payments_write;
 update public.users set role = 'viewer' where user_id = 89122;
 update public.bills set amount = 121.00 where bill_id = 89007;
@@ -161,14 +164,20 @@ select is(pg_temp.start_error(pg_temp.pid(89006)), ARRAY['PT403', 'forbidden', n
 select is(pg_temp.start_error(pg_temp.pid(89007)), ARRAY['PT409', 'summary_stale', '["amount_cents"]'], 'bill amount changed: summary_stale');
 select is(pg_temp.start_error(pg_temp.pid(89008)), ARRAY['PT409', 'summary_stale', '["payment_method_id","invoice_number"]'], 'bill method and invoice changed: summary_stale in order');
 select is(pg_temp.start_error(pg_temp.pid(89009)), ARRAY['PT409', 'not_payable', 'approval_denied'], 'bill no longer payable: not_payable');
+-- now() stays at the transaction's start. A claim that began before the expiry but reaches the
+-- check after it (e.g. after waiting for the bill lock) must still be refused. Bill 89017.
+select pg_sleep(0.3);
+select ok(now() < (select authorization_expires_at from public.payments where bill_id = 89017), 'bill 89017: the transaction began before the authorization expired');
+select is(pg_temp.start_error(pg_temp.pid(89017)), ARRAY['PT409', 'authorization_expired', null], 'authorization that ran out after the transaction began is expired');
 select is((select status from public.payments where bill_id = 89004), 'authorized', 'a refused claim leaves the attempt authorized');
 select is((select status from public.bills where bill_id = 89007), 'pending_payment', 'a refused claim leaves the bill alone');
 
 -- start_payment_submission: success
-select is(pg_temp.start_error(pg_temp.pid(89005)), null, 'authorization expiring in one second still starts');
+select is(pg_temp.start_error(pg_temp.pid(89005)), null, 'authorization expiring in a minute still starts');
 select is(pg_temp.start_error(pg_temp.pid(89001)), null, 'an authorized attempt starts');
 select is((select status from public.payments where bill_id = 89001), 'processing', 'attempt is processing');
 select isnt((select submitted_at from public.payments where bill_id = 89001), null, 'submitted_at is set');
+select ok((select submitted_at from public.payments where bill_id = 89001) > now(), 'submitted_at is the claim time, not the transaction start');
 select is((select status from public.bills where bill_id = 89001), 'processing', 'bill is processing');
 select is((select updated_at from public.bills where bill_id = 89001), now(), 'bill updated_at moved');
 select is(

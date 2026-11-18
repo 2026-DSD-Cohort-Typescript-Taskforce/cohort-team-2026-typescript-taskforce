@@ -4,25 +4,42 @@
 //
 //   cd server && npx tsx --test test/payments-concurrency.test.ts
 //
-// Needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY and SEED_USER_PASSWORD.
+// Needs SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, SEED_USER_PASSWORD and
+// SUPABASE_DB_URL ("DB URL" in `supabase status`), plus `psql` on the PATH: the lock-wait test
+// holds a bill lock from its own database session.
 // Each test inserts fresh bills and payment attempts. Payments can't be deleted, so the rows
 // stay in the local DB; `supabase db reset` clears them.
 import 'dotenv/config';
 import assert from 'node:assert/strict';
+import { execFile, spawn } from 'node:child_process';
 import { before, describe, it } from 'node:test';
+import { promisify } from 'node:util';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, SEED_USER_PASSWORD } =
-  process.env;
+const {
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_SECRET_KEY,
+  SEED_USER_PASSWORD,
+  SUPABASE_DB_URL,
+} = process.env;
 const TEST_USER_EMAIL = process.env.TEST_USER_EMAIL ?? 'alex.morgan@example.com';
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SUPABASE_SECRET_KEY || !SEED_USER_PASSWORD) {
+if (
+  !SUPABASE_URL ||
+  !SUPABASE_PUBLISHABLE_KEY ||
+  !SUPABASE_SECRET_KEY ||
+  !SEED_USER_PASSWORD ||
+  !SUPABASE_DB_URL
+) {
   throw new Error(
-    'Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY and SEED_USER_PASSWORD.',
+    'Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, SEED_USER_PASSWORD and SUPABASE_DB_URL.',
   );
 }
-if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(SUPABASE_URL).hostname)) {
+const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
+if (![SUPABASE_URL, SUPABASE_DB_URL].every((url) => LOCAL_HOSTS.includes(new URL(url).hostname))) {
   throw new Error('Refusing to run payment tests against a non-local Supabase.');
 }
+const PSQL_ARGS = [SUPABASE_DB_URL, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'];
 
 const NON_VIEWER_ROLES = ['billing_operator', 'financial_approver', 'system_admin'];
 const OPEN_STATUSES = ['pending', 'authorized', 'processing', 'unknown'];
@@ -257,9 +274,99 @@ describe('payment functions under concurrency', () => {
       assert.ok(open.length <= 1, `bill ${billId} has ${open.length} open attempts`);
     }
   });
+
+  // now() is frozen when a transaction starts. A claim that starts before the authorization
+  // expires, then waits for the bill lock until after it, must still be refused.
+  it('a claim that waits for the bill lock past the expiry is refused', async () => {
+    const billId = await newBill();
+    const { payment_id } = await authorizedAttempt(billId);
+    // Test-only shortcut (marker on, as the local superuser): expire in 3 s, not 15 min.
+    await psql(
+      "select set_config('app.payments_write', 'on', false)",
+      `update public.payments set authorization_expires_at = clock_timestamp() + interval '3 seconds'
+        where payment_id = ${payment_id}`,
+    );
+
+    const lock = await holdBillLock(billId);
+    const claim = Promise.resolve(
+      rpc(service, 'start_payment_submission', { p_payment_id: payment_id }),
+    );
+    // The claim's transaction is waiting on the lock, and it began before the expiry.
+    const margin = await waitForRow(
+      `select extract(epoch from p.authorization_expires_at - a.xact_start)
+         from pg_stat_activity a, public.payments p
+        where p.payment_id = ${payment_id} and ${lock.pid} = any(pg_blocking_pids(a.pid))`,
+      'the claim to wait for the bill lock',
+    );
+    assert.ok(Number(margin) > 0, `the claim began ${margin} s before the expiry`);
+    await waitForRow(
+      `select 1 from public.payments
+        where payment_id = ${payment_id} and clock_timestamp() > authorization_expires_at`,
+      'the authorization to expire',
+    );
+    await lock.release();
+
+    const { error } = await claim;
+    assert.equal(error?.code, 'PT409', JSON.stringify(error));
+    assert.equal(error?.message, 'authorization_expired');
+    const [row] = await attempts(billId);
+    assert.equal(row.status, 'authorized');
+    assert.equal(await billStatus(billId), 'pending_payment');
+  });
 });
 
 async function authorizedAttempt(billId: number): Promise<Payment> {
   const attempt = await prepared(billId);
   return authorize(attempt.payment_id);
+}
+
+// Runs SQL as the local superuser in one psql session; returns the output lines.
+async function psql(...commands: string[]): Promise<string[]> {
+  const { stdout } = await promisify(execFile)('psql', [
+    ...PSQL_ARGS,
+    ...commands.flatMap((command) => ['-c', command]),
+  ]);
+  return stdout.trim().split('\n').filter(Boolean);
+}
+
+// Polls until the query returns a row; returns its first line.
+async function waitForRow(query: string, what: string, timeoutMs = 5000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const [line] = await psql(query);
+    if (line) return line;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+// Locks the bill row in a separate psql session and keeps the transaction open until release().
+async function holdBillLock(
+  billId: number,
+): Promise<{ pid: number; release: () => Promise<void> }> {
+  const child = spawn('psql', PSQL_ARGS, { stdio: ['pipe', 'pipe', 'inherit'] });
+  const exited = new Promise<number | null>((resolve, reject) => {
+    child.on('error', reject);
+    child.on('exit', resolve);
+  });
+  const firstLine = new Promise<string>((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+      if (out.includes('\n')) resolve(out.split('\n')[0]);
+    });
+    exited.then((code) => reject(new Error(`psql exited with ${code}`)), reject);
+  });
+  child.stdin.write(
+    `begin;\nselect pg_backend_pid() from public.bills where bill_id = ${billId} for update;\n`,
+  );
+  const pid = Number(await firstLine);
+  assert.ok(pid > 0, 'the lock session reports its backend pid');
+  return {
+    pid,
+    release: async () => {
+      child.stdin.end('rollback;\n');
+      assert.equal(await exited, 0);
+    },
+  };
 }
