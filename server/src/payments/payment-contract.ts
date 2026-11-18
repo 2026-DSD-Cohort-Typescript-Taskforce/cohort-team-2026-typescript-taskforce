@@ -1,5 +1,5 @@
 /**
- * DC-25 handoff proposal; no HTTP or browser implementation is included.
+ * DC-25 handoff contract implemented by the DC-95 Express browser worker.
  * See docs/adr/0002-payment-execution-contract.md.
  * Runtime schemas must reject unexpected fields, including steps and selectors.
  * Both endpoints require Authorization: Bearer <STAGEHAND_SECRET>.
@@ -26,11 +26,26 @@ export interface ObserveResponse {
 }
 
 /** Only return with HTTP 2xx after portal payment confirmation. */
+export type ReceiptArtifact = {
+  pngBase64: string;
+  sha256: string;
+  reference: string;
+};
+export type PaymentReceipt =
+  | ({
+      status: 'captured';
+      billId: number;
+      vendorId: number;
+      invoiceNumber: string;
+      amountMinor: number;
+    } & ReceiptArtifact)
+  | { status: 'failed' };
 export interface ExecuteResponse {
   confirmed: true;
+  receipt?: PaymentReceipt;
 }
 
-/** Proposed non-2xx response JSON; these are not database statuses. */
+/** Non-2xx response JSON; these codes are not database statuses. */
 export interface WorkerErrorResponse {
   code:
     | 'unauthorized'
@@ -40,7 +55,7 @@ export interface WorkerErrorResponse {
     | 'execution_in_progress'
     | 'outcome_unknown'
     | 'portal_error';
-  message: string;
+  error: string;
 }
 
 /**
@@ -58,4 +73,5 @@ export interface StagehandWorker {
    * portal confirmation. HTTP handlers return non-2xx for errors or ambiguity.
    */
   execute(input: ExecuteRequest): Promise<ExecuteResponse>;
+  receipt?(billId: number, idempotencyKey: string): Promise<PaymentReceipt | undefined>;
 }
