@@ -1,0 +1,14 @@
+[
+  {
+    "portalUrl": "http://localhost:3002/demo/payments",
+    "vendorId": 9,
+    "amountUnit": "dollars",
+    "invoiceSelector": "#invoice-number",
+    "totalSelector": "#payment-total",
+    "paySelector": "#pay-button",
+    "confirmationSelector": "#payment-success",
+    "confirmationInvoiceSelector": "#receipt-invoice",
+    "confirmationTotalSelector": "#receipt-total",
+    "confirmationReferenceSelector": "#transaction-reference"
+  }
+]

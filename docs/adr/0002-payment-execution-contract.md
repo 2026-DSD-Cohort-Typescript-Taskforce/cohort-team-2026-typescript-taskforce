@@ -10,9 +10,9 @@ bill-mcp is the only authorized caller. Both endpoints require `Authorization: B
 
 ## Endpoints
 
-| Endpoint | JSON request | Behavior |
-| --- | --- | --- |
-| `POST /observe` | `{ billId, portalUrl }` | Open only the supplied portal URL and return page text. Do not click pay or open any other URL. |
+| Endpoint        | JSON request                                                             | Behavior                                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /observe` | `{ billId, portalUrl }`                                                  | Open only the supplied portal URL and return page text. Do not click pay or open any other URL.                                                                                                             |
 | `POST /execute` | `{ billId, portalUrl, amount, vendorId, invoiceNumber, idempotencyKey }` | Open the supplied portal URL. Submit only when the page total equals `amount` and the invoice equals `invoiceNumber`. Return non-2xx on mismatch without paying; return 2xx only after portal confirmation. |
 
 bill-mcp resolves `portalUrl` from `vendors.payment_portal_url`. The worker accepts no model-provided URLs, browser instructions, or selectors. Reject unexpected request fields at runtime; TypeScript interfaces alone do not validate requests. The shared secret authenticates the trusted caller; it does not independently prove a URL's database origin.
@@ -33,8 +33,8 @@ Joe owns browser execution and confirmation. He does not approve bills, call `de
 
 ## Boundaries and remaining decisions
 
-This pass adds no runtime implementation, Next.js route, package installation, change to `extract-invoices`, browser in a Supabase edge function, or second approval path. A separate `worker/` process or Browserbase can be considered later; the current target is the existing Express server.
+The DC-25 pass defines the contract. DC-95 implements it in the existing Express server, including the separately authorized Stagehand package installation. Neither pass adds a Next.js route, change to `extract-invoices`, browser in a Supabase edge function, second approval path, or database migration. A separate `worker/` process or Browserbase can be considered later.
 
-Before DC-95 implementation, confirm the demo portal and synthetic credentials, the unit/currency of `amount`, exact response JSON, and durable idempotency storage outside payment-table ownership. The handoff does not settle these details. SDK setup must match the available Stagehand version; `env: "LOCAL"` is version-dependent.
+DC-95 uses operator-owned portal profiles to explicitly configure the URL, vendor, amount unit (dollars or cents), and verified selectors. Execution fails closed without a matching profile. It returns `{ confirmed: true }` only after confirmation, and observation returns `{ pageText }`. Idempotency records live in a durable local directory shared by server processes, outside the payments table. Confirm the real demo portal, credentials, and amount convention with bill-mcp before enabling it. The installed Stagehand v4 uses `localBrowser.launch()` rather than the older `env: "LOCAL"` setup.
 
 The [TypeScript contract](../../server/src/payments/payment-contract.ts) records request shapes and proposed response types. DC-95 implements and tests authentication, observation without navigation/payment, mismatch rejection, duplicate prevention, confirmed success, and ambiguous submission recovery. bill-mcp integration tests cover its preconditions, `record_payment` ordering, and the unset-URL case.

@@ -18,6 +18,8 @@ temp/
 dist/
 client/dist/
 server/dist/
+server/.stagehand-state/
+server/.stagehand-portals.json
 
 # Logs
 *.log
