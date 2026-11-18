@@ -54,7 +54,8 @@ Deno.serve(async (req) => {
         const client = as === 'user' ? supabase : admin;
         if (!client) return { data: null, error: { message: 'worker not configured' } };
         const { data, error } = await client.rpc(name, args);
-        return { data, error };
+        // The code tells a function's refusal (PT409 …) from a lost reply (''), which may be retried.
+        return { data, error: error && { message: error.message, details: error.details, code: error.code } };
       },
       receiptPayment: async (billId, paymentId) => {
         const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });

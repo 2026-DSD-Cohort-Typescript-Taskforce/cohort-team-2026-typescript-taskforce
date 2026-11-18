@@ -14,7 +14,8 @@ export type PaymentInput = {
 
 // The DC-89 payment functions bill-mcp calls (supabase/migrations/20261117200000_payment_attempts.sql).
 export type RpcName = 'prepare_payment' | 'authorize_payment' | 'cancel_payment' | 'start_payment_submission' | 'record_payment';
-export type RpcReply = { data: unknown; error: { message: string; details?: string | null } | null };
+// error.code is the Postgres error code; a reply that never arrived (or a throw) has none.
+export type RpcReply = { data: unknown; error: { message: string; details?: string | null; code?: string | null } | null };
 
 export type BillMcpDeps = {
   mcpToken: string | undefined;
@@ -30,6 +31,10 @@ export type BillMcpDeps = {
   // 'service' runs as service_role; 'user' runs as the signed-in caller.
   rpc: (name: RpcName, args: Record<string, unknown>, as: 'service' | 'user') => Promise<RpcReply>;
   executeTimeoutMs?: number;
+  // The clock, the payment's time budget and the wait between record_payment tries; tests replace them.
+  now?: () => number;
+  deadlineMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 type Bill = {
@@ -62,6 +67,16 @@ type Outcome = {
 };
 
 const PAYABLE_STATUSES = ['pending_payment', 'payment_failed'];
+
+// One execute_approved_payment call's budget, set when it starts. It ends before the trigger
+// route's 140 s abort and Supabase's 150 s limit, so a claimed attempt is still recorded.
+const PAYMENT_DEADLINE_MS = 125_000;
+const OBSERVE_TIMEOUT_MS = 30_000;
+const EXECUTE_TIMEOUT_MS = 100_000;
+// With less than this left, prepare_payment is not called: /execute and record_payment might not fit.
+const PREPARE_MIN_LEFT_MS = 70_000;
+// The waits before the second and third record_payment tries.
+const RECORD_RETRY_DELAYS_MS = [250, 1_000];
 
 // authorize_payment's summary keys, as payment_summary() in the DC-89 migration builds them.
 const SUMMARY_KEYS = ['bill_id', 'vendor_id', 'invoice_number', 'account_reference', 'payment_method_id',
@@ -149,11 +164,34 @@ async function appGet(deps: BillMcpDeps, userAuth: string, path: string) {
   return response.json();
 }
 
-async function loadBill(deps: BillMcpDeps, userAuth: string, billId: number) { 
+async function loadBill(deps: BillMcpDeps, userAuth: string, billId: number) {
   const loaded: { bill?: Bill; error?: number } = await appGet(deps, userAuth, `/api/bills/${billId}`);
   if (loaded.error !== undefined || !loaded.bill) return { error: loaded.error ?? 'not_found' };
   return { bill: loaded.bill };
-} 
+}
+
+// AbortSignal.timeout throws on a negative or fractional delay.
+function timeoutSignal(ms: number) {
+  return AbortSignal.timeout(Math.max(0, Math.floor(ms)));
+}
+
+// The worker's /observe reply, or null when it failed, threw or took longer than timeoutMs.
+async function observe(deps: BillMcpDeps, stagehandUrl: string, billId: number, portalUrl: string, timeoutMs: number) {
+  try {
+    const response = await deps.fetch(joinUrl(stagehandUrl, '/observe'), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${deps.stagehandSecret ?? ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ billId, portalUrl }),
+      signal: timeoutSignal(timeoutMs),
+    });
+    return response.ok ? await response.text() : null;
+  } catch {
+    return null;
+  }
+}
 
 async function observePortal(deps: BillMcpDeps, userAuth: string, billId: number) {
   const loaded = await loadBill(deps, userAuth, billId);
@@ -162,16 +200,9 @@ async function observePortal(deps: BillMcpDeps, userAuth: string, billId: number
   if (!stagehand) return { error: 'worker not configured' };
   const portalUrl = await deps.portalUrl(loaded.bill.vendor_id ?? 0);
   if (!portalUrl) return { error: 'no portal url' };
-  const response = await deps.fetch(joinUrl(stagehand, '/observe'), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${deps.stagehandSecret ?? ''}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ billId: loaded.bill.bill_id, portalUrl }),
-  });
-  if (!response.ok) return { error: 'worker failed' };
-  return { observation: await response.text() };
+  const observation = await observe(deps, stagehand, loaded.bill.bill_id, portalUrl, OBSERVE_TIMEOUT_MS);
+  if (observation === null) return { error: 'worker failed' };
+  return { observation };
 }
 
 function pageText(raw: string) {
@@ -204,21 +235,14 @@ function snapshotGaps(bill: Bill, text: string) {
   return gaps;
 }
 
-async function readPortal(deps: BillMcpDeps, bill: Bill) {
+async function readPortal(deps: BillMcpDeps, bill: Bill, timeoutMs: number) {
   if (bill.vendor_id === null) return { error: 'no portal url' as const };
   const portalUrl = await deps.portalUrl(bill.vendor_id);
   if (!portalUrl) return { error: 'no portal url' as const };
   if (!deps.stagehandUrl) return { error: 'worker not configured' as const };
-  const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/observe'), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${deps.stagehandSecret ?? ''}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ billId: bill.bill_id, portalUrl }),
-  });
-  if (!response.ok) return { error: 'worker failed' as const };
-  return { portalUrl, text: pageText(await response.text()) };
+  const observation = await observe(deps, deps.stagehandUrl, bill.bill_id, portalUrl, timeoutMs);
+  if (observation === null) return { error: 'worker failed' as const };
+  return { portalUrl, text: pageText(observation) };
 }
 
 function shownPayment(args: Record<string, unknown>): Shown | null {
@@ -350,7 +374,7 @@ async function workerOutcome(response: Response): Promise<Outcome> {
   return unknownOutcome(null);
 }
 
-async function runWorker(deps: BillMcpDeps, stagehandUrl: string, portalUrl: string, attempt: Attempt): Promise<Outcome> {
+async function runWorker(deps: BillMcpDeps, stagehandUrl: string, portalUrl: string, attempt: Attempt, timeoutMs: number): Promise<Outcome> {
   let response: Response;
   try {
     response = await deps.fetch(joinUrl(stagehandUrl, '/execute'), {
@@ -361,8 +385,8 @@ async function runWorker(deps: BillMcpDeps, stagehandUrl: string, portalUrl: str
       },
       // The attempt's own amount, vendor, invoice and idempotency key.
       body: JSON.stringify({ ...paymentInput(attempt), portalUrl }),
-      // Short of the trigger route's 140 s limit, so the outcome is still recorded.
-      signal: AbortSignal.timeout(deps.executeTimeoutMs ?? 100_000),
+      // Ends by the payment deadline, so the outcome is still recorded.
+      signal: timeoutSignal(timeoutMs),
     });
   } catch {
     return unknownOutcome('no response from the payment worker');
@@ -370,14 +394,24 @@ async function runWorker(deps: BillMcpDeps, stagehandUrl: string, portalUrl: str
   return workerOutcome(response);
 }
 
-async function recordOutcome(deps: BillMcpDeps, attempt: Attempt, outcome: Outcome) {
-  const recorded = await callRpc(deps, 'record_payment', {
+// A record_payment error without a code means the reply was lost (or the call threw), so it is
+// tried again with the same arguments, at most twice and only while each try starts before the
+// deadline. A coded error is the function's own refusal and is final.
+async function recordOutcome(deps: BillMcpDeps, attempt: Attempt, outcome: Outcome, left: () => number) {
+  const args = {
     p_payment_id: attempt.payment_id,
     p_outcome: outcome.outcome,
     p_outcome_code: outcome.code,
     p_transaction_reference: outcome.reference,
     p_message: outcome.message,
-  }, 'service');
+  };
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let recorded = await callRpc(deps, 'record_payment', args, 'service');
+  for (const delay of RECORD_RETRY_DELAYS_MS) {
+    if (!recorded.error || recorded.error.code || left() <= delay) break;
+    await sleep(delay);
+    recorded = await callRpc(deps, 'record_payment', args, 'service');
+  }
   if (recorded.error) {
     console.error(`[bill-mcp] record_payment ${outcome.outcome} for payment ${attempt.payment_id} failed: ${recorded.error.message}`);
     return { error: 'record_payment failed' };
@@ -395,6 +429,9 @@ async function recordOutcome(deps: BillMcpDeps, attempt: Attempt, outcome: Outco
 // prepared. Nothing reaches /execute unless start_payment_submission claimed the attempt, and
 // every claimed attempt ends in record_payment.
 async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+  const now = deps.now ?? Date.now;
+  const deadline = now() + (deps.deadlineMs ?? PAYMENT_DEADLINE_MS);
+  const left = () => deadline - now();
   const shown = shownPayment(args);
   if (shown === null) return { error: 'invalid arguments' };
   const loaded = await loadBill(deps, userAuth, shown.billId);
@@ -403,7 +440,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if (!PAYABLE_STATUSES.includes(bill.status)) return { error: 'not_payable' };
   const differs = shownGaps(shown, bill.vendor_id, bill.invoice_number, moneyCents(bill.amount));
   if (differs.length > 0) return { error: 'summary_mismatch', fields: differs };
-  const portal = await readPortal(deps, bill);
+  const portal = await readPortal(deps, bill, Math.min(OBSERVE_TIMEOUT_MS, left()));
   if ('error' in portal) return portal;
   const gaps = snapshotGaps(bill, portal.text);
   if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
@@ -411,12 +448,14 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if (!stagehandUrl) return { error: 'worker not configured' };
   const preparedBy = await deps.callerUserId();
   if (preparedBy === null) return { error: 'forbidden' };
+  if (left() < PREPARE_MIN_LEFT_MS) return { error: 'payment_not_started' };
   const prepared = await prepareAttempt(deps, bill, preparedBy, shown);
   if ('error' in prepared) return prepared;
   const stopped = await authorizeAndClaim(deps, prepared.attempt);
   if (stopped) return stopped;
-  const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt);
-  return recordOutcome(deps, prepared.attempt, outcome);
+  const executeMs = Math.min(deps.executeTimeoutMs ?? EXECUTE_TIMEOUT_MS, left());
+  const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt, executeMs);
+  return recordOutcome(deps, prepared.attempt, outcome, left);
 }
 
 async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {

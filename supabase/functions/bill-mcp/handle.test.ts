@@ -35,8 +35,9 @@ function attempt(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function rpcError(message: string, details: string | null = null): RpcReply {
-  return { data: null, error: { message, details } };
+// A payment function's own refusal carries a PT code; a lost reply has none.
+function rpcError(message: string, details: string | null = null, code?: string): RpcReply {
+  return { data: null, error: { message, details, code } };
 }
 
 type RpcCall = { name: RpcName; args: Record<string, unknown>; as: 'service' | 'user' };
@@ -44,6 +45,7 @@ type RpcCall = { name: RpcName; args: Record<string, unknown>; as: 'service' | '
 type Script = {
   bill?: Record<string, unknown>;
   page?: string;
+  observe?: (init?: RequestInit) => Response | Promise<Response>;
   execute?: (init?: RequestInit) => Response | Promise<Response>;
   rpc?: Partial<Record<RpcName, (args: Record<string, unknown>) => RpcReply>>;
 };
@@ -78,6 +80,7 @@ function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
         return new Response(JSON.stringify({ vendors: [{ vendor_id: 3, name: 'Power' }] }), { status: 200 });
       }
       if (url.endsWith('/observe')) {
+        if (script.observe) return script.observe(init);
         return new Response(JSON.stringify({ pageText: script.page ?? 'Invoice INV-1 total $40.50' }), { status: 200 });
       }
       if (url.endsWith('/execute')) {
@@ -88,6 +91,7 @@ function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
     },
     portalUrl: async () => 'https://portal.example.test/pay',
     callerUserId: async () => 7,
+    sleep: async () => {},
     rpc: async (name, args, as) => {
       rpcCalls.push({ name, args, as });
       steps.push(name);
@@ -510,7 +514,6 @@ test('an authorize error cancels the attempt and returns its code', async () => 
   assert.deepEqual((await pay(built)).body, { error: 'not_pending' });
   assert.deepEqual(rpcNames(built), ['prepare_payment', 'authorize_payment', 'cancel_payment']);
   assert.deepEqual(built.rpcCalls[2].args, { p_payment_id: 31, p_note: 'not_pending' });
-
 });
 
 test('an unexpected payment function error before the claim is payment_not_started', async () => {
@@ -691,7 +694,7 @@ test('the transaction reference is trimmed and may be 255 characters', async () 
 });
 
 test('a failed record_payment call is reported as record_payment failed', async () => {
-  const refused = deps({}, { rpc: { record_payment: () => rpcError('not_processing', 'expired') } });
+  const refused = deps({}, { rpc: { record_payment: () => rpcError('not_processing', 'expired', 'PT409') } });
   assert.deepEqual((await pay(refused)).body, { error: 'record_payment failed' });
   assert.equal(executeCalls(refused).length, 1);
 
@@ -707,6 +710,198 @@ test('a failed record_payment call is reported as record_payment failed', async 
   );
   assert.deepEqual((await pay(thrown)).body, { error: 'record_payment failed' });
   assert.equal(rpcNames(thrown).at(-1), 'record_payment');
+});
+
+function recordCalls(built: ReturnType<typeof deps>) {
+  return built.rpcCalls.filter((rpc) => rpc.name === 'record_payment');
+}
+
+const successRecord = {
+  p_payment_id: 31,
+  p_outcome: 'success',
+  p_outcome_code: 'confirmed',
+  p_transaction_reference: 'TX-31',
+  p_message: null,
+};
+
+function sleeps() {
+  const slept: number[] = [];
+  return { slept, sleep: async (ms: number) => void slept.push(ms) };
+}
+
+test('a lost record_payment reply is tried again with the same arguments', async () => {
+  const lost = [
+    () => rpcError('TypeError: fetch failed', null, ''),
+    () => {
+      throw new TypeError('fetch failed');
+    },
+  ];
+  for (const first of lost) {
+    const { slept, sleep } = sleeps();
+    let tries = 0;
+    const built = deps(
+      { sleep },
+      {
+        rpc: {
+          record_payment: (args) =>
+            ++tries === 1 ? first() : { data: attempt({ status: args.p_outcome }), error: null },
+        },
+      },
+    );
+    const result = await pay(built);
+    assert.deepEqual(result.body, { payment: attempt({ status: 'success' }) });
+    assert.deepEqual(
+      recordCalls(built).map((rpc) => [rpc.args, rpc.as]),
+      [[successRecord, 'service'], [successRecord, 'service']],
+    );
+    assert.deepEqual(slept, [250]);
+  }
+});
+
+test('a record_payment refusal with an error code is not tried again', async () => {
+  const { slept, sleep } = sleeps();
+  const built = deps({ sleep }, { rpc: { record_payment: () => rpcError('not_processing', 'success', 'PT409') } });
+  assert.deepEqual((await pay(built)).body, { error: 'record_payment failed' });
+  assert.equal(recordCalls(built).length, 1);
+  assert.deepEqual(slept, []);
+});
+
+test('three lost record_payment replies are record_payment failed', async () => {
+  const { slept, sleep } = sleeps();
+  const built = deps({ sleep }, { rpc: { record_payment: () => rpcError('TypeError: fetch failed', null, '') } });
+  assert.deepEqual((await pay(built)).body, { error: 'record_payment failed' });
+  assert.deepEqual(
+    recordCalls(built).map((rpc) => rpc.args),
+    [successRecord, successRecord, successRecord],
+  );
+  assert.deepEqual(slept, [250, 1_000]);
+});
+
+test('no record_payment retry starts after the payment deadline', async () => {
+  const { slept, sleep } = sleeps();
+  let clock = 0;
+  const built = deps(
+    { now: () => clock, sleep },
+    {
+      rpc: {
+        record_payment: () => {
+          clock = 125_000;
+          return rpcError('TypeError: fetch failed', null, '');
+        },
+      },
+    },
+  );
+  assert.deepEqual((await pay(built)).body, { error: 'record_payment failed' });
+  assert.equal(recordCalls(built).length, 1);
+  assert.deepEqual(slept, []);
+});
+
+// The delay of every AbortSignal.timeout made while run() is going.
+async function timeouts(run: () => Promise<unknown>) {
+  const original = AbortSignal.timeout;
+  const delays: number[] = [];
+  AbortSignal.timeout = (ms: number) => {
+    delays.push(ms);
+    return original.call(AbortSignal, ms);
+  };
+  try {
+    await run();
+  } finally {
+    AbortSignal.timeout = original;
+  }
+  return delays;
+}
+
+test('observe gets at most 30 s and /execute only the time left of the 125 s budget', async () => {
+  let clock = 0;
+  const built = deps(
+    { now: () => clock },
+    {
+      rpc: {
+        start_payment_submission: () => {
+          clock = 50_000;
+          return { data: attempt({ status: 'processing' }), error: null };
+        },
+      },
+    },
+  );
+  const delays = await timeouts(() => pay(built));
+  assert.deepEqual(delays, [30_000, 75_000]);
+  assert.equal(recorded(built)?.p_outcome, 'success');
+});
+
+test('an observe that never answers or throws is worker failed and prepares nothing', { timeout: 5_000 }, async () => {
+  const hung = deps(
+    { deadlineMs: 20 },
+    {
+      observe: (init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    },
+  );
+  assert.deepEqual((await pay(hung)).body, { error: 'worker failed' });
+  assert.equal(hung.rpcCalls.length, 0);
+  assert.equal(executeCalls(hung).length, 0);
+
+  const thrown = deps(
+    {},
+    {
+      observe: () => {
+        throw new TypeError('fetch failed');
+      },
+    },
+  );
+  assert.deepEqual((await pay(thrown)).body, { error: 'worker failed' });
+  assert.equal(thrown.rpcCalls.length, 0);
+});
+
+test('less than 70 s left before prepare_payment does not start the payment', async () => {
+  let clock = 0;
+  const late = deps({
+    now: () => clock,
+    callerUserId: async () => {
+      clock = 55_001;
+      return 7;
+    },
+  });
+  assert.deepEqual((await pay(late)).body, { error: 'payment_not_started' });
+  assert.deepEqual(late.steps, ['/api/bills/12', '/observe']);
+
+  clock = 0;
+  const onTime = deps({
+    now: () => clock,
+    callerUserId: async () => {
+      clock = 55_000;
+      return 7;
+    },
+  });
+  const paid = await pay(onTime);
+  assert.equal((paid.body as { payment: { status: string } }).payment.status, 'success');
+});
+
+test('observe_portal gives the worker at most 30 s and a thrown observe is worker failed', async () => {
+  const observeCall = (built: ReturnType<typeof deps>) =>
+    handleBillMcp(
+      {
+        httpMethod: 'POST',
+        authorization: `Bearer ${TOKEN}`,
+        userAuthorization: USER,
+        body: { method: 'tools/call', params: { name: 'observe_portal', arguments: { bill_id: 12 } } },
+      },
+      built.deps,
+    );
+  const delays = await timeouts(() => observeCall(deps()));
+  assert.deepEqual(delays, [30_000]);
+  const thrown = deps(
+    {},
+    {
+      observe: () => {
+        throw new TypeError('fetch failed');
+      },
+    },
+  );
+  assert.deepEqual((await observeCall(thrown)).body, { error: 'worker failed' });
 });
 
 async function loggedErrors(run: () => Promise<unknown>) {

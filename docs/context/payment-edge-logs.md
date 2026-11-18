@@ -8,6 +8,8 @@ Last changed by AI: 2026-11-18 · run 887b43da-df6b-47e8-b81c-2f122d4b161b · fi
 
 agent-bills and bill-mcp print failures with console.error. The lines show up in the edge-runtime container, not in the npm run dev window. agent-bills logs the request method, a missing env name, sign-in failure, a missing task, an OpenRouter status, a bill-mcp status, a disallowed tool name, an invalid tool-arguments string, and the four-round stop. A tool call whose arguments are not JSON returns { error: "invalid tool arguments" } to the model and does not call bill-mcp. Valid JSON is still sent. Empty or missing arguments stay {}. An arguments value that is already an object is forwarded. bill-mcp logs the method and, for any error body, the status plus the JSON error. A snapshot_mismatch body includes fields naming the page value that differed, amount or invoice_number. Tokens, secrets, and the raw arguments string are not written. Follow the container with docker logs -f supabase_edge_runtime_cohort-team-2026-typescript-taskforce. A gateway 401 still happens before either function runs.
 
+bill-mcp also logs `[bill-mcp] <fn> failed: <message>` for a payment-function error it does not pass on, and `[bill-mcp] record_payment <outcome> for payment <id> failed: <message>` when record_payment still fails after its tries. Neither line includes the payment row.
+
 ## Lessons
 
 - 2026-11-18 · run 887b43da: Malformed tool arguments are returned as invalid tool arguments and are not sent to bill-mcp. JSON.parse no longer throws out of the request.
