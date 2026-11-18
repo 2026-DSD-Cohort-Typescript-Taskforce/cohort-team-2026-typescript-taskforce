@@ -242,12 +242,37 @@ test('invalid ids and unavailable bill-mcp fail before or without a payment resu
   });
   assert.equal(invalid.status, 404);
 
-  const unavailable = await runPaymentTrigger({
-    billId: 12,
-    shown,
-    role: 'system_admin',
-    invoke: async () => ({ ok: false, status: 401, body: { error: 'secret text' } }),
-  });
-  assert.equal(unavailable.status, 502);
-  assert.equal(JSON.stringify(unavailable.body).includes('secret text'), false);
+  for (const status of [401, 400]) {
+    const unavailable = await runPaymentTrigger({
+      billId: 12,
+      shown,
+      role: 'system_admin',
+      invoke: async () => ({ ok: false, status, body: { error: 'secret text' } }),
+    });
+    assert.equal(unavailable.status, 502, String(status));
+    assert.equal(unavailable.body.outcome, 'failed', String(status));
+    assert.equal(unavailable.body.code, 'payment_service_unavailable', String(status));
+    assert.equal(JSON.stringify(unavailable.body).includes('secret text'), false);
+  }
+});
+
+test('a bill-mcp 5xx is uncertain because it may have stopped after the portal charged', async () => {
+  const replies: [number, Record<string, unknown> | null][] = [
+    [500, { error: 'secret text' }],
+    [546, null],
+  ];
+  for (const [status, body] of replies) {
+    const reply = await runPaymentTrigger({
+      billId: 12,
+      shown,
+      role: 'system_admin',
+      invoke: async () => ({ ok: false, status, body }),
+    });
+    assert.equal(reply.status, 409, String(status));
+    assert.deepEqual(
+      reply.body,
+      { outcome: 'unknown', code: 'outcome_unknown', message: uncertainMessage },
+      String(status),
+    );
+  }
 });

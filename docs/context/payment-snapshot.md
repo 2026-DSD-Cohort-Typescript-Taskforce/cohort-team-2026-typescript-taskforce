@@ -10,8 +10,8 @@ execute_approved_payment needs the bill id plus the vendor, invoice number and a
 
 ## Lessons
 
-- 2026-11-18 · run 92a5b424: The idempotency key is the bill id, so a caller-supplied key cannot start a second payment. `outcome_unknown` is returned to the caller.
-- 2026-11-17 · run 4fc2914b: The snapshot is the portal page text, so a call with only bill_id can pay when that page shows the invoice and amount.
+- 2026-11-18 · run 92a5b424: The idempotency key is the bill id, so a caller-supplied key cannot start a second payment. `outcome_unknown` is returned to the caller. Superseded by DC-126: the key is the DC-89 attempt's own idempotency_key.
+- 2026-11-17 · run 4fc2914b: The snapshot is the portal page text, so a call with only bill_id can pay when that page shows the invoice and amount. Superseded by DC-126: bill_id alone is invalid arguments; the shown vendor, invoice and amount must also equal the bill.
 - 2026-11-17 · run e2f144f0: The snapshot check read only snake_case names, so vendorId and invoiceNumber failed even when the values were the bill's values.
 - 2026-11-17 · run 92fa34c4: Strict equality on vendor_id rejected a digits-only string of the same vendor, so a tool call that copied the bill as JSON text failed the snapshot.
 

@@ -51,7 +51,7 @@ async function callBillMcp(
     },
     body: JSON.stringify({
       method: 'tools/call',
-      params: { name: 'execute_approved_payment', arguments: { bill_id: billId, ...shown } },
+      params: { name: 'execute_approved_payment', arguments: { ...shown, bill_id: billId } },
     }),
     cache: 'no-store',
     signal: AbortSignal.timeout(140_000),

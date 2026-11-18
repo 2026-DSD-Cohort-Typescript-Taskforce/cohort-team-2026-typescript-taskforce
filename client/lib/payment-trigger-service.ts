@@ -87,6 +87,9 @@ export async function runPaymentTrigger(input: {
     // The request may have reached bill-mcp before the connection was lost.
     return uncertain();
   }
+  // bill-mcp answers 200 for every tool result, so a 5xx means it crashed or was stopped,
+  // possibly after the portal took the payment.
+  if (upstream.status >= 500) return uncertain();
   if (!upstream.ok || !upstream.body) return unavailable();
 
   const payment = upstream.body.payment;
