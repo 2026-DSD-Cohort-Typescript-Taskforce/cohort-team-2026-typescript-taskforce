@@ -337,3 +337,70 @@ test('confirmed keys reject a changed amount convention instead of replaying the
     assert.equal(f.calls.submitted, 1);
   });
 });
+
+test('receipt capture failure cannot undo a confirmed payment or allow another submission', async () => {
+  await withWorker(async (worker, _path, f) => {
+    Object.assign(f.session, {
+      captureReceipt: async () => {
+        throw new Error('capture failed');
+      },
+    });
+    const result = await worker.execute(request);
+    assert.equal(result.confirmed, true);
+    assert.deepEqual((result as { receipt?: unknown }).receipt, { status: 'failed' });
+    assert.deepEqual(await worker.execute(request), result);
+    assert.equal(f.calls.submitted, 1);
+  });
+});
+
+test('stored receipt can be retrieved for upload without opening or paying again', async () => {
+  await withWorker(async (worker, path, f) => {
+    const artifact = { pngBase64: 'synthetic-png', sha256: 'synthetic-sha', reference: 'TX-7' };
+    Object.assign(f.session, { captureReceipt: async () => artifact });
+    const result = await worker.execute(request);
+    assert.equal(result.confirmed, true);
+    const store = new ExecutionStore(path) as ExecutionStore & {
+      receipt(billId: number, key: string): Promise<unknown>;
+    };
+    const receipt = await store.receipt(request.billId, request.idempotencyKey);
+    assert.deepEqual(receipt, (result as { receipt?: unknown }).receipt);
+    await assert.rejects(store.receipt(999, request.idempotencyKey));
+    assert.equal(f.calls.submitted, 1);
+    assert.equal(f.calls.opened, 1);
+  });
+});
+
+test('receipt HTTP endpoint authenticates, validates identity, and never submits', async () => {
+  await withWorker(async (worker, _path, f) => {
+    Object.assign(f.session, {
+      captureReceipt: async () => ({ pngBase64: 'synthetic', sha256: 'hash', reference: 'TX' }),
+    });
+    await worker.execute(request);
+    const app = express();
+    app.use(createStagehandRoutes(worker, () => 'receipt-test-secret'));
+    app.use(errorHandler);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/receipt`;
+    try {
+      const post = (body: unknown, secret = 'receipt-test-secret') =>
+        fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      const input = { billId: request.billId, idempotencyKey: request.idempotencyKey };
+      assert.equal((await post(input, 'wrong')).status, 401);
+      assert.equal((await post({ ...input, selector: '#anything' })).status, 400);
+      assert.equal((await post({ ...input, billId: 999 })).status, 404);
+      const response = await post(input);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).receipt.status, 'captured');
+      assert.equal(f.calls.submitted, 1);
+      assert.equal(f.calls.opened, 1);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+});

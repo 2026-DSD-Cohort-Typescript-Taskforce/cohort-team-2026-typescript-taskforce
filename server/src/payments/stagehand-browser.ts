@@ -1,3 +1,4 @@
+import { captureReceipt } from './capture-receipt';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { HttpError } from '../middleware/errorHandler';
@@ -19,6 +20,7 @@ const profileSchema = z.strictObject({
   confirmationTotalSelector: selector,
   confirmationReferenceSelector: selector,
   confirmationUrl: z.url().optional(),
+  receiptSelector: selector.optional(),
 });
 export type PortalProfile = z.infer<typeof profileSchema>;
 
@@ -235,7 +237,19 @@ export class StagehandBrowser implements PortalBrowser {
             { p, expected },
             { timeout: 15000 },
           );
+        },
+        async captureReceipt(expected) {
+          const p = executionProfile();
+          if (!p.receiptSelector) return undefined;
           guard!.check();
+          const artifact = await captureReceipt(
+            page,
+            { ...p, receiptSelector: p.receiptSelector },
+            expected,
+            () => browser.context.newPage(),
+          );
+          guard!.check();
+          return artifact;
         },
         async close() {
           try {

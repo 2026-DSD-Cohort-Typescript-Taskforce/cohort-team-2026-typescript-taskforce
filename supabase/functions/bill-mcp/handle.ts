@@ -1,3 +1,4 @@
+import type { ReceiptResult } from './receipt.ts';
 // bill-mcp request handling. The Deno entrypoint wires Supabase and fetch;
 // these functions stay free of Deno so the gate can be tested in Node.
 
@@ -17,6 +18,8 @@ export type BillMcpDeps = {
   stagehandUrl: string | undefined;
   stagehandSecret: string | undefined;
   canRecord: boolean;
+  persistReceipt?: (input: PaymentInput, payment: unknown, receipt: unknown) => Promise<ReceiptResult>;
+  receiptPayment?: (billId: number, paymentId: number) => Promise<(PaymentInput & { payment_id: number; bill_id: number; status: string }) | null>;
   fetch: typeof fetch;
   portalUrl: (vendorId: number) => Promise<string | null>;
   latestApproval: (billId: number) => Promise<string | null>;
@@ -36,6 +39,7 @@ const TOOLS = [
   { name: 'list_vendors' },
   { name: 'observe_portal' },
   { name: 'execute_approved_payment' },
+  { name: 'retry_payment_receipt' },
 ];
 
 function result(body: unknown, status = 200): McpResult {
@@ -192,7 +196,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   const gaps = snapshotGaps(bill, portal.text);
   if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
   if ((await deps.latestApproval(bill.bill_id)) !== 'approved') return { error: 'not_approved' };
-  if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.canRecord) {
+  if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.stagehandUrl || !deps.canRecord) {
     return { error: 'worker not configured' };
   }
   const idempotencyKey = `portal-${bill.bill_id}`;
@@ -213,6 +217,10 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
     }),
   });
   if (!response.ok) return workerFailure(response);
+  const execution = (await response.json().catch(() => null)) as {
+    confirmed?: boolean;
+    receipt?: unknown;
+  } | null;
   const recorded = await deps.recordPayment({
     billId: bill.bill_id,
     amount: Number(bill.amount),
@@ -221,7 +229,32 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
     idempotencyKey,
   });
   if (recorded.error) return { error: 'record_payment failed' };
-  return { payment: recorded.payment };
+  const input: PaymentInput = { billId: bill.bill_id, amount: Number(bill.amount), vendorId: bill.vendor_id, invoiceNumber: bill.invoice_number, idempotencyKey };
+  if (!deps.persistReceipt) return { payment: recorded.payment };
+  const receipt = await deps.persistReceipt(input, recorded.payment, execution?.confirmed === true ? execution.receipt : undefined)
+    .catch(() => ({ status: 'failed', error: 'upload_failed' } as const));
+  return { payment: recorded.payment, receipt };
+}
+
+async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+  const billId = integer(args.bill_id);
+  const paymentId = integer(args.payment_id);
+  if (billId === null || paymentId === null) return { error: 'invalid arguments' };
+  const loaded = await loadBill(deps, userAuth, billId);
+  if ('error' in loaded) return loaded;
+  if (!deps.receiptPayment || !deps.persistReceipt || !deps.stagehandUrl) return { error: 'receipt not configured' };
+  const payment = await deps.receiptPayment(billId, paymentId);
+  if (!payment || payment.billId !== billId || payment.bill_id !== billId || payment.payment_id !== paymentId || payment.status !== 'success' || !payment.idempotencyKey) return { error: 'receipt not found' };
+  // This endpoint reads the durable artifact only. It cannot launch Chrome or pay.
+  const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/receipt'), {
+    method: 'POST', headers: { Authorization: `Bearer ${deps.stagehandSecret ?? ''}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ billId, idempotencyKey: payment.idempotencyKey }),
+  });
+  if (!response.ok) return { error: 'receipt unavailable' };
+  const body = await response.json() as { receipt?: unknown };
+  const receipt = await deps.persistReceipt(payment, { ...payment, idempotency_key: payment.idempotencyKey }, body.receipt)
+    .catch(() => ({ status: 'failed', error: 'upload_failed' } as const));
+  return { receipt };
 }
 
 export async function handleBillMcp(
@@ -254,6 +287,7 @@ export async function handleBillMcp(
     if (billId === null) return result({ error: 'invalid arguments' });
     return result(await observePortal(deps, request.userAuthorization, billId));
   }
+  if (name === 'retry_payment_receipt') return result(await retryPaymentReceipt(deps, request.userAuthorization, args));
   if (name === 'execute_approved_payment') {
     return result(await executeApprovedPayment(deps, request.userAuthorization, args));
   }

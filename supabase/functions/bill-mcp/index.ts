@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { persistReceipt } from './receipt.ts';
 import { handleBillMcp, type PaymentInput } from './handle.ts';
 
 function json(body: unknown, status = 200) {
@@ -38,6 +39,33 @@ Deno.serve(async (req) => {
       stagehandUrl: Deno.env.get('STAGEHAND_URL'),
       stagehandSecret: Deno.env.get('STAGEHAND_SECRET'),
       canRecord: admin !== null,
+      receiptPayment: async (billId, paymentId) => {
+        const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });
+        return error ? null : { ...data, bill_id: data.billId };
+      },
+      persistReceipt: async (input, payment, receipt) => {
+        if (!admin) return { status: 'failed', error: 'upload_failed' };
+        return persistReceipt(input, payment, receipt, {
+          upload: async (path, bytes) => {
+            const { error } = await admin.storage.from('payment-receipts').upload(path, bytes, { contentType: 'image/png', upsert: false });
+            if (!error) return 'stored';
+            if (String(error.statusCode) === '409') return 'exists';
+            throw error;
+          },
+          download: async (path) => {
+            const { data, error } = await admin.storage.from('payment-receipts').download(path);
+            if (error || !data) throw error ?? new Error('Receipt unavailable');
+            return new Uint8Array(await data.arrayBuffer());
+          },
+          attach: async (paymentId, input, path, error) => {
+            const response = await admin.rpc('set_payment_receipt', {
+              p_payment_id: paymentId, p_bill_id: input.billId, p_idempotency_key: input.idempotencyKey,
+              p_path: path, p_error: error,
+            });
+            if (response.error) throw response.error;
+          },
+        });
+      },
       fetch,
       portalUrl: async (vendorId) => {
         const { data } = await supabase
