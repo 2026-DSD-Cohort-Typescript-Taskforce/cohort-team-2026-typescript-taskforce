@@ -126,8 +126,8 @@ select results_eq(
   'refused submits change no bill'
 );
 -- Rows written in this transaction have created_at = now(); seeded rows don't.
--- actor_type is null keeps to submit_bill's own rows; DC-101 trigger rows are tested in audit_logs.test.sql.
-select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 0, 'refused submits write no audit row');
+-- The setup ran as postgres, so its trigger rows are 'system'; anything else came from a call.
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is distinct from 'system'), 0, 'refused submits write no audit row');
 
 -- As operator A: success. Times are cast to timestamptz so these pass whether the
 -- columns are timestamp or timestamptz.
@@ -147,9 +147,10 @@ select results_eq(
   'the bill is stored as pending_payment with updated_at = now'
 );
 select results_eq(
-  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now() and actor_type is null$$,
-  $$values ('bill_submitted', 'bill 12001: draft → pending_payment, by user 12101', now())$$,
-  'exactly one audit row: bill_submitted, naming this bill and A''s profile, at now'
+  $$select name, actor_type, actor_user_id, entity_type, entity_id from public.audit_logs
+      where created_at = now() and actor_type is distinct from 'system' order by audit_log_id$$,
+  $$values ('bill_submitted', 'user', 12101, 'bill', 12001)$$,
+  'exactly one audit row: bill_submitted, by A, for this bill; submit_bill adds none of its own'
 );
 
 -- Draft-only policies, as operator A
