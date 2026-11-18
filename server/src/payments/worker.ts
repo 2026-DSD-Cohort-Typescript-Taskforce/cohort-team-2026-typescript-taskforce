@@ -5,6 +5,7 @@ import type {
   ExecuteResponse,
   ObserveRequest,
   StagehandWorker,
+  ReceiptArtifact,
 } from './payment-contract';
 import { assertPaymentMatch, requestedCents } from './worker-input';
 
@@ -16,6 +17,10 @@ export interface PortalSession {
     markSubmitting: () => Promise<void>,
   ): Promise<void>;
   confirm(expected: { invoice: string; cents: number }): Promise<void>;
+  captureReceipt?(expected: {
+    invoice: string;
+    cents: number;
+  }): Promise<ReceiptArtifact | undefined>;
   close(): Promise<void>;
 }
 
@@ -32,6 +37,10 @@ export class BrowserWorker implements StagehandWorker {
     private readonly browser: PortalBrowser,
     private readonly store: ExecutionStore,
   ) {}
+
+  async receipt(billId: number, key: string) {
+    return this.store.receipt(billId, key);
+  }
 
   async observe(input: ObserveRequest) {
     let session: PortalSession | undefined;
@@ -64,8 +73,27 @@ export class BrowserWorker implements StagehandWorker {
         submissionPossible = true;
       });
       await session.confirm(expected);
-      const result = { confirmed: true } as const;
+      const result: ExecuteResponse = { confirmed: true };
+      // Confirmation is durable before any optional screenshot work can fail.
       await claim.confirmed(result);
+      if (session.captureReceipt) {
+        try {
+          const artifact = await session.captureReceipt(expected);
+          if (artifact)
+            result.receipt = {
+              status: 'captured',
+              billId: input.billId,
+              vendorId: input.vendorId,
+              invoiceNumber: input.invoiceNumber,
+              amountMinor: cents,
+              ...artifact,
+            };
+        } catch {
+          result.receipt = { status: 'failed' };
+        }
+        // Losing artifact persistence must never undo a confirmed payment.
+        await claim.confirmed(result).catch(() => {});
+      }
       return result;
     } catch (error) {
       if (submissionPossible) {

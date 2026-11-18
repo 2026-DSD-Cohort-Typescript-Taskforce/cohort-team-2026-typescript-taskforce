@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { captureReceipt } from '../src/payments/capture-receipt';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -56,9 +57,9 @@ test(
       setTimeout(() => { document.querySelector("#pay").disabled = false; }, 2500);
       async function pay() {
         await fetch('/submit', {method: 'POST'});
-        document.body.innerHTML = '<div id="confirmed">Paid</div>' +
+        document.body.innerHTML = '<section id="receipt"><h1 id="confirmed">Paid</h1>' +
           '<div id="receipt-invoice">INV-7</div><div id="receipt-total">$125.00</div>' +
-          '<div id="reference">TX-7</div>';
+          '<div id="reference">TX-7</div><p>Account 000123456789 Password secret-value</p><input value="4111111111111111"></section>';
       }</script></body>`);
     });
     server.listen(0, '127.0.0.1');
@@ -72,6 +73,7 @@ test(
       invoiceSelector: '#invoice',
       totalSelector: '#total',
       paySelector: '#pay',
+      receiptSelector: '#receipt',
       confirmationSelector: '#confirmed',
       confirmationInvoiceSelector: '#receipt-invoice',
       confirmationTotalSelector: '#receipt-total',
@@ -91,7 +93,7 @@ test(
     const input = {
       billId: 7,
       vendorId: 9,
-      portalUrl: profile.portalUrl ?? base + '/pay',
+      portalUrl: profile.portalUrl,
       amount: 125,
       invoiceNumber: 'INV-7',
       idempotencyKey: 'real-payment',
@@ -108,14 +110,115 @@ test(
         code: 'payment_mismatch',
       });
       assert.equal(submitted, 0);
-      assert.deepEqual(await worker.execute(input), { confirmed: true });
+      const paid = await worker.execute(input);
+      assert.equal(paid.confirmed, true);
+      assert.equal(paid.receipt?.status, 'captured');
+      if (paid.receipt?.status === 'captured') {
+        assert.equal(paid.receipt.invoiceNumber, 'INV-7');
+        assert.equal(paid.receipt.reference, 'TX-7');
+        assert.ok(Buffer.from(paid.receipt.pngBase64, 'base64').length > 8);
+        if (process.env.RECEIPT_TEST_OUTPUT)
+          await writeFile(
+            process.env.RECEIPT_TEST_OUTPUT,
+            Buffer.from(paid.receipt.pngBase64, 'base64'),
+          );
+      }
       assert.equal(submitted, 1);
-      assert.deepEqual(await worker.execute(input), { confirmed: true });
+      assert.deepEqual(await worker.execute(input), paid);
       assert.equal(submitted, 1);
     } finally {
       server.closeAllConnections();
       server.close();
       await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'real Chrome receipt capture excludes every non-verified field and rejects changed totals',
+  {
+    skip: process.env.STAGEHAND_BROWSER_TEST !== '1',
+    timeout: 60000,
+  },
+  async () => {
+    const { localBrowser, Stagehand } = await import('@browserbasehq/stagehand');
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'text/html');
+      res.end(
+        '<style>*::before{content:"secret-value" !important}</style><dialog id="overlay">Account 000123456789</dialog><script>document.querySelector("dialog").showModal()</script><section id="receipt"><h1 id="done">Paid</h1><p>Password secret-value</p><input value="4111111111111111"><div id="inv" data-secret="secret-value">INV-7</div><div id="amount">$125.00</div><div id="ref">TX-7</div><p>Account 000123456789</p></section>',
+      );
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const browser = await localBrowser.launch({ headless: true });
+    const stagehand = await Stagehand.create({
+      browser,
+      model: {
+        generate: async () => {
+          throw new Error('Model disabled');
+        },
+      },
+    });
+    try {
+      const [page] = await browser.context.pages();
+      await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, {
+        timeout: 10000,
+      });
+      assert.equal(await page.evaluate(() => document.querySelector('dialog')?.open), true);
+      let screenshots = 0;
+      const renderPage = async () => {
+        const isolated = await browser.context.newPage();
+        return {
+          evaluate: isolated.evaluate.bind(isolated),
+          close: () => isolated.close(),
+          screenshot: async (options: Parameters<typeof isolated.screenshot>[0]) => {
+            const html = await isolated.evaluate(() => document.body.outerHTML);
+            for (const secret of [
+              'secret-value',
+              '4111111111111111',
+              '000123456789',
+              'data-secret',
+              '<input',
+              '<dialog',
+            ])
+              assert.equal(html.includes(secret), false);
+            assert.match(
+              await isolated.url(),
+              /^(?:about:blank|chrome-extension:\/\/[^/]+\/blank\.html)$/,
+            );
+            assert.notEqual(await isolated.url(), await page.url());
+            assert.match(html, /INV-7/);
+            screenshots++;
+            return isolated.screenshot(options);
+          },
+        };
+      };
+      const selectors = {
+        receiptSelector: '#receipt',
+        confirmationSelector: '#done',
+        confirmationInvoiceSelector: '#inv',
+        confirmationTotalSelector: '#amount',
+        confirmationReferenceSelector: '#ref',
+      };
+      assert.equal(
+        (await captureReceipt(page, selectors, { invoice: 'INV-7', cents: 12500 }, renderPage))
+          .reference,
+        'TX-7',
+      );
+      assert.equal(screenshots, 1);
+      await assert.rejects(
+        captureReceipt(page, selectors, { invoice: 'INV-7', cents: 12600 }, renderPage),
+      );
+      assert.equal(screenshots, 1);
+      assert.equal(
+        await page.evaluate(() => !!document.getElementById('dc112-private-receipt-capture')),
+        false,
+      );
+    } finally {
+      await stagehand.close();
+      await browser.close();
+      server.closeAllConnections();
+      server.close();
     }
   },
 );

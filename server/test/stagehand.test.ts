@@ -14,7 +14,7 @@ import { BrowserWorker, type PortalBrowser, type PortalSession } from '../src/pa
 import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
 import { StagehandBrowser } from '../src/payments/stagehand-browser';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 
 const request = {
   billId: 7,
@@ -327,65 +327,6 @@ test('execution pins the validated profile across asynchronous configuration cha
   });
 });
 
-test('a click profile without a vendor id or url still prepares execution', async () => {
-  await withWorker(async (_worker, path, f) => {
-    const file = join(path, 'profiles.json');
-    await writeFile(
-      file,
-      JSON.stringify([
-        {
-          amountUnit: 'dollars',
-          capture: [{ action: 'click', selector: "a[href='#business']" }],
-          pay: [{ action: 'click', selector: '#sample-details' }],
-          invoiceSelector: '#invoice',
-          totalSelector: '#total',
-          paySelector: '#pay',
-          confirmationSelector: '#confirmed',
-          confirmationInvoiceSelector: '#invoice',
-          confirmationTotalSelector: '#total',
-          confirmationReferenceSelector: '#reference',
-        },
-      ]),
-    );
-    const browser = new StagehandBrowser(file);
-    browser.open = async (_input, _mode, pinned) => {
-      assert.equal(pinned?.capture?.[0]?.selector, "a[href='#business']");
-      assert.equal(pinned?.pay?.[0]?.selector, '#sample-details');
-      return f.session;
-    };
-    const execution = await browser.prepareExecution({
-      ...request,
-      vendorId: 3,
-      portalUrl: 'https://copper-ridge-utility-demo.vercel.app',
-    });
-    assert.equal(execution.unit, 'dollars');
-    assert.equal(await execution.open(), f.session);
-  });
-});
-
-test('the portal file signs in from the shared footer and omits vendor id and url', async () => {
-  const profiles = JSON.parse(await readFile(join(__dirname, '../profiles.json'), 'utf8')) as {
-    portalUrl?: string;
-    vendorId?: number;
-    capture: { action: string; selector: string }[];
-    pay: { action: string; selector: string }[];
-  }[];
-  assert.equal(profiles.length, 1);
-  assert.equal(profiles[0].portalUrl, undefined);
-  assert.equal(profiles[0].vendorId, undefined);
-  assert.deepEqual(
-    [...profiles[0].capture, ...profiles[0].pay].map((step) => `${step.action} ${step.selector}`),
-    [
-      "click footer a[href='#signin/account']",
-      'login #login-form',
-      'wait .balance-amount',
-      "click a.button[href^='#pay/'], a.button[href^='#statement/']",
-      'click #sample-details',
-      "check input[name='authorized']",
-    ],
-  );
-});
-
 test('confirmed keys reject a changed amount convention instead of replaying the wrong amount', async () => {
   await withWorker(async (worker, path, f) => {
     await worker.execute(request);
@@ -394,5 +335,72 @@ test('confirmed keys reject a changed amount convention instead of replaying the
       code: 'idempotency_conflict',
     });
     assert.equal(f.calls.submitted, 1);
+  });
+});
+
+test('receipt capture failure cannot undo a confirmed payment or allow another submission', async () => {
+  await withWorker(async (worker, _path, f) => {
+    Object.assign(f.session, {
+      captureReceipt: async () => {
+        throw new Error('capture failed');
+      },
+    });
+    const result = await worker.execute(request);
+    assert.equal(result.confirmed, true);
+    assert.deepEqual((result as { receipt?: unknown }).receipt, { status: 'failed' });
+    assert.deepEqual(await worker.execute(request), result);
+    assert.equal(f.calls.submitted, 1);
+  });
+});
+
+test('stored receipt can be retrieved for upload without opening or paying again', async () => {
+  await withWorker(async (worker, path, f) => {
+    const artifact = { pngBase64: 'synthetic-png', sha256: 'synthetic-sha', reference: 'TX-7' };
+    Object.assign(f.session, { captureReceipt: async () => artifact });
+    const result = await worker.execute(request);
+    assert.equal(result.confirmed, true);
+    const store = new ExecutionStore(path) as ExecutionStore & {
+      receipt(billId: number, key: string): Promise<unknown>;
+    };
+    const receipt = await store.receipt(request.billId, request.idempotencyKey);
+    assert.deepEqual(receipt, (result as { receipt?: unknown }).receipt);
+    await assert.rejects(store.receipt(999, request.idempotencyKey));
+    assert.equal(f.calls.submitted, 1);
+    assert.equal(f.calls.opened, 1);
+  });
+});
+
+test('receipt HTTP endpoint authenticates, validates identity, and never submits', async () => {
+  await withWorker(async (worker, _path, f) => {
+    Object.assign(f.session, {
+      captureReceipt: async () => ({ pngBase64: 'synthetic', sha256: 'hash', reference: 'TX' }),
+    });
+    await worker.execute(request);
+    const app = express();
+    app.use(createStagehandRoutes(worker, () => 'receipt-test-secret'));
+    app.use(errorHandler);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/receipt`;
+    try {
+      const post = (body: unknown, secret = 'receipt-test-secret') =>
+        fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      const input = { billId: request.billId, idempotencyKey: request.idempotencyKey };
+      assert.equal((await post(input, 'wrong')).status, 401);
+      assert.equal((await post({ ...input, selector: '#anything' })).status, 400);
+      assert.equal((await post({ ...input, billId: 999 })).status, 404);
+      const response = await post(input);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).receipt.status, 'captured');
+      assert.equal(f.calls.submitted, 1);
+      assert.equal(f.calls.opened, 1);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
   });
 });

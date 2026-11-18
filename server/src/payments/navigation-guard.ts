@@ -9,18 +9,6 @@ type Reply = {
   params?: Record<string, unknown>;
 };
 
-/** Observation may sign in on the opened portal. Payment and other mutations stay blocked. */
-export function observeMutationBlocked(method: string, url: string, allowed: string[]) {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return false;
-  try {
-    const target = new URL(url);
-    const samePortal = allowed.some((item) => new URL(item).origin === target.origin);
-    return !(samePortal && target.pathname === '/api/login');
-  } catch {
-    return true;
-  }
-}
-
 /** Intercept document requests before they reach the network, including redirects/popups. */
 export async function guardNavigation(cdpUrl: string, allowed: string[], observe: boolean) {
   let endpoint = cdpUrl;
@@ -93,7 +81,7 @@ export async function guardNavigation(cdpUrl: string, allowed: string[], observe
       };
       const blocked =
         (params.resourceType === 'Document' && !canonical.has(params.request.url)) ||
-        (observe && observeMutationBlocked(params.request.method, params.request.url, allowed));
+        (observe && !['GET', 'HEAD', 'OPTIONS'].includes(params.request.method));
       if (blocked) violated = true;
       void send(
         blocked ? 'Fetch.failRequest' : 'Fetch.continueRequest',

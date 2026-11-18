@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import express, { Router, type RequestHandler } from 'express';
@@ -36,9 +37,21 @@ export function createStagehandRoutes(worker: StagehandWorker, secret: () => str
     }
     next();
   };
-  for (const path of ['/observe', '/execute'] as const) {
+  for (const path of ['/observe', '/execute', '/receipt'] as const) {
     router.all(path, authenticate, parseJson, async (req, res) => {
-      if (path === '/observe') {
+      if (path === '/receipt') {
+        const parsed = z
+          .strictObject({
+            billId: z.number().int().positive(),
+            idempotencyKey: z.string().min(1).max(255),
+          })
+          .safeParse(req.body);
+        if (!parsed.success)
+          throw new HttpError(400, 'Invalid receipt request.', 'invalid_request');
+        if (!worker.receipt)
+          throw new HttpError(503, 'Receipt retrieval is unavailable.', 'portal_error');
+        res.json({ receipt: await worker.receipt(parsed.data.billId, parsed.data.idempotencyKey) });
+      } else if (path === '/observe') {
         const parsed = observeSchema.safeParse(req.body);
         if (!parsed.success)
           throw new HttpError(400, 'Invalid observation request.', 'invalid_request');
