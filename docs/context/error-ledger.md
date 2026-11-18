@@ -1,5 +1,11 @@
 # Error ledger
 
+## 2026-11-18 — Malformed model arguments
+
+- Cause: `callMcp` passed `call.function.arguments` to `JSON.parse` with no catch. A model tool call whose arguments were not JSON threw, and the agent-bills request stopped before bill-mcp or any later tool call.
+- Fix: a `SyntaxError` returns `{ error: "invalid tool arguments" }` and does not call bill-mcp. Valid JSON is still sent. Empty or missing arguments stay `{}`.
+- Guard: `arguments.test.mjs` fails on the uncaught parse and, with the fix, expects that error result with no fetch. A valid `{"bill_id":12}` body is still posted.
+
 ## 2026-11-18 — Model-supplied payment key
 
 - Cause: `execute_approved_payment` sent a caller idempotency key. A non-2xx worker response, including `outcome_unknown`, became `worker failed`, and `record_payment` was skipped, so the bill stayed `pending_payment`. A retry with a new key is a new worker claim.

@@ -54,10 +54,20 @@ async function openRouter(apiKey: string, messages: unknown[]) {
 }
 
 async function callMcp(mcpUrl: string, mcpToken: string, userAuth: string, call: { id: string; function: { name: string; arguments: string } }) {
+  let args;
+  const raw = call.function?.arguments;
+  try {
+    if (raw && typeof raw === "object") args = raw;
+    else args = JSON.parse(typeof raw === "string" && raw.trim() ? raw : "{}");
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    logError(`invalid tool arguments: ${call.function.name}`);
+    return JSON.stringify({ error: "invalid tool arguments" });
+  }
   const response = await fetch(mcpUrl, {
     method: "POST",
     headers: { Authorization: `Bearer ${mcpToken}`, "Content-Type": "application/json", "x-user-authorization": userAuth },
-    body: JSON.stringify({ method: "tools/call", params: { name: call.function.name, arguments: JSON.parse(call.function.arguments || "{}") } }),
+    body: JSON.stringify({ method: "tools/call", params: { name: call.function.name, arguments: args } }),
   });
   const text = await response.text();
   if (!response.ok) logError(`bill-mcp ${call.function.name} ${response.status}: ${text.slice(0, 300)}`);
