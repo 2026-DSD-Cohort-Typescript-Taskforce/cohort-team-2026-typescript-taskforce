@@ -8,9 +8,11 @@ Last changed by AI: 2026-11-18 · run 8e2f0a10-c094-4a12-8e67-3009feaa3b32 · fi
 
 The bill detail page shows a reusable payment trigger only to system administrators. It is a manual test entry point for the existing automated payment flow, not a second payment implementation.
 
-The component confirms the vendor, invoice number and amount. `POST /api/bills/[id]/payment-trigger` independently validates the signed-in user's database role, then calls bill-mcp's `execute_approved_payment` tool with only the bill ID. `BILL_MCP_URL` and `BILL_MCP_TOKEN` stay server-only, while the caller's JWT is forwarded for the existing bill read.
+The component confirms the vendor, invoice number and amount. `POST /api/bills/[id]/payment-trigger` independently validates the signed-in user's database role, then forwards the confirmed vendor ID, invoice number and amount (validated first, else 400 `invalid_request`) with the bill ID to bill-mcp's `execute_approved_payment` tool. `BILL_MCP_URL` and `BILL_MCP_TOKEN` stay server-only, while the caller's JWT is forwarded for the existing bill read.
 
-bill-mcp remains responsible for approval, snapshot, portal, idempotency, payment recording and receipt safeguards. A lost response or payment-recording failure is uncertain because the portal may already have submitted payment; it must not be retried. Success requires a `success` payment row for the requested bill.
+bill-mcp prepares the payment, authorizes it as the admin and claims a DC-89 payment attempt; it is also responsible for snapshot, portal, idempotency, payment recording and receipt safeguards. The trigger works for bills in `pending_payment` or `payment_failed`, and only when vendor, invoice and amount are all present.
+
+Outcome mapping (never forwards upstream text or rows on failure): `outcome_unknown`, `record_payment failed`, `payment_in_progress` are uncertain (409, do not retry); `payment_failed` is 502 and the bill is marked payment failed; `not_payable`, `snapshot_mismatch`, `no portal url`, `already_paid` are ineligible (409); `summary_mismatch`, `summary_stale` mean the bill changed (409, reload); `authorization_expired`, `not_authorized` mean the payment did not start (409, try again); `forbidden` is 403; `worker not configured` is 503; anything else is a generic 502. A lost response or payment-recording failure is uncertain because the portal may already have submitted payment; it must not be retried. Success requires a `success` payment row for the requested bill.
 
 `PaymentAutomationTrigger` owns role visibility, confirmation, request state and result messaging. Another page can mount it later without duplicating the payment call.
 

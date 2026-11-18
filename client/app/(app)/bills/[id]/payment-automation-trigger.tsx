@@ -11,7 +11,7 @@ import {
 } from '@/lib/payment-trigger';
 
 type Props = {
-  bill: Pick<Bill, 'bill_id' | 'status' | 'invoice_number' | 'amount' | 'vendor'>;
+  bill: Pick<Bill, 'bill_id' | 'status' | 'invoice_number' | 'amount' | 'vendor' | 'vendor_id'>;
   onCompleted?: () => void | Promise<void>;
 };
 
@@ -37,7 +37,12 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
 
   if (!canShowPaymentTrigger(role)) return null;
 
-  const eligible = bill.status === 'pending_payment';
+  const { vendor_id, invoice_number, amount } = bill;
+  const eligible =
+    (bill.status === 'pending_payment' || bill.status === 'payment_failed') &&
+    vendor_id !== null &&
+    invoice_number !== null &&
+    amount !== null;
   const summary: [string, string][] = [
     ['Vendor', bill.vendor?.name ?? 'Missing'],
     ['Invoice', bill.invoice_number ?? 'Missing'],
@@ -45,11 +50,15 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
   ];
 
   async function execute() {
-    if (running) return;
+    if (running || vendor_id === null || invoice_number === null || amount === null) return;
     setRunning(true);
     setNotice(null);
     try {
-      const result = await triggerBillPayment(bill.bill_id);
+      const result = await triggerBillPayment(bill.bill_id, {
+        vendor_id,
+        invoice_number,
+        amount,
+      });
       if (result?.ok) {
         setNotice(paymentTriggerNotice(result.data));
         if (result.data.outcome === 'success') await onCompleted?.();
@@ -76,7 +85,7 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
           <p className="mt-1 text-body-sm text-secondary">
             {eligible
               ? 'Manually run the approved payment workflow for testing.'
-              : 'This bill must be pending payment before automation can run.'}
+              : 'This bill must be pending payment or payment failed before automation can run.'}
           </p>
         </div>
         <button

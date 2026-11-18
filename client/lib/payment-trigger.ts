@@ -1,4 +1,5 @@
 import type { ApiResult } from './bill-api.ts';
+import type { ShownPayment } from './payment-trigger-service.ts';
 
 export type PaymentTriggerResult = {
   outcome: 'success' | 'ineligible' | 'failed' | 'unknown';
@@ -21,12 +22,13 @@ export function paymentTriggerNotice(result: PaymentTriggerResult): {
 
 export async function triggerBillPayment(
   billId: number,
+  shown: ShownPayment,
 ): Promise<ApiResult<PaymentTriggerResult> | null> {
   // Kept out of the pure notice/visibility helpers so they can be tested without a browser.
-  const { call } = await import('./bill-api');
+  const { call, sendJson } = await import('./bill-api');
   return call(
     `/api/bills/${billId}/payment-trigger`,
-    { method: 'POST' },
+    sendJson('POST', shown),
     (body: PaymentTriggerResult) => body,
     'The automated payment could not be completed.',
   );

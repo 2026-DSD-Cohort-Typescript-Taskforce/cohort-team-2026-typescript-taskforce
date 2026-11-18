@@ -14,6 +14,35 @@ export type BillMcpReply = {
   body: Record<string, unknown> | null;
 };
 
+/** The vendor, invoice and amount the admin saw in the confirm dialog. */
+export type ShownPayment = { vendor_id: number; invoice_number: string; amount: number | string };
+
+const invalidRequest: PaymentTriggerReply = {
+  status: 400,
+  body: {
+    code: 'invalid_request',
+    message: 'Send the vendor, invoice and amount you confirmed.',
+  },
+};
+
+function parseShown(value: unknown): ShownPayment | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { vendor_id, invoice_number, amount } = value as Record<string, unknown>;
+  if (typeof vendor_id !== 'number' || !Number.isInteger(vendor_id) || vendor_id <= 0) return null;
+  if (
+    typeof invoice_number !== 'string' ||
+    invoice_number.trim() === '' ||
+    invoice_number.length > 255
+  ) {
+    return null;
+  }
+  const amountOk =
+    typeof amount === 'number'
+      ? Number.isFinite(amount) && amount > 0
+      : typeof amount === 'string' && /^\d+(\.\d{1,2})?$/.test(amount);
+  return amountOk ? { vendor_id, invoice_number, amount: amount as number | string } : null;
+}
+
 const forbidden: PaymentTriggerReply = {
   status: 403,
   body: { code: 'forbidden', message: 'Only system administrators can run a payment.' },
@@ -41,16 +70,19 @@ const unavailable = (): PaymentTriggerReply => ({
 export async function runPaymentTrigger(input: {
   billId: number | null;
   role: string | null;
-  invoke: (billId: number) => Promise<BillMcpReply>;
+  shown: unknown;
+  invoke: (billId: number, shown: ShownPayment) => Promise<BillMcpReply>;
 }): Promise<PaymentTriggerReply> {
   if (input.role !== 'system_admin') return forbidden;
   if (input.billId === null) {
     return { status: 404, body: { code: 'not_found', message: 'Bill not found.' } };
   }
+  const shown = parseShown(input.shown);
+  if (!shown) return invalidRequest;
 
   let upstream: BillMcpReply;
   try {
-    upstream = await input.invoke(input.billId);
+    upstream = await input.invoke(input.billId, shown);
   } catch {
     // The request may have reached bill-mcp before the connection was lost.
     return uncertain();
@@ -77,41 +109,58 @@ export async function runPaymentTrigger(input: {
   }
 
   const code = typeof upstream.body.error === 'string' ? upstream.body.error : 'worker failed';
-  if (code === 'outcome_unknown') {
-    return uncertain();
+  const refused = (
+    status: number,
+    outcome: 'ineligible' | 'failed',
+    message: string,
+  ): PaymentTriggerReply => ({ status, body: { outcome, code, message } });
+
+  switch (code) {
+    case 'outcome_unknown':
+    case 'record_payment failed':
+    case 'payment_in_progress':
+      // The portal may already have taken the payment.
+      return uncertain();
+    case 'payment_failed':
+      return refused(
+        502,
+        'failed',
+        'The portal did not take the payment. The bill is marked payment failed.',
+      );
+    case 'not_payable':
+    case 'snapshot_mismatch':
+    case 'no portal url':
+    case 'already_paid':
+      return refused(409, 'ineligible', 'This bill is not eligible for automated payment.');
+    case 'summary_mismatch':
+    case 'summary_stale':
+      return refused(
+        409,
+        'ineligible',
+        'The bill changed. Reload it and check the details before paying.',
+      );
+    case 'authorization_expired':
+    case 'not_authorized':
+      return refused(409, 'failed', 'The payment did not start. Try again.');
+    case 'forbidden':
+      return forbidden;
+    case 'worker not configured':
+      return {
+        status: 503,
+        body: {
+          outcome: 'failed',
+          code: 'payment_service_unavailable',
+          message: 'Payment automation is not configured.',
+        },
+      };
+    default:
+      return {
+        status: 502,
+        body: {
+          outcome: 'failed',
+          code: 'payment_failed',
+          message: 'The automated payment could not be completed.',
+        },
+      };
   }
-  if (code === 'record_payment failed') {
-    // Stagehand already confirmed the portal payment before this database write.
-    return uncertain();
-  }
-  if (
-    ['not_pending_payment', 'not_approved', 'snapshot_mismatch', 'no portal url'].includes(code)
-  ) {
-    return {
-      status: 409,
-      body: {
-        outcome: 'ineligible',
-        code,
-        message: 'This bill is not eligible for automated payment.',
-      },
-    };
-  }
-  if (code === 'worker not configured') {
-    return {
-      status: 503,
-      body: {
-        outcome: 'failed',
-        code: 'payment_service_unavailable',
-        message: 'Payment automation is not configured.',
-      },
-    };
-  }
-  return {
-    status: 502,
-    body: {
-      outcome: 'failed',
-      code: 'payment_failed',
-      message: 'The automated payment could not be completed.',
-    },
-  };
 }
