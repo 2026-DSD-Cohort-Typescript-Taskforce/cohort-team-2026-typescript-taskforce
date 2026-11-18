@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(46);
 
 -- Setup (as postgres): login A is a billing operator, B a viewer, C has no profile, D a
 -- financial approver, E a system admin. One vendor, property and payment method, and one
@@ -34,7 +34,8 @@ insert into public.bills (bill_id, status, vendor_id, property_id, user_id, paym
   (12010, 'pending_payment', 12001, 12001, 12101, 12001, 'DC12-10', 120.00, current_date + 30),
   (12011, 'draft', 12001, 12001, 12101, 12001, 'DC12-11', 120.00, current_date + 30),  -- for direct edits
   (12012, 'draft', 12001, 12001, 12101, 12001, 'DC12-12', 120.00, current_date + 30),  -- approver asks for approval
-  (12013, 'draft', 12001, 12001, 12101, 12001, 'DC12-13', 120.00, current_date + 30);  -- admin submits for payment
+  (12013, 'draft', 12001, 12001, 12101, 12001, 'DC12-13', 120.00, current_date + 30),  -- admin submits for payment
+  (12014, 'draft', 12001, 12001, 12101, 12001, 'DC12-14', 120.00, current_date + 30);  -- extraction-style auto approve
 
 -- submit_bill's error as {sqlstate, message, detail}, or null if it succeeds.
 create function pg_temp.submit_error(p_bill_id integer) returns text[]
@@ -65,23 +66,23 @@ end
 $$;
 
 -- Schema, privileges, policies
-select has_function('public', 'submit_bill', ARRAY['integer', 'boolean'], 'submit_bill(integer, boolean) exists');
-select function_returns('public', 'submit_bill', ARRAY['integer', 'boolean'], 'bills', 'it returns the bill row');
-select is_definer('public', 'submit_bill', ARRAY['integer', 'boolean'], 'it is security definer, so it can move a bill out of draft and write audit_logs');
+select has_function('public', 'submit_bill', ARRAY['integer', 'boolean', 'boolean'], 'submit_bill(integer, boolean, boolean) exists');
+select function_returns('public', 'submit_bill', ARRAY['integer', 'boolean', 'boolean'], 'bills', 'it returns the bill row');
+select is_definer('public', 'submit_bill', ARRAY['integer', 'boolean', 'boolean'], 'it is security definer, so it can move a bill out of draft and write audit_logs');
 select is(
-  (select proconfig from pg_proc where oid = to_regprocedure('public.submit_bill(integer,boolean)')),
+  (select proconfig from pg_proc where oid = to_regprocedure('public.submit_bill(integer,boolean,boolean)')),
   ARRAY['search_path=""'],
   'it pins search_path to empty'
 );
 select is(
   (select count(*)::int from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
-    where p.oid = to_regprocedure('public.submit_bill(integer,boolean)')
+    where p.oid = to_regprocedure('public.submit_bill(integer,boolean,boolean)')
       and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'),
   0,
   'public has no EXECUTE on submit_bill()'
 );
-select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
-select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
+select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean', 'boolean'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
+select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean', 'boolean'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
 select policies_are('public', 'bills',
   ARRAY['authenticated users can view bills', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete draft bills'],
   'bills has the signed-in read policy and the three draft-only write policies (DC-21)');
@@ -178,6 +179,22 @@ select results_eq(
   $$select bill_id, submitted_by, status::text from public.approvals where bill_id in (12012, 12013)$$,
   $$values (12012, 12103, 'pending')$$,
   'the approval request is one pending approvals row, submitted by D; none for the admin''s bill'
+);
+
+-- p_auto_approve records the approval autopay requires, as the signed-in caller.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a1","role":"authenticated"}';
+select results_eq(
+  $$select bill_id, status::text from public.submit_bill(12014, false, true)$$,
+  $$values (12014, 'pending_payment')$$,
+  'p_auto_approve submits a complete draft as pending_payment'
+);
+reset role;
+select results_eq(
+  $$select bill_id, submitted_by, approved_by, status::text, time_approved::timestamptz, notes
+     from public.approvals where bill_id = 12014$$,
+  $$values (12014, 12101, 12101, 'approved', now(), 'Recorded by invoice extraction so the bill can be paid.')$$,
+  'p_auto_approve writes one approved approvals row for the caller'
 );
 
 -- Draft-only policies, as operator A

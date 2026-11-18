@@ -234,7 +234,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if ('error' in portal) return portal;
   const gaps = snapshotGaps(bill, portal.text);
   if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
-  if ((await deps.latestApproval(bill.bill_id)) !== 'approved') return { error: 'not_approved' };
+  if ((await deps.latestApproval(bill.bill_id)) !== 'approved' ) return { error: 'not_approved' };
   if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.stagehandUrl || !deps.canRecord) {
     return { error: 'worker not configured' };
   }

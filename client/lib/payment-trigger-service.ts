@@ -28,6 +28,24 @@ const uncertain = (): PaymentTriggerReply => ({
   },
 });
 
+function ineligibleReason(code: string, body: Record<string, unknown>): string | null {
+  const lead = 'This bill is not eligible for automated payment.';
+  if (code === 'not_pending_payment') return `${lead} Its status is not pending payment.`;
+  if (code === 'not_approved') return `${lead} The newest approval is not approved.`;
+  if (code === 'no portal url') return `${lead} The vendor has no payment portal URL.`;
+  if (code !== 'snapshot_mismatch') return null;
+  const fields = Array.isArray(body.fields)
+    ? body.fields.filter((field) => field === 'amount' || field === 'invoice_number')
+    : [];
+  const missing =
+    fields.length === 1 && fields[0] === 'invoice_number'
+      ? 'the invoice number'
+      : fields.length === 1
+        ? 'the amount'
+        : 'the invoice number or the amount';
+  return `${lead} The signed-in portal page does not show ${missing}.`;
+}
+
 const unavailable = (): PaymentTriggerReply => ({
   status: 502,
   body: {
@@ -84,15 +102,14 @@ export async function runPaymentTrigger(input: {
     // Stagehand already confirmed the portal payment before this database write.
     return uncertain();
   }
-  if (
-    ['not_pending_payment', 'not_approved', 'snapshot_mismatch', 'no portal url'].includes(code)
-  ) {
+  const ineligible = ineligibleReason(code, upstream.body);
+  if (ineligible) {
     return {
       status: 409,
       body: {
         outcome: 'ineligible',
         code,
-        message: 'This bill is not eligible for automated payment.',
+        message: ineligible,
       },
     };
   }

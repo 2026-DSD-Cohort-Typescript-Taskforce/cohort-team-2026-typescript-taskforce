@@ -13,8 +13,12 @@ import { errorHandler, HttpError } from '../src/middleware/errorHandler';
 import { BrowserWorker, type PortalBrowser, type PortalSession } from '../src/payments/worker';
 import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
-import { StagehandBrowser } from '../src/payments/stagehand-browser';
-import { writeFile } from 'node:fs/promises';
+import {
+  parsePortalProfiles,
+  selectObserveProfile,
+  StagehandBrowser,
+} from '../src/payments/stagehand-browser';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const request = {
   billId: 7,
@@ -183,6 +187,15 @@ test('observation rejects a URL absent from operator portal profiles before Chro
   } finally {
     await rm(path, { recursive: true, force: true });
   }
+});
+
+test('the shared sign-in profile is valid for observe on any host', async () => {
+  const profiles = parsePortalProfiles(await readFile(join(__dirname, '../profiles.json'), 'utf8'));
+  const profile = selectObserveProfile(profiles, 'https://copper-ridge.example/pay');
+  assert.ok(profile);
+  assert.equal(profile.portalUrl, undefined);
+  assert.equal(profile.capture?.[0]?.selector, "footer a[href='#signin/account']");
+  assert.equal(selectObserveProfile(profiles, 'https://brightwater.example/'), profile);
 });
 
 test('exact decimal parsing never rounds or accepts ambiguous amounts', () => {
