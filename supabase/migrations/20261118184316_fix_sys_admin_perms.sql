@@ -9,6 +9,11 @@
 --      Why? Because the last time the submit_bill() and decide_bill() functions were updated, 
 --      Only billing_operator could submit, and only financial_approver could approve.
 
+--Extra notes:
+--  Run this test in the client folder to test all the changes made in this branch (DC-114):
+--      node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/roles.test.ts
+
+
 -- submit_bill(): billing_operator, financial_approver and system_admin can all submit.
 CREATE OR REPLACE FUNCTION public.submit_bill(p_bill_id integer)
 RETURNS public.bills
