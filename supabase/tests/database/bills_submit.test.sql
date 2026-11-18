@@ -126,7 +126,8 @@ select results_eq(
   'refused submits change no bill'
 );
 -- Rows written in this transaction have created_at = now(); seeded rows don't.
-select is((select count(*)::int from public.audit_logs where created_at = now()), 0, 'refused submits write no audit row');
+-- actor_type is null keeps to submit_bill's own rows; DC-101 trigger rows are tested in audit_logs.test.sql.
+select is((select count(*)::int from public.audit_logs where created_at = now() and actor_type is null), 0, 'refused submits write no audit row');
 
 -- As operator A: success. Times are cast to timestamptz so these pass whether the
 -- columns are timestamp or timestamptz.
@@ -146,7 +147,7 @@ select results_eq(
   'the bill is stored as pending_payment with updated_at = now'
 );
 select results_eq(
-  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now()$$,
+  $$select name, description, created_at::timestamptz from public.audit_logs where created_at = now() and actor_type is null$$,
   $$values ('bill_submitted', 'bill 12001: draft → pending_payment, by user 12101', now())$$,
   'exactly one audit row: bill_submitted, naming this bill and A''s profile, at now'
 );
