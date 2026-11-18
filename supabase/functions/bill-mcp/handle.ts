@@ -74,6 +74,10 @@ const RPC_CODES = new Set(['forbidden', 'not_found', 'invalid_payment', 'payment
   'not_payable', 'not_pending', 'not_prepared', 'summary_stale', 'not_authorized', 'authorization_expired',
   'worker not configured']);
 
+// start_payment_submission's own refusals: the claim did not happen.
+const CLAIM_CODES = new Set(['not_found', 'not_authorized', 'authorization_expired', 'forbidden', 'not_payable',
+  'summary_stale']);
+
 const TOOLS = [
   { name: 'get_bill' },
   { name: 'list_vendors' },
@@ -305,8 +309,19 @@ async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt) {
   const authorized = await callRpc(deps, 'authorize_payment', { p_payment_id: attempt.payment_id, p_summary: summary }, 'user');
   if (authorized.error) return cancelAndStop(deps, attempt, rpcStop('authorize_payment', authorized.error));
   const claimed = await callRpc(deps, 'start_payment_submission', { p_payment_id: attempt.payment_id }, 'service');
-  if (claimed.error) return cancelAndStop(deps, attempt, rpcStop('start_payment_submission', claimed.error));
-  return null;
+  if (!claimed.error) return null;
+  if (CLAIM_CODES.has(claimed.error.message)) return cancelAndStop(deps, attempt, { error: claimed.error.message });
+  // The claim may have committed with its reply lost. Close it as not submitted; if it never
+  // committed, record_payment answers not_processing and the cancel withdraws it.
+  console.error(`[bill-mcp] start_payment_submission failed: ${claimed.error.message}`);
+  await callRpc(deps, 'record_payment', {
+    p_payment_id: attempt.payment_id,
+    p_outcome: 'failure',
+    p_outcome_code: 'not_submitted',
+    p_transaction_reference: null,
+    p_message: 'claim reply lost; worker not called',
+  }, 'service');
+  return cancelAndStop(deps, attempt, { error: 'payment_not_started' });
 }
 
 function unknownOutcome(message: string | null): Outcome {

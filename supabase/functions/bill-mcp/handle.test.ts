@@ -453,6 +453,58 @@ test('a stale summary at the claim stops before execute', async () => {
   await refusedClaim('summary_stale', '["amount_cents"]');
 });
 
+const lostClaimRecord = {
+  p_payment_id: 31,
+  p_outcome: 'failure',
+  p_outcome_code: 'not_submitted',
+  p_transaction_reference: null,
+  p_message: 'claim reply lost; worker not called',
+};
+
+test('a lost claim reply is recorded as not submitted and never reaches execute', async () => {
+  const replies = [
+    () => rpcError('fetch failed'),
+    () => {
+      throw new TypeError('fetch failed');
+    },
+  ];
+  for (const start_payment_submission of replies) {
+    const built = deps({}, { rpc: { start_payment_submission } });
+    const result = await pay(built);
+    assert.deepEqual(result.body, { error: 'payment_not_started' });
+    assert.deepEqual(rpcNames(built), [
+      'prepare_payment',
+      'authorize_payment',
+      'start_payment_submission',
+      'record_payment',
+      'cancel_payment',
+    ]);
+    assert.deepEqual(built.rpcCalls[3], { name: 'record_payment', args: lostClaimRecord, as: 'service' });
+    assert.equal(executeCalls(built).length, 0);
+  }
+});
+
+test('a claim that never committed is still cancelled after record_payment refuses', async () => {
+  const built = deps(
+    {},
+    {
+      rpc: {
+        start_payment_submission: () => rpcError('fetch failed'),
+        record_payment: () => rpcError('not_processing', 'authorized'),
+      },
+    },
+  );
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'payment_not_started' });
+  assert.deepEqual(built.rpcCalls[3].args, lostClaimRecord);
+  assert.deepEqual(built.rpcCalls[4], {
+    name: 'cancel_payment',
+    args: { p_payment_id: 31, p_note: 'payment_not_started' },
+    as: 'user',
+  });
+  assert.equal(executeCalls(built).length, 0);
+});
+
 test('an authorize error cancels the attempt and returns its code', async () => {
   const built = deps({}, { rpc: { authorize_payment: () => rpcError('not_pending', 'expired') } });
   assert.deepEqual((await pay(built)).body, { error: 'not_pending' });
