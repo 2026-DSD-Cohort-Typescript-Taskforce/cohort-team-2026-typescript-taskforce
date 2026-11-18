@@ -29,7 +29,7 @@ export default function BillsPage() {
             <div className="flex min-h-0 min-w-0 flex-col gap-6 lg:overflow-hidden">
               <section
                 aria-label="Bills"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden lg:basis-0"
+                className="flex flex-col lg:min-h-0 lg:flex-1 lg:basis-0 lg:overflow-hidden"
               >
                 <BillsList />
               </section>

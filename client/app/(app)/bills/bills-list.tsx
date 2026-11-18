@@ -57,7 +57,10 @@ export function BillsList() {
   }
 
   return (
-    <section aria-label="Bills list" className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+    <section
+      aria-label="Bills list"
+      className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+    >
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <label htmlFor={searchId} className="text-body-sm text-secondary">
@@ -93,7 +96,7 @@ export function BillsList() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="max-h-[60vh] overflow-x-hidden overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1">
         {error && <LoadError message={error} retrying={loading} onRetry={refresh} />}
 
         <p role="status" className="sr-only">
