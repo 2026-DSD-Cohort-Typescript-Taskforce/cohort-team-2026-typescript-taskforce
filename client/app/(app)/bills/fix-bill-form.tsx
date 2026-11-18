@@ -1,9 +1,9 @@
 'use client';
 
 // The fix form inside Current issues: finishes one draft, prefilled from the bill. Save
-// draft keeps it a draft with whatever is filled in; Submit for payment saves it and runs
-// submit_bill(), which only billing operators can do. Once a draft has every detail it
-// drops off Current issues on the next refresh.
+// draft keeps it a draft with whatever is filled in; Submit for approval or for payment
+// saves it and runs submit_bill(), which viewers can't do. Once a draft has every detail
+// it drops off Current issues on the next refresh.
 
 import { useState } from 'react';
 import { ErrorAlert, focusRing, primaryButton, secondaryButton } from '@/app/ui';
@@ -34,7 +34,7 @@ export function FixBillForm({ billId }: { billId: number }) {
   const submission = useBillSubmission({ bill });
   const close = () => setPanel({ kind: 'upload' });
 
-  async function finish(action: 'save' | 'submit') {
+  async function finish(action: 'save' | 'submit' | 'approval') {
     if (!options || submission.busy) return;
     const found = checkDetails(values);
     setErrors(found);
@@ -49,7 +49,7 @@ export function FixBillForm({ billId }: { billId: number }) {
     setValues(resolved.values);
     const billValues = toBillValues(resolved.values);
     if (action === 'save') await submission.saveDraft(billValues);
-    else await submission.submit(billValues);
+    else await submission.submit(billValues, action === 'approval');
   }
 
   if (!bill) {
@@ -101,14 +101,24 @@ export function FixBillForm({ billId }: { billId: number }) {
               Save draft
             </button>
             {submission.canSubmit && (
-              <button
-                type="button"
-                onClick={() => finish('submit')}
-                disabled={submission.busy}
-                className={primaryButton}
-              >
-                Submit for payment
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => finish('approval')}
+                  disabled={submission.busy}
+                  className={secondaryButton}
+                >
+                  Submit for approval
+                </button>
+                <button
+                  type="button"
+                  onClick={() => finish('submit')}
+                  disabled={submission.busy}
+                  className={primaryButton}
+                >
+                  Submit for payment
+                </button>
+              </>
             )}
           </>
         )}

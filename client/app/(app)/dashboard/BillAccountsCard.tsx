@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { getBillStatusRows } from '@/lib/bills';
 
@@ -26,6 +27,8 @@ const EMPTY: BillStatusCounts = {
 // count the signed-in user's bills per status
 export async function getBillStatusCounts(): Promise<BillStatusCounts> {
   const rows = await getBillStatusRows().catch((error) => {
+    // Next's prerender stops a no-store fetch by throwing; let Next handle that one
+    unstable_rethrow(error);
     console.error(error);
     return [];
   });
@@ -48,7 +51,10 @@ function toBuckets(c: BillStatusCounts) {
 export async function BillAccountsCard() {
   // await cookies() outside the catch so Next can handle its prerender rejection
   await cookies();
-  const counts = await getBillStatusCounts().catch(() => EMPTY);
+  const counts = await getBillStatusCounts().catch((error) => {
+    unstable_rethrow(error);
+    return EMPTY;
+  });
   const b = toBuckets(counts);
   const columns = [
     { count: b.paid, label: 'Paid', tone: 'success' },

@@ -103,8 +103,8 @@ export function useBillSubmission({
     });
   }
 
-  /** Saves the values, then submits the bill for payment with no approval step. */
-  async function submit(values: BillValues) {
+  /** Saves the values, then submits the bill for payment, or for approval first. */
+  async function submit(values: BillValues, needsApproval = false) {
     if (running.current) return;
     const input = check(values);
     if (!input) return;
@@ -114,7 +114,7 @@ export function useBillSubmission({
     await run('submit', async () => {
       const saved = await save(input);
       if (!saved) return;
-      const result = await submitBill(saved.bill_id);
+      const result = await submitBill(saved.bill_id, needsApproval);
       if (!result) return;
       if (!result.ok) return dispatch({ type: 'failed', step: 'submit', failure: result });
       dispatch({ type: 'submitted', status: result.data });
