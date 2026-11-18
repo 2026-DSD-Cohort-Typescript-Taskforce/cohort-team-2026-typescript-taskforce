@@ -35,3 +35,19 @@ _Avoid_: Bill ID (that is the app's own number for a bill)
 **Portal login**:
 The username and password for a vendor's pay-online site, kept on the vendor.
 _Avoid_: Credentials, account
+
+**Policy**:
+A vendor's payment rule, kept on the vendor. A vendor has one.
+_Avoid_: Vendor rule, setting
+
+**Policy sentence**:
+The policy as the manager writes it, in plain words.
+_Avoid_: Policy text, prompt
+
+**Policy draft**:
+The interpretation of a policy sentence: a proposed policy rule plus any questions. It does nothing until the manager confirms it.
+_Avoid_: Pending policy, preview
+
+**Policy rule**:
+The structured form of a policy that code checks bills against. Version 1 is defined in ADR 0003.
+_Avoid_: Policy JSON, policy config
