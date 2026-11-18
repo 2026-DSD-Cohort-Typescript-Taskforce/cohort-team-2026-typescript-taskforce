@@ -5,6 +5,26 @@
 
 export const BILL_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
+/** The one-time Storage endpoint; its token authorizes the upload without an API-key header. */
+export function signedBillUploadUrl(
+  supabaseUrl: string | undefined,
+  path: string,
+  token: string,
+): string | null {
+  if (!supabaseUrl || !path || !token) return null;
+  try {
+    const url = new URL(
+      `/storage/v1/object/upload/sign/bill-documents/${path.replace(/^\/+/, '')}`,
+      supabaseUrl,
+    );
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    url.searchParams.set('token', token);
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export type BillUploadKind = 'pdf';
 
 /** pdf, or null when the file is not a bill the intake screen can show. */
