@@ -5,6 +5,7 @@ import { env } from './config/env';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import adminRoutes from './routes/admin.routes';
 import authRoutes from './routes/auth.routes';
+import stagehandRoutes from './routes/stagehand.routes';
 
 const app = express();
 
@@ -14,6 +15,8 @@ app.use(
   }),
 );
 
+// Worker routes authenticate before parsing bodies or opening a browser.
+app.use(stagehandRoutes);
 app.use(express.json());
 app.use(cookieParser());
 
