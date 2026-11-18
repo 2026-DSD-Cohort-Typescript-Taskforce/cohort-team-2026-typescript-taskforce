@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 import { InfoCard, StatusLabel } from '@/components/ui/InfoCard';
 import { fetchLastSubmittedBill } from '@/lib/bills';
 
@@ -15,6 +16,8 @@ export async function LastSubmittedCard() {
   // await cookies() outside the catch so Next can handle its prerender rejection
   await cookies();
   const bill = await fetchLastSubmittedBill().catch((error) => {
+    // Next's prerender stops a no-store fetch by throwing; let Next handle that one
+    unstable_rethrow(error);
     console.error(error);
     return null;
   });
