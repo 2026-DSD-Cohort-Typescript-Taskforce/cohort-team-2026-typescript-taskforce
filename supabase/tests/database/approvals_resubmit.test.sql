@@ -68,10 +68,13 @@ select results_eq(
   'the revision row is kept and a new pending row is opened for the resubmission'
 );
 select results_eq(
-  $$select name, description from public.audit_logs
-      where description like 'bill 81201: draft%' and actor_type is null$$,
-  $$values ('bill_submitted', 'bill 81201: draft → pending_approval, by user 81201')$$,
-  'the audit row records the move to pending_approval'
+  $$select name, actor_type, actor_user_id, entity_type, entity_id, description from public.audit_logs
+      where created_at = now() and actor_type is distinct from 'system'
+        and name in ('bill_submitted', 'approval_created') order by audit_log_id$$,
+  $$values ('approval_created', 'user', 81201, 'approval', (select approval_id from public.approvals where bill_id = 81201 and status = 'pending'),
+              'approval ' || (select approval_id from public.approvals where bill_id = 81201 and status = 'pending') || ' created'),
+           ('bill_submitted', 'user', 81201, 'bill', 81201, 'bill 81201 status: draft → pending_approval')$$,
+  'resubmitting logs the new approval row and one bill_submitted row, by A, recording the move to pending_approval'
 );
 
 set local role authenticated;
