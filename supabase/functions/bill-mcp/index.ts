@@ -38,7 +38,11 @@ Deno.serve(async (req) => {
       clientUrl: Deno.env.get('CLIENT_URL') ?? 'http://localhost:3000',
       stagehandUrl: Deno.env.get('STAGEHAND_URL'),
       stagehandSecret: Deno.env.get('STAGEHAND_SECRET'),
-      canRecord: admin !== null,
+      // DC-89: payments are written only through prepare_payment, authorize_payment,
+      // start_payment_submission and record_payment, and #59's record_payment is gone. Until
+      // DC-93 moves execute_approved_payment onto those functions it stays off here: it would
+      // pay at the portal and then fail to record. It stops before /execute.
+      canRecord: false,
       receiptPayment: async (billId, paymentId) => {
         const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });
         return error ? null : { ...data, bill_id: data.billId };
