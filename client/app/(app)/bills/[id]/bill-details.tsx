@@ -14,6 +14,7 @@ import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } fro
 import { StatusChip } from '../status-chip';
 import { submittedMessage } from '@/lib/bill-submission';
 import { BillEditForm } from './bill-edit-form';
+import { PaymentAutomationTrigger } from './payment-automation-trigger';
 
 const UNREACHABLE = 'Could not reach the server. Try again.';
 
@@ -181,6 +182,13 @@ export function BillDetails({ id }: { id: string }) {
             ))}
           </dl>
         </section>
+        <PaymentAutomationTrigger
+          bill={bill}
+          onCompleted={async () => {
+            const result = await fetchBill(id);
+            if (result && 'bill' in result) setBill(result.bill);
+          }}
+        />
       </div>
 
       <dialog
