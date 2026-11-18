@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { handleBillMcp, type BillMcpDeps, type PaymentInput } from './handle.ts';
+import { handleBillMcp, type BillMcpDeps, type RpcName, type RpcReply } from './handle.ts';
 
 const TOKEN = 'mcp-secret';
 const USER = 'Bearer user-jwt';
@@ -15,40 +15,88 @@ function bill() {
   };
 }
 
-function deps(overrides: Partial<BillMcpDeps> = {}) {
+// The payments row prepare_payment returns for bill 12.
+function attempt(overrides: Record<string, unknown> = {}) {
+  return {
+    payment_id: 31,
+    bill_id: 12,
+    status: 'pending',
+    vendor_id: 3,
+    invoice_number: 'INV-1',
+    account_reference: null,
+    payment_method_id: 5,
+    amount_cents: 4050,
+    fees_cents: 0,
+    total_cents: 4050,
+    currency: 'USD',
+    payment_date: '2026-11-18',
+    idempotency_key: 'key-31',
+    ...overrides,
+  };
+}
+
+function rpcError(message: string, details: string | null = null): RpcReply {
+  return { data: null, error: { message, details } };
+}
+
+type RpcCall = { name: RpcName; args: Record<string, unknown>; as: 'service' | 'user' };
+
+type Script = {
+  bill?: Record<string, unknown>;
+  page?: string;
+  execute?: (init?: RequestInit) => Response | Promise<Response>;
+  rpc?: Partial<Record<RpcName, (args: Record<string, unknown>) => RpcReply>>;
+};
+
+function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
   const calls: { url: string; init?: RequestInit }[] = [];
-  const recorded: PaymentInput[] = [];
+  const rpcCalls: RpcCall[] = [];
+  // Requests and payment-function calls, in the order they happened.
+  const steps: string[] = [];
+  // authorize, start and record answer with the prepared row in its next status.
+  let row: Record<string, unknown> = attempt();
+  const answers: Record<RpcName, (args: Record<string, unknown>) => RpcReply> = {
+    prepare_payment: () => ({ data: attempt(), error: null }),
+    authorize_payment: () => ({ data: { ...row, status: 'authorized' }, error: null }),
+    start_payment_submission: () => ({ data: { ...row, status: 'processing' }, error: null }),
+    record_payment: (args) => ({ data: { ...row, status: args.p_outcome }, error: null }),
+    cancel_payment: () => ({ data: { ...row, status: 'canceled' }, error: null }),
+  };
   const base: BillMcpDeps = {
     mcpToken: TOKEN,
     clientUrl: 'http://localhost:3000',
     stagehandUrl: 'http://127.0.0.1:5000',
     stagehandSecret: 'stagehand-secret',
-    canRecord: true,
     fetch: async (input, init) => {
       const url = String(input);
       calls.push({ url, init });
+      steps.push(new URL(url).pathname);
       if (url.endsWith('/api/bills/12')) {
-        return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
+        return new Response(JSON.stringify({ bill: { ...bill(), ...script.bill } }), { status: 200 });
       }
       if (url.endsWith('/api/vendors')) {
         return new Response(JSON.stringify({ vendors: [{ vendor_id: 3, name: 'Power' }] }), { status: 200 });
       }
       if (url.endsWith('/observe')) {
-        return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $40.50' }), { status: 200 });
+        return new Response(JSON.stringify({ pageText: script.page ?? 'Invoice INV-1 total $40.50' }), { status: 200 });
       }
       if (url.endsWith('/execute')) {
-        return new Response('paid', { status: 200 });
+        if (script.execute) return script.execute(init);
+        return Response.json({ confirmed: true, transactionReference: 'TX-31' });
       }
       return new Response('missing', { status: 404 });
     },
     portalUrl: async () => 'https://portal.example.test/pay',
-    latestApproval: async () => 'approved',
-    recordPayment: async (input) => {
-      recorded.push(input);
-      return { payment: { payment_id: 9 } };
+    callerUserId: async () => 7,
+    rpc: async (name, args, as) => {
+      rpcCalls.push({ name, args, as });
+      steps.push(name);
+      const reply = (script.rpc?.[name] ?? answers[name])(args);
+      if (name === 'prepare_payment' && reply.data) row = reply.data as Record<string, unknown>;
+      return reply;
     },
   };
-  return { calls, recorded, deps: { ...base, ...overrides } };
+  return { calls, rpcCalls, steps, deps: { ...base, ...overrides } };
 }
 
 function call(body: unknown, authorization: string | null = `Bearer ${TOKEN}`, httpMethod = 'POST') {
@@ -63,6 +111,37 @@ function call(body: unknown, authorization: string | null = `Bearer ${TOKEN}`, h
   };
 }
 
+// What the DC-113 dialog showed the admin for bill 12.
+const shown = { bill_id: 12, vendor_id: 3, invoice_number: 'INV-1', amount: 40.5 };
+
+function pay(built: ReturnType<typeof deps>, arguments_: Record<string, unknown> = shown) {
+  return handleBillMcp(
+    {
+      httpMethod: 'POST',
+      authorization: `Bearer ${TOKEN}`,
+      userAuthorization: USER,
+      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: arguments_ } },
+    },
+    built.deps,
+  );
+}
+
+function rpcNames(built: ReturnType<typeof deps>) {
+  return built.rpcCalls.map((rpc) => rpc.name);
+}
+
+function executeCalls(built: ReturnType<typeof deps>) {
+  return built.calls.filter((call) => call.url.endsWith('/execute'));
+}
+
+function recorded(built: ReturnType<typeof deps>) {
+  return built.rpcCalls.find((rpc) => rpc.name === 'record_payment')?.args;
+}
+
+function workerError(code: string, status: number) {
+  return () => Response.json({ code, error: 'The worker refused.' }, { status });
+}
+
 test('a request without the MCP token is refused and calls nothing', async () => {
   const lines: string[] = [];
   const original = console.error;
@@ -74,7 +153,7 @@ test('a request without the MCP token is refused and calls nothing', async () =>
     const result = await run();
     assert.deepEqual(result, { status: 401, body: { error: 'unauthorized' } });
     assert.equal(built.calls.length, 0);
-    assert.equal(built.recorded.length, 0);
+    assert.equal(built.rpcCalls.length, 0);
     assert.match(lines.join('\n'), /\[bill-mcp\] 401/);
     assert.equal(lines.join('\n').includes('wrong'), false);
   } finally {
@@ -107,7 +186,7 @@ test('get_bill and list_vendors forward the user cookie and write nothing', asyn
   assert.equal(loaded.status, 200);
   assert.equal(billCall.calls[0].url, 'http://localhost:3000/api/bills/12');
   assert.equal(new Headers(billCall.calls[0].init?.headers).get('cookie'), 'sb-access-token=user-jwt');
-  assert.equal(billCall.recorded.length, 0);
+  assert.equal(billCall.rpcCalls.length, 0);
 
   const vendors = deps();
   await handleBillMcp(
@@ -120,7 +199,7 @@ test('get_bill and list_vendors forward the user cookie and write nothing', asyn
     vendors.deps,
   );
   assert.equal(vendors.calls[0].url, 'http://localhost:3000/api/vendors');
-  assert.equal(vendors.recorded.length, 0);
+  assert.equal(vendors.rpcCalls.length, 0);
 });
 
 test('observe_portal posts the stored portal URL and ignores a URL in the arguments', async () => {
@@ -144,221 +223,507 @@ test('observe_portal posts the stored portal URL and ignores a URL in the argume
   const sent = JSON.parse(String(built.calls.at(-1)?.init?.body));
   assert.equal(sent.portalUrl, 'https://portal.example.test/pay');
   assert.equal(built.calls.at(-1)?.url, 'http://127.0.0.1:5000/observe');
-  assert.equal(built.recorded.length, 0);
+  assert.equal(built.rpcCalls.length, 0);
 });
 
 test('a worker failure does not record a payment', async () => {
   const built = deps({
-    fetch: async (input, init) => {
+    fetch: async (input) => {
       const url = String(input);
       if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
-      return new Response('nope', { status: 502, ...(init ? {} : {}) });
+      return new Response('nope', { status: 502 });
     },
   });
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: {
-        method: 'tools/call',
-        params: {
-          name: 'execute_approved_payment',
-          arguments: {
-            bill_id: 12,
-            amount: 40.5,
-            vendor_id: 3,
-            invoice_number: 'INV-1',
-            idempotency_key: 'pay-1',
-          },
-        },
-      },
-    },
-    built.deps,
-  );
+  const result = await pay(built, { ...shown, idempotency_key: 'pay-1' });
   assert.deepEqual(result.body, { error: 'worker failed' });
-  assert.equal(built.recorded.length, 0);
+  assert.equal(built.rpcCalls.length, 0);
 });
 
-test('a matching approved bill records the database snapshot after the worker succeeds', async () => {
+test('success runs prepare, authorize, claim, execute and record in order', async () => {
   const built = deps();
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: {
-        method: 'tools/call',
-        params: {
-          name: 'execute_approved_payment',
-          arguments: {
-            bill_id: 12,
-            amount: 40.5,
-            vendor_id: 3,
-            invoice_number: 'INV-1',
-            idempotency_key: 'pay-1',
-            portalUrl: 'https://evil.example/pay',
-          },
-        },
-      },
-    },
-    built.deps,
+  const result = await pay(built, {
+    ...shown,
+    idempotency_key: 'pay-1',
+    portalUrl: 'https://evil.example/pay',
+  });
+  assert.deepEqual(built.steps, [
+    '/api/bills/12',
+    '/observe',
+    'prepare_payment',
+    'authorize_payment',
+    'start_payment_submission',
+    '/execute',
+    'record_payment',
+  ]);
+  assert.deepEqual(rpcNames(built), [
+    'prepare_payment',
+    'authorize_payment',
+    'start_payment_submission',
+    'record_payment',
+  ]);
+  assert.deepEqual(
+    built.rpcCalls.map((rpc) => rpc.as),
+    ['service', 'user', 'service', 'service'],
   );
-  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
-  const sent = JSON.parse(String(built.calls.find((call) => call.url.endsWith('/execute'))?.init?.body));
-  assert.equal(sent.portalUrl, 'https://portal.example.test/pay');
-  assert.equal(sent.amount, 40.5);
-  assert.equal(sent.idempotencyKey, 'portal-12');
-  assert.deepEqual(built.recorded[0], {
+  const [prepare, authorize, start, record] = built.rpcCalls;
+  const { p_payment_date: paymentDate, ...prepareArgs } = prepare.args;
+  assert.match(String(paymentDate), /^\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(prepareArgs, {
+    p_bill_id: 12,
+    p_prepared_by: 7,
+    p_fees_cents: 0,
+    p_account_reference: null,
+    p_policy_refs: [],
+  });
+  assert.deepEqual(authorize.args, {
+    p_payment_id: 31,
+    p_summary: {
+      bill_id: 12,
+      vendor_id: 3,
+      invoice_number: 'INV-1',
+      account_reference: null,
+      payment_method_id: 5,
+      amount_cents: 4050,
+      fees_cents: 0,
+      total_cents: 4050,
+      currency: 'USD',
+      payment_date: '2026-11-18',
+    },
+  });
+  assert.deepEqual(start.args, { p_payment_id: 31 });
+  const [executed] = executeCalls(built);
+  assert.deepEqual(JSON.parse(String(executed.init?.body)), {
+    billId: 12,
+    portalUrl: 'https://portal.example.test/pay',
+    amount: 40.5,
+    vendorId: 3,
+    invoiceNumber: 'INV-1',
+    idempotencyKey: 'key-31',
+  });
+  assert.ok(executed.init?.signal instanceof AbortSignal);
+  assert.deepEqual(record.args, {
+    p_payment_id: 31,
+    p_outcome: 'success',
+    p_outcome_code: 'confirmed',
+    p_transaction_reference: 'TX-31',
+    p_message: null,
+  });
+  assert.deepEqual(result.body, { payment: attempt({ status: 'success' }) });
+});
+
+test("the receipt is stored through the attempt's own key", async () => {
+  const receipt = { status: 'captured', reference: 'TX-31' };
+  const built = deps(
+    {},
+    { execute: () => Response.json({ confirmed: true, transactionReference: 'TX-31', receipt }) },
+  );
+  const stored: unknown[][] = [];
+  built.deps.persistReceipt = async (...args) => {
+    stored.push(args);
+    return { status: 'stored', path: 'payments/31/receipt.png' };
+  };
+  const result = await pay(built);
+  assert.equal(stored.length, 1);
+  const [input, payment, sent] = stored[0];
+  assert.deepEqual(input, {
     billId: 12,
     amount: 40.5,
     vendorId: 3,
     invoiceNumber: 'INV-1',
-    idempotencyKey: 'portal-12',
+    idempotencyKey: 'key-31',
+  });
+  assert.deepEqual(payment, attempt({ status: 'success' }));
+  assert.deepEqual(sent, receipt);
+  assert.deepEqual(result.body, {
+    payment: attempt({ status: 'success' }),
+    receipt: { status: 'stored', path: 'payments/31/receipt.png' },
   });
 });
 
-test('a worker outcome_unknown is returned and does not record a payment', async () => {
-  const built = deps({
-    fetch: async (input) => {
-      const url = String(input);
-      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
-      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $40.50' }), { status: 200 });
-      return new Response(
-        JSON.stringify({ error: 'Payment outcome needs reconciliation. Do not resubmit.', code: 'outcome_unknown' }),
-        { status: 409 },
-      );
-    },
+test('payment_failed bills are payable again', async () => {
+  const built = deps({}, { bill: { status: 'payment_failed' } });
+  const result = await pay(built);
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
+  assert.equal(executeCalls(built).length, 1);
+});
+
+test('other statuses are not_payable and call nothing', async () => {
+  for (const status of ['draft', 'pending_approval', 'approval_denied', 'processing', 'payment_success']) {
+    const built = deps({}, { bill: { status } });
+    const result = await pay(built);
+    assert.deepEqual(result.body, { error: 'not_payable' }, status);
+    assert.deepEqual(built.steps, ['/api/bills/12'], status);
+  }
+});
+
+test('values the admin saw that differ from the bill stop before preparing', async () => {
+  const built = deps();
+  const result = await pay(built, { ...shown, amount: '40.51' });
+  assert.deepEqual(result.body, { error: 'summary_mismatch', fields: ['amount'] });
+  assert.deepEqual(built.steps, ['/api/bills/12']);
+
+  const all = deps();
+  const differs = await pay(all, { bill_id: 12, vendor_id: 4, invoice_number: 'INV-2', amount: 1 });
+  assert.deepEqual(differs.body, {
+    error: 'summary_mismatch',
+    fields: ['vendor_id', 'invoice_number', 'amount'],
   });
-  const result = await handleBillMcp(
+  assert.equal(all.rpcCalls.length, 0);
+});
+
+test('a prepared attempt that differs from what was shown is cancelled', async () => {
+  const built = deps(
+    {},
     {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: {
-        method: 'tools/call',
-        params: {
-          name: 'execute_approved_payment',
-          arguments: { bill_id: 12, idempotency_key: 'pay-2' },
+      rpc: {
+        prepare_payment: () => ({ data: attempt({ amount_cents: 4000, total_cents: 4000 }), error: null }),
+      },
+    },
+  );
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'summary_mismatch', fields: ['amount'] });
+  assert.deepEqual(rpcNames(built), ['prepare_payment', 'cancel_payment']);
+  assert.deepEqual(built.rpcCalls[1], {
+    name: 'cancel_payment',
+    args: { p_payment_id: 31, p_note: 'summary_mismatch' },
+    as: 'user',
+  });
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('40.10 shown for a 40.1 bill counts as the same amount', async () => {
+  const built = deps(
+    {},
+    {
+      bill: { amount: 40.1 },
+      page: 'Invoice INV-1 total $40.10',
+      rpc: {
+        prepare_payment: () => ({ data: attempt({ amount_cents: 4010, total_cents: 4010 }), error: null }),
+      },
+    },
+  );
+  const result = await pay(built, { ...shown, amount: '40.10' });
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
+  assert.equal(JSON.parse(String(executeCalls(built)[0].init?.body)).amount, 40.1);
+});
+
+test('prepare errors are returned and nothing is executed', async () => {
+  // index.ts answers 'worker not configured' for service calls when the service key is unset.
+  for (const code of ['payment_in_progress', 'already_paid', 'not_payable', 'worker not configured']) {
+    const built = deps({}, { rpc: { prepare_payment: () => rpcError(code, '9') } });
+    const result = await pay(built);
+    assert.deepEqual(result.body, { error: code });
+    assert.deepEqual(rpcNames(built), ['prepare_payment'], code);
+    assert.equal(executeCalls(built).length, 0, code);
+  }
+});
+
+async function refusedClaim(code: string, details: string | null) {
+  const built = deps(
+    {},
+    {
+      rpc: {
+        start_payment_submission: () => rpcError(code, details),
+        cancel_payment: () => rpcError('not_cancelable', 'expired'),
+      },
+    },
+  );
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: code });
+  assert.deepEqual(rpcNames(built), [
+    'prepare_payment',
+    'authorize_payment',
+    'start_payment_submission',
+    'cancel_payment',
+  ]);
+  assert.deepEqual(built.rpcCalls[3].args, { p_payment_id: 31, p_note: code });
+  assert.equal(built.rpcCalls[3].as, 'user');
+  assert.equal(executeCalls(built).length, 0);
+}
+
+test('a racing trigger whose attempt was superseded never reaches execute', async () => {
+  await refusedClaim('not_authorized', 'expired');
+});
+
+test('an expired authorization stops before execute', async () => {
+  await refusedClaim('authorization_expired', null);
+});
+
+test('a stale summary at the claim stops before execute', async () => {
+  await refusedClaim('summary_stale', '["amount_cents"]');
+});
+
+test('an authorize error cancels the attempt and returns its code', async () => {
+  const built = deps({}, { rpc: { authorize_payment: () => rpcError('not_pending', 'expired') } });
+  assert.deepEqual((await pay(built)).body, { error: 'not_pending' });
+  assert.deepEqual(rpcNames(built), ['prepare_payment', 'authorize_payment', 'cancel_payment']);
+  assert.deepEqual(built.rpcCalls[2].args, { p_payment_id: 31, p_note: 'not_pending' });
+
+});
+
+test('an unexpected payment function error before the claim is payment_not_started', async () => {
+  // bill-mcp echoes the prepared row, so authorize's summary_mismatch is a bill-mcp fault, not a changed bill.
+  const mismatched = deps({}, { rpc: { authorize_payment: () => rpcError('summary_mismatch', '["payment_date"]') } });
+  assert.deepEqual((await pay(mismatched)).body, { error: 'payment_not_started' });
+  assert.deepEqual(rpcNames(mismatched), ['prepare_payment', 'authorize_payment', 'cancel_payment']);
+  assert.equal(executeCalls(mismatched).length, 0);
+
+  const prepare = deps({}, { rpc: { prepare_payment: () => rpcError('connection refused') } });
+  assert.deepEqual((await pay(prepare)).body, { error: 'payment_not_started' });
+  assert.deepEqual(rpcNames(prepare), ['prepare_payment']);
+
+  const authorize = deps(
+    {},
+    {
+      rpc: {
+        authorize_payment: () => {
+          throw new Error('socket hang up');
         },
       },
     },
-    built.deps,
   );
-  assert.deepEqual(result.body, { error: 'outcome_unknown' });
-  assert.equal(built.recorded.length, 0);
+  assert.deepEqual((await pay(authorize)).body, { error: 'payment_not_started' });
+  assert.deepEqual(rpcNames(authorize), ['prepare_payment', 'authorize_payment', 'cancel_payment']);
+  assert.deepEqual(authorize.rpcCalls[2].args, { p_payment_id: 31, p_note: 'payment_not_started' });
+  assert.equal(executeCalls(authorize).length, 0);
+});
+
+test('worker payment_mismatch records failure/payment_mismatch', async () => {
+  const built = deps({}, { execute: workerError('payment_mismatch', 409) });
+  let receipts = 0;
+  built.deps.persistReceipt = async () => {
+    receipts++;
+    return { status: 'stored', path: 'payments/31/receipt.png' };
+  };
+  const result = await pay(built);
+  assert.deepEqual(recorded(built), {
+    p_payment_id: 31,
+    p_outcome: 'failure',
+    p_outcome_code: 'payment_mismatch',
+    p_transaction_reference: null,
+    p_message: null,
+  });
+  assert.deepEqual(result.body, {
+    error: 'payment_failed',
+    outcome_code: 'payment_mismatch',
+    payment: attempt({ status: 'failure' }),
+  });
+  assert.equal(receipts, 0);
+});
+
+test('portal_error records failure/portal_error', async () => {
+  const built = deps({}, { execute: workerError('portal_error', 502) });
+  const result = await pay(built);
+  assert.equal(recorded(built)?.p_outcome, 'failure');
+  assert.equal(recorded(built)?.p_outcome_code, 'portal_error');
+  assert.deepEqual(result.body, {
+    error: 'payment_failed',
+    outcome_code: 'portal_error',
+    payment: attempt({ status: 'failure' }),
+  });
+});
+
+test('idempotency_conflict records failure/not_submitted', async () => {
+  const built = deps({}, { execute: workerError('idempotency_conflict', 409) });
+  const result = await pay(built);
+  assert.equal(recorded(built)?.p_outcome, 'failure');
+  assert.equal(recorded(built)?.p_outcome_code, 'not_submitted');
+  assert.deepEqual(result.body, {
+    error: 'payment_failed',
+    outcome_code: 'not_submitted',
+    payment: attempt({ status: 'failure' }),
+  });
+});
+
+test('invalid_request and unauthorized also record failure/not_submitted', async () => {
+  for (const [code, status] of [['invalid_request', 400], ['unauthorized', 401]] as const) {
+    const built = deps({}, { execute: workerError(code, status) });
+    const result = await pay(built);
+    assert.equal(recorded(built)?.p_outcome_code, 'not_submitted', code);
+    assert.equal((result.body as { outcome_code: string }).outcome_code, 'not_submitted', code);
+  }
+});
+
+const unknownRecord = (message: string | null) => ({
+  p_payment_id: 31,
+  p_outcome: 'unknown',
+  p_outcome_code: 'outcome_unknown',
+  p_transaction_reference: null,
+  p_message: message,
+});
+
+test('worker outcome_unknown records unknown', async () => {
+  const built = deps({}, { execute: workerError('outcome_unknown', 409) });
+  const result = await pay(built);
+  assert.deepEqual(recorded(built), unknownRecord(null));
+  assert.deepEqual(result.body, { error: 'outcome_unknown', payment: attempt({ status: 'unknown' }) });
+});
+
+test('execution_in_progress, an unlisted code or an unreadable worker error records unknown', async () => {
+  const replies = [
+    workerError('execution_in_progress', 409),
+    workerError('teapot', 418),
+    () => new Response('Bad gateway', { status: 502 }),
+  ];
+  for (const execute of replies) {
+    const built = deps({}, { execute });
+    const result = await pay(built);
+    assert.deepEqual(recorded(built), unknownRecord(null));
+    assert.equal((result.body as { error: string }).error, 'outcome_unknown');
+  }
+});
+
+// The timeout keeps a missing /execute signal from hanging the run.
+test('a worker that never answers records unknown', { timeout: 5_000 }, async () => {
+  const thrown = deps(
+    {},
+    {
+      execute: () => {
+        throw new TypeError('fetch failed');
+      },
+    },
+  );
+  const result = await pay(thrown);
+  assert.deepEqual(recorded(thrown), unknownRecord('no response from the payment worker'));
+  assert.deepEqual(result.body, { error: 'outcome_unknown', payment: attempt({ status: 'unknown' }) });
+
+  const timedOut = deps(
+    { executeTimeoutMs: 20 },
+    {
+      execute: (init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    },
+  );
+  const late = await pay(timedOut);
+  assert.deepEqual(recorded(timedOut), unknownRecord('no response from the payment worker'));
+  assert.equal((late.body as { error: string }).error, 'outcome_unknown');
+});
+
+test('a 2xx without confirmed or reference records unknown', async () => {
+  const replies = [
+    () => new Response('paid', { status: 200 }),
+    () => Response.json({ confirmed: true }),
+    () => Response.json({ transactionReference: 'TX-31' }),
+    () => Response.json({ confirmed: true, transactionReference: '   ' }),
+    () => Response.json({ confirmed: true, transactionReference: 'R'.repeat(256) }),
+  ];
+  for (const execute of replies) {
+    const built = deps({}, { execute });
+    let receipts = 0;
+    built.deps.persistReceipt = async () => {
+      receipts++;
+      return { status: 'stored', path: 'payments/31/receipt.png' };
+    };
+    const result = await pay(built);
+    assert.deepEqual(
+      recorded(built),
+      unknownRecord('worker confirmed without a usable transaction reference'),
+    );
+    assert.deepEqual(result.body, { error: 'outcome_unknown', payment: attempt({ status: 'unknown' }) });
+    assert.equal(receipts, 0);
+  }
+});
+
+test('the transaction reference is trimmed and may be 255 characters', async () => {
+  const reference = 'R'.repeat(255);
+  const built = deps(
+    {},
+    { execute: () => Response.json({ confirmed: true, transactionReference: `  ${reference} ` }) },
+  );
+  const result = await pay(built);
+  assert.equal(recorded(built)?.p_outcome, 'success');
+  assert.equal(recorded(built)?.p_transaction_reference, reference);
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
+});
+
+test('a failed record_payment call is reported as record_payment failed', async () => {
+  const refused = deps({}, { rpc: { record_payment: () => rpcError('not_processing', 'expired') } });
+  assert.deepEqual((await pay(refused)).body, { error: 'record_payment failed' });
+  assert.equal(executeCalls(refused).length, 1);
+
+  const thrown = deps(
+    {},
+    {
+      rpc: {
+        record_payment: () => {
+          throw new Error('socket hang up');
+        },
+      },
+    },
+  );
+  assert.deepEqual((await pay(thrown)).body, { error: 'record_payment failed' });
+  assert.equal(rpcNames(thrown).at(-1), 'record_payment');
+});
+
+test('no caller profile is forbidden before preparing', async () => {
+  const built = deps({ callerUserId: async () => null });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'forbidden' });
+  assert.equal(built.rpcCalls.length, 0);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('an unset STAGEHAND_URL calls no worker and writes nothing', async () => {
+  const built = deps({ stagehandUrl: undefined });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'worker not configured' });
+  assert.deepEqual(built.steps, ['/api/bills/12']);
 });
 
 test('a portal page with a different amount does not call execute', async () => {
-  const built = deps({
-    fetch: async (input) => {
-      const url = String(input);
-      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
-      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $1.00' }), { status: 200 });
-      if (url.endsWith('/execute')) return new Response('paid', { status: 200 });
-      return new Response('missing', { status: 404 });
-    },
-  });
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: {
-        method: 'tools/call',
-        params: {
-          name: 'execute_approved_payment',
-          arguments: {
-            bill_id: 12,
-            amount: 1,
-            vendor_id: 3,
-            invoice_number: 'INV-1',
-            idempotency_key: 'pay-1',
-          },
-        },
-      },
-    },
-    built.deps,
-  );
+  const built = deps({}, { page: 'Invoice INV-1 total $1.00' });
+  const result = await pay(built);
   assert.deepEqual(result.body, { error: 'snapshot_mismatch', fields: ['amount'] });
-  assert.equal(built.calls.some((call) => call.url.endsWith('/execute')), false);
-  assert.equal(built.recorded.length, 0);
+  assert.equal(executeCalls(built).length, 0);
+  assert.equal(built.rpcCalls.length, 0);
 });
 
-function execute(arguments_: Record<string, unknown>) {
-  return handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: arguments_ } },
-    },
-    deps().deps,
-  );
-}
-
-const matching = {
-  bill_id: 12,
-  amount: 40.5,
-  vendor_id: 3,
-  invoice_number: 'INV-1',
-  idempotency_key: 'pay-1',
-};
-
 test('numeric strings for the amount and vendor count as the same snapshot', async () => {
-  const result = await execute({ ...matching, amount: '40.50', vendor_id: '3' });
-  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
+  const built = deps();
+  const result = await pay(built, { ...shown, amount: '40.50', vendor_id: '3' });
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
 });
 
 test('camelCase bill fields count as the same snapshot', async () => {
-  const result = await execute({
+  const built = deps();
+  const result = await pay(built, {
     billId: 12,
     amount: '40.50',
     vendorId: '3',
     invoiceNumber: 'INV-1',
     idempotencyKey: 'pay-1',
   });
-  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
+  assert.equal(JSON.parse(String(executeCalls(built)[0].init?.body)).idempotencyKey, 'key-31');
 });
 
-test('bill_id alone pays when the portal page shows the invoice and amount', async () => {
-  const built = deps();
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } },
-    },
-    built.deps,
-  );
-  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
-  assert.equal(built.recorded[0].idempotencyKey, 'portal-12');
-  const observed = JSON.parse(String(built.calls.find((call) => call.url.endsWith('/observe'))?.init?.body));
-  assert.equal(observed.portalUrl, 'https://portal.example.test/pay');
+test('bill_id alone returns invalid arguments and calls nothing', async () => {
+  const missing = [
+    { bill_id: 12 },
+    { vendor_id: 3, invoice_number: 'INV-1', amount: 40.5 },
+    { bill_id: 12, invoice_number: 'INV-1', amount: 40.5 },
+    { bill_id: 12, vendor_id: 3, amount: 40.5 },
+    { bill_id: 12, vendor_id: 3, invoice_number: 'INV-1' },
+    { ...shown, amount: '40.555' },
+    { ...shown, invoice_number: ' ' },
+  ];
+  for (const arguments_ of missing) {
+    const built = deps();
+    const result = await pay(built, arguments_);
+    assert.deepEqual(result.body, { error: 'invalid arguments' }, JSON.stringify(arguments_));
+    assert.equal(built.calls.length, 0);
+    assert.equal(built.rpcCalls.length, 0);
+  }
 });
 
 test('a portal page missing the invoice does not call execute', async () => {
-  const built = deps({
-    fetch: async (input) => {
-      const url = String(input);
-      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
-      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Total $40.50' }), { status: 200 });
-      return new Response('paid', { status: 200 });
-    },
-  });
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } },
-    },
-    built.deps,
-  );
+  const built = deps({}, { page: 'Total $40.50' });
+  const result = await pay(built);
   assert.deepEqual(result.body, { error: 'snapshot_mismatch', fields: ['invoice_number'] });
-  assert.equal(built.calls.some((call) => call.url.endsWith('/execute')), false);
-  assert.equal(built.recorded.length, 0);
+  assert.equal(executeCalls(built).length, 0);
+  assert.equal(built.rpcCalls.length, 0);
 });
 
 test('upload failure returns confirmed payment and retry tool never invokes execute or records payment', async () => {
@@ -366,10 +731,14 @@ test('upload failure returns confirmed payment and retry tool never invokes exec
   let receiptWrites = 0;
   built.deps.persistReceipt = async () => { receiptWrites++; throw new Error('offline'); };
   const request = { httpMethod: 'POST', authorization: `Bearer ${TOKEN}`, userAuthorization: USER,
-    body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } } };
+    body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: shown } } };
   const paid = await handleBillMcp(request, built.deps);
-  assert.deepEqual((paid.body as { payment: unknown }).payment, { payment_id: 9 });
+  assert.deepEqual(paid.body, {
+    payment: attempt({ status: 'success' }),
+    receipt: { status: 'failed', error: 'upload_failed' },
+  });
   assert.equal(receiptWrites, 1);
+  const rpcBefore = built.rpcCalls.length;
   const calls: string[] = [];
   built.deps.receiptPayment = async () => ({ billId: 12, bill_id: 12, payment_id: 9, status: 'success', amount: 40.5, vendorId: 3, invoiceNumber: 'INV-1', idempotencyKey: 'portal-12' });
   built.deps.fetch = async (url) => {
@@ -378,11 +747,11 @@ test('upload failure returns confirmed payment and retry tool never invokes exec
     if (String(url).endsWith('/receipt')) return Response.json({ receipt: { status: 'captured' } });
     throw new Error('Retry must not call execute or observe');
   };
-  built.deps.recordPayment = async () => { throw new Error('Retry must not record payment'); };
   built.deps.persistReceipt = async () => ({ status: 'stored', path: 'payments/9/receipt.png' });
   const retried = await handleBillMcp({ ...request, body: { method: 'tools/call', params: { name: 'retry_payment_receipt', arguments: { bill_id: 12, payment_id: 9 } } } }, built.deps);
   assert.deepEqual(retried.body, { receipt: { status: 'stored', path: 'payments/9/receipt.png' } });
   assert.ok(calls.every(url => !url.endsWith('/execute')));
+  assert.equal(built.rpcCalls.length, rpcBefore);
 });
 
 test('receipt retry rejects an unauthorized or mismatched payment before worker access', async () => {

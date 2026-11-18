@@ -1,6 +1,6 @@
 # Stagehand worker contract
 
-Proposed for [DC-25](https://one-atlas-ofwi.atlassian.net/browse/DC-25) review. Updated 2026-11-15. Owner: Joe Gallego.
+Proposed for [DC-25](https://one-atlas-ofwi.atlassian.net/browse/DC-25) review. Updated 2026-11-18. Owner: Joe Gallego.
 
 ## Runtime and caller
 
@@ -23,11 +23,12 @@ Repeated `idempotencyKey` values must never submit another payment, including co
 
 Before calling `/execute`, bill-mcp checks:
 
-- The bill is `pending_payment`.
-- The newest approval is `approved`.
-- The amount, vendor, and invoice match the bill row.
+- The bill is `pending_payment` or `payment_failed`.
+- The vendor, invoice, and amount the admin confirmed equal the bill.
+- The portal page shows the amount and invoice.
+- A prepared, authorized attempt was claimed with `start_payment_submission`.
 
-Only after the worker returns 2xx does bill-mcp call `record_payment`. If `STAGEHAND_URL` is unset, bill-mcp makes no worker call and writes nothing.
+Every claimed attempt ends in `record_payment`: success with the worker's `transactionReference`, failure, or unknown. If `STAGEHAND_URL` is unset, bill-mcp makes no worker call and writes nothing.
 
 Joe owns browser execution and confirmation. He does not approve bills, call `decide_bill`, insert into `payments`, or change bill statuses. Keep the existing database schema and statuses.
 
@@ -35,6 +36,6 @@ Joe owns browser execution and confirmation. He does not approve bills, call `de
 
 The DC-25 pass defines the contract. DC-95 implements it in the existing Express server, including the separately authorized Stagehand package installation. Neither pass adds a Next.js route, change to `extract-invoices`, browser in a Supabase edge function, second approval path, or database migration. A separate `worker/` process or Browserbase can be considered later.
 
-DC-95 uses operator-owned portal profiles to explicitly configure the URL, vendor, amount unit (dollars or cents), and verified selectors. Execution fails closed without a matching profile. It returns `{ confirmed: true }` only after confirmation, and observation returns `{ pageText }`. Idempotency records live in a durable local directory shared by server processes, outside the payments table. Confirm the real demo portal, credentials, and amount convention with bill-mcp before enabling it. The installed Stagehand v4 uses `localBrowser.launch()` rather than the older `env: "LOCAL"` setup.
+DC-95 uses operator-owned portal profiles to explicitly configure the URL, vendor, amount unit (dollars or cents), and verified selectors. Execution fails closed without a matching profile. It returns `{ confirmed: true, transactionReference }` only after confirmation, and observation returns `{ pageText }`. Idempotency records live in a durable local directory shared by server processes, outside the payments table. Confirm the real demo portal, credentials, and amount convention with bill-mcp before enabling it. The installed Stagehand v4 uses `localBrowser.launch()` rather than the older `env: "LOCAL"` setup.
 
-The [TypeScript contract](../../server/src/payments/payment-contract.ts) records request shapes and proposed response types. DC-95 implements and tests authentication, observation without navigation/payment, mismatch rejection, duplicate prevention, confirmed success, and ambiguous submission recovery. bill-mcp integration tests cover its preconditions, `record_payment` ordering, and the unset-URL case.
+The [TypeScript contract](../../server/src/payments/payment-contract.ts) records request shapes and proposed response types. DC-95 implements and tests authentication, observation without navigation/payment, mismatch rejection, duplicate prevention, confirmed success, and ambiguous submission recovery. bill-mcp tests cover its preconditions, the prepare, authorize, claim, `/execute`, and `record_payment` order, the outcome recorded for each worker result, and the unset-URL case.

@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { persistReceipt } from './receipt.ts';
-import { handleBillMcp, type PaymentInput } from './handle.ts';
+import { handleBillMcp } from './handle.ts';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -38,11 +38,24 @@ Deno.serve(async (req) => {
       clientUrl: Deno.env.get('CLIENT_URL') ?? 'http://localhost:3000',
       stagehandUrl: Deno.env.get('STAGEHAND_URL'),
       stagehandSecret: Deno.env.get('STAGEHAND_SECRET'),
-      // DC-89: payments are written only through prepare_payment, authorize_payment,
-      // start_payment_submission and record_payment, and #59's record_payment is gone. Until
-      // DC-93 moves execute_approved_payment onto those functions it stays off here: it would
-      // pay at the portal and then fail to record. It stops before /execute.
-      canRecord: false,
+      callerUserId: async () => {
+        const { data: auth } = await supabase.auth.getUser();
+        if (!auth.user) return null;
+        const { data: profile } = await supabase
+          .from('users')
+          .select('user_id')
+          .eq('auth_user_id', auth.user.id)
+          .maybeSingle();
+        return profile?.user_id ?? null;
+      },
+      // prepare_payment, start_payment_submission and record_payment are service_role only;
+      // authorize_payment and cancel_payment run as the signed-in caller.
+      rpc: async (name, args, as) => {
+        const client = as === 'user' ? supabase : admin;
+        if (!client) return { data: null, error: { message: 'worker not configured' } };
+        const { data, error } = await client.rpc(name, args);
+        return { data, error };
+      },
       receiptPayment: async (billId, paymentId) => {
         const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });
         return error ? null : { ...data, bill_id: data.billId };
@@ -78,28 +91,6 @@ Deno.serve(async (req) => {
           .eq('vendor_id', vendorId)
           .maybeSingle();
         return data?.payment_portal_url ?? null;
-      },
-      latestApproval: async (billId) => {
-        const { data } = await supabase
-          .from('approvals')
-          .select('status')
-          .eq('bill_id', billId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        return data?.status ?? null;
-      },
-      recordPayment: async (input: PaymentInput) => {
-        if (!admin) return { error: 'record_payment failed' };
-        const { data, error } = await admin.rpc('record_payment', {
-          p_bill_id: input.billId,
-          p_amount: input.amount,
-          p_vendor_id: input.vendorId,
-          p_invoice_number: input.invoiceNumber,
-          p_idempotency_key: input.idempotencyKey,
-        });
-        if (error) return { error: 'record_payment failed' };
-        return { payment: data };
       },
     },
   );
