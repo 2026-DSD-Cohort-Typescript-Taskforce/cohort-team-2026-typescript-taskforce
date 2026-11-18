@@ -7,7 +7,17 @@ import {
   formatFileSize,
   isSha256Hex,
   sha256Hex,
+  signedBillUploadUrl,
 } from './bill-upload.ts';
+
+test('builds the one-time Storage upload URL without adding credentials', () => {
+  assert.equal(
+    signedBillUploadUrl('http://127.0.0.1:54321', 'pending/13/hash.pdf', 'signed-token'),
+    'http://127.0.0.1:54321/storage/v1/object/upload/sign/bill-documents/pending/13/hash.pdf?token=signed-token',
+  );
+  assert.equal(signedBillUploadUrl(undefined, 'pending/13/hash.pdf', 'token'), null);
+  assert.equal(signedBillUploadUrl('not a url', 'pending/13/hash.pdf', 'token'), null);
+});
 
 test('accepts a PDF, including when the browser leaves the type blank', () => {
   assert.equal(billUploadKind({ type: 'application/pdf', name: 'bill.pdf' }), 'pdf');
