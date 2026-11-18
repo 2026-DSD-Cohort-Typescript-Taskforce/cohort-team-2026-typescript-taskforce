@@ -2,15 +2,17 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(41);
+select plan(44);
 
--- Setup (as postgres): login A is a billing operator, B has another role, C has no
--- profile. One vendor, property and payment method, and one bill per case (ids 12001+,
--- users 12101+, to stay clear of seeded rows).
+-- Setup (as postgres): login A is a billing operator, B a viewer, C has no profile, D a
+-- financial approver, E a system admin. One vendor, property and payment method, and one
+-- bill per case (ids 12001+, users 12101+, to stay clear of seeded rows).
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000012a1', 'dc12-a@example.test'),
   ('00000000-0000-4000-8000-0000000012a2', 'dc12-b@example.test'),
-  ('00000000-0000-4000-8000-0000000012a3', 'dc12-c@example.test');
+  ('00000000-0000-4000-8000-0000000012a3', 'dc12-c@example.test'),
+  ('00000000-0000-4000-8000-0000000012a4', 'dc12-d@example.test'),
+  ('00000000-0000-4000-8000-0000000012a5', 'dc12-e@example.test');
 insert into public.vendors (vendor_id, name, email, address, phone, payment_portal_url, supported_payment_methods)
   values (12001, 'DC12 Test Vendor', 'vendor@example.test', '1 Test Way', '555-0100', 'https://vendor.example.test', 'card');
 insert into public.properties (property_id, name) values (12001, 'DC12 Test Property');
@@ -18,7 +20,9 @@ insert into public.payment_methods (payment_method_id, payment_type, name, billi
   values (12001, 'card', 'DC12 Test Card', '75001');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (12101, 'Operator A', 'dc12-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000012a1'),
-  (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2');
+  (12102, 'Viewer B', 'dc12-b@example.test', 'viewer', '00000000-0000-4000-8000-0000000012a2'),
+  (12103, 'Approver D', 'dc12-d@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000012a4'),
+  (12104, 'Admin E', 'dc12-e@example.test', 'system_admin', '00000000-0000-4000-8000-0000000012a5');
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due) values
   (12001, 'draft', 12001, 12001, 12101, 12001, 'DC12-01', 120.00, current_date - 1),   -- complete, due yesterday
   (12002, 'draft', 12001, 12001, 12101, 12001, 'DC12-02', 120.00, current_date + 30),  -- complete
@@ -28,7 +32,9 @@ insert into public.bills (bill_id, status, vendor_id, property_id, user_id, paym
   (12008, 'draft', 12001, 12001, 12101, 12001, 'DC12-08', 120.00, null),               -- no due date
   (12009, 'draft', 12001, 12001, 12101, 12001, null, 0.00, null),                      -- nothing else filled in
   (12010, 'pending_payment', 12001, 12001, 12101, 12001, 'DC12-10', 120.00, current_date + 30),
-  (12011, 'draft', 12001, 12001, 12101, 12001, 'DC12-11', 120.00, current_date + 30);  -- for direct edits
+  (12011, 'draft', 12001, 12001, 12101, 12001, 'DC12-11', 120.00, current_date + 30),  -- for direct edits
+  (12012, 'draft', 12001, 12001, 12101, 12001, 'DC12-12', 120.00, current_date + 30),  -- approver asks for approval
+  (12013, 'draft', 12001, 12001, 12101, 12001, 'DC12-13', 120.00, current_date + 30);  -- admin submits for payment
 
 -- submit_bill's error as {sqlstate, message, detail}, or null if it succeeds.
 create function pg_temp.submit_error(p_bill_id integer) returns text[]
@@ -59,23 +65,23 @@ end
 $$;
 
 -- Schema, privileges, policies
-select has_function('public', 'submit_bill', ARRAY['integer'], 'submit_bill(integer) exists');
-select function_returns('public', 'submit_bill', ARRAY['integer'], 'bills', 'it returns the bill row');
-select is_definer('public', 'submit_bill', ARRAY['integer'], 'it is security definer, so it can move a bill out of draft and write audit_logs');
+select has_function('public', 'submit_bill', ARRAY['integer', 'boolean'], 'submit_bill(integer, boolean) exists');
+select function_returns('public', 'submit_bill', ARRAY['integer', 'boolean'], 'bills', 'it returns the bill row');
+select is_definer('public', 'submit_bill', ARRAY['integer', 'boolean'], 'it is security definer, so it can move a bill out of draft and write audit_logs');
 select is(
-  (select proconfig from pg_proc where oid = to_regprocedure('public.submit_bill(integer)')),
+  (select proconfig from pg_proc where oid = to_regprocedure('public.submit_bill(integer,boolean)')),
   ARRAY['search_path=""'],
   'it pins search_path to empty'
 );
 select is(
   (select count(*)::int from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
-    where p.oid = to_regprocedure('public.submit_bill(integer)')
+    where p.oid = to_regprocedure('public.submit_bill(integer,boolean)')
       and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'),
   0,
   'public has no EXECUTE on submit_bill()'
 );
-select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
-select function_privs_are('public', 'submit_bill', ARRAY['integer'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
+select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean'], 'anon', ARRAY[]::text[], 'anon has no EXECUTE on submit_bill()');
+select function_privs_are('public', 'submit_bill', ARRAY['integer', 'boolean'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE submit_bill()');
 select policies_are('public', 'bills',
   ARRAY['authenticated users can view bills', 'authenticated users can insert draft bills', 'authenticated users can update draft bills', 'authenticated users can delete draft bills'],
   'bills has the signed-in read policy and the three draft-only write policies (DC-21)');
@@ -96,7 +102,7 @@ reset role;
 -- Not a billing operator
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a2","role":"authenticated"}';
-select is(pg_temp.submit_error(12002), ARRAY['PT403', 'forbidden', null], 'a user whose role is not billing_operator gets forbidden');
+select is(pg_temp.submit_error(12002), ARRAY['PT403', 'forbidden', null], 'a viewer gets forbidden');
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a3","role":"authenticated"}';
 select is(pg_temp.submit_error(12002), ARRAY['PT403', 'forbidden', null], 'a login with no profile gets forbidden');
 
@@ -151,6 +157,27 @@ select results_eq(
       where created_at = now() and actor_type is distinct from 'system' order by audit_log_id$$,
   $$values ('bill_submitted', 'user', 12101, 'bill', 12001)$$,
   'exactly one audit row: bill_submitted, by A, for this bill; submit_bill adds none of its own'
+);
+
+-- Approvers and admins can submit too; p_needs_approval sends the bill to the approver.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a4","role":"authenticated"}';
+select results_eq(
+  $$select bill_id, status::text from public.submit_bill(12012, true)$$,
+  $$values (12012, 'pending_approval')$$,
+  'an approver submits with p_needs_approval; the bill is pending_approval'
+);
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000012a5","role":"authenticated"}';
+select results_eq(
+  $$select bill_id, status::text from public.submit_bill(12013)$$,
+  $$values (12013, 'pending_payment')$$,
+  'an admin submits without it; the bill is pending_payment'
+);
+reset role;
+select results_eq(
+  $$select bill_id, submitted_by, status::text from public.approvals where bill_id in (12012, 12013)$$,
+  $$values (12012, 12103, 'pending')$$,
+  'the approval request is one pending approvals row, submitted by D; none for the admin''s bill'
 );
 
 -- Draft-only policies, as operator A
