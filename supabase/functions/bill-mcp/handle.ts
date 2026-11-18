@@ -39,6 +39,9 @@ const TOOLS = [
 ];
 
 function result(body: unknown, status = 200): McpResult {
+  const failed =
+    status >= 400 || (body !== null && typeof body === 'object' && 'error' in body);
+  if (failed) console.error(`[bill-mcp] ${status} ${JSON.stringify(body)}`);
   return { status, body };
 }
 
@@ -52,7 +55,25 @@ function joinUrl(base: string, path: string) {
 }
 
 function integer(value: unknown): number | null {
+  if (typeof value === 'string' && /^[1-9]\d*$/.test(value)) value = Number(value);
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function field(args: Record<string, unknown>, ...names: string[]) {
+  for (const name of names) if (args[name] !== undefined) return args[name];
+  return undefined;
+}
+
+function moneyCents(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const cents = Math.round(value * 100);
+    return Math.abs(value * 100 - cents) < 1e-6 ? cents : null;
+  }
+  if (typeof value === 'string' && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) {
+    const [whole, fraction = ''] = value.split('.');
+    return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  }
+  return null;
 }
 
 function argsOf(body: unknown): Record<string, unknown> {
@@ -76,11 +97,12 @@ async function appGet(deps: BillMcpDeps, userAuth: string, path: string) {
   return response.json();
 }
 
-async function loadBill(deps: BillMcpDeps, userAuth: string, billId: number) {
+async function loadBill(deps: BillMcpDeps, userAuth: string, billId: number) { 
+  console.log("im inside the loadbillfunction")
   const loaded: { bill?: Bill; error?: number } = await appGet(deps, userAuth, `/api/bills/${billId}`);
   if (loaded.error !== undefined || !loaded.bill) return { error: loaded.error ?? 'not_found' };
   return { bill: loaded.bill };
-}
+} 
 
 async function observePortal(deps: BillMcpDeps, userAuth: string, billId: number) {
   const loaded = await loadBill(deps, userAuth, billId);
@@ -101,31 +123,74 @@ async function observePortal(deps: BillMcpDeps, userAuth: string, billId: number
   return { observation: await response.text() };
 }
 
-function sameSnapshot(bill: Bill, args: Record<string, unknown>) {
-  return (
-    Number(bill.amount) === Number(args.amount) &&
-    bill.vendor_id === args.vendor_id &&
-    bill.invoice_number === args.invoice_number &&
-    typeof args.idempotency_key === 'string' &&
-    args.idempotency_key.trim() !== ''
-  );
+function pageText(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as { pageText?: unknown };
+    if (typeof parsed.pageText === 'string') return parsed.pageText;
+  } catch {
+    // The worker may already return plain page text.
+  }
+  return raw;
+}
+
+function pageHasPhrase(text: string, phrase: string) {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|\\W)${escaped}(?:$|\\W)`).test(text);
+}
+
+function pageHasAmount(text: string, cents: number) {
+  const dollars = Math.floor(Math.abs(cents) / 100).toString();
+  const fraction = String(Math.abs(cents) % 100).padStart(2, '0');
+  const grouped = dollars.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return new RegExp(`(?<![\\d.])\\$?\\s*${grouped}\\.${fraction}(?!\\d)`).test(text);
+}
+
+function snapshotGaps(bill: Bill, text: string) {
+  const gaps: string[] = [];
+  const cents = moneyCents(bill.amount);
+  if (cents === null || !pageHasAmount(text, cents)) gaps.push('amount');
+  if (!bill.invoice_number || !pageHasPhrase(text, bill.invoice_number)) gaps.push('invoice_number');
+  return gaps;
+}
+
+async function readPortal(deps: BillMcpDeps, bill: Bill) {
+  if (bill.vendor_id === null) return { error: 'no portal url' as const };
+  const portalUrl = await deps.portalUrl(bill.vendor_id);
+  if (!portalUrl) return { error: 'no portal url' as const };
+  if (!deps.stagehandUrl) return { error: 'worker not configured' as const };
+  const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/observe'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${deps.stagehandSecret ?? ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ billId: bill.bill_id, portalUrl }),
+  });
+  if (!response.ok) return { error: 'worker failed' as const };
+  return { portalUrl, text: pageText(await response.text()) };
 }
 
 async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
-  const billId = integer(args.bill_id);
+  const billId = integer(field(args, 'bill_id', 'billId'));
   if (billId === null) return { error: 'invalid arguments' };
   const loaded = await loadBill(deps, userAuth, billId);
   if ('error' in loaded) return loaded;
   const bill = loaded.bill;
   if (bill.status !== 'pending_payment') return { error: 'not_pending_payment' };
-  if (!sameSnapshot(bill, args)) return { error: 'snapshot_mismatch' };
+  const portal = await readPortal(deps, bill);
+  if ('error' in portal) return portal;
+  const gaps = snapshotGaps(bill, portal.text);
+  if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
   if ((await deps.latestApproval(bill.bill_id)) !== 'approved') return { error: 'not_approved' };
-  if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null) {
-    return { error: 'snapshot_mismatch' };
+  if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.canRecord) {
+    return { error: 'worker not configured' };
   }
-  const portalUrl = await deps.portalUrl(bill.vendor_id);
-  if (!portalUrl) return { error: 'no portal url' };
-  if (!deps.stagehandUrl || !deps.canRecord) return { error: 'worker not configured' };
+  const suppliedKey = field(args, 'idempotency_key', 'idempotencyKey');
+  const idempotencyKey =
+    typeof suppliedKey === 'string' && suppliedKey.trim() !== ''
+      ? suppliedKey.trim()
+      : `portal-${bill.bill_id}`;
+  const portalUrl = portal.portalUrl;
   const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/execute'), {
     method: 'POST',
     headers: {
@@ -138,7 +203,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
       amount: bill.amount,
       vendorId: bill.vendor_id,
       invoiceNumber: bill.invoice_number,
-      idempotencyKey: args.idempotency_key,
+      idempotencyKey,
     }),
   });
   if (!response.ok) return { error: 'worker failed' };
@@ -147,7 +212,7 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
     amount: Number(bill.amount),
     vendorId: bill.vendor_id,
     invoiceNumber: bill.invoice_number,
-    idempotencyKey: String(args.idempotency_key),
+    idempotencyKey,
   });
   if (recorded.error) return { error: 'record_payment failed' };
   return { payment: recorded.payment };
@@ -157,6 +222,9 @@ export async function handleBillMcp(
   request: { httpMethod: string; authorization: string | null; body: unknown; userAuthorization: string },
   deps: BillMcpDeps,
 ): Promise<McpResult> {
+  const asked =
+    request.body && typeof request.body === 'object' ? (request.body as { method?: unknown }).method : undefined;
+  console.error(`[bill-mcp] ${request.httpMethod} ${typeof asked === 'string' ? asked : 'no-method'}`);
   if (request.httpMethod !== 'POST') return result({ error: 'POST only.' }, 405);
   if (!deps.mcpToken || request.authorization !== `Bearer ${deps.mcpToken}`) {
     return result({ error: 'unauthorized' }, 401);

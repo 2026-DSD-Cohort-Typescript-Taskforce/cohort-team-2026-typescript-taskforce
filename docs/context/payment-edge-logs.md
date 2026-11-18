@@ -1,0 +1,33 @@
+# Payment edge logs
+
+Covers: supabase/functions/agent-bills/index.ts, supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
+
+Last changed by AI: 2026-11-17 · run 4fc2914b-887d-43f6-b388-3bc7f447ca6f · files: supabase/functions/bill-mcp/handle.ts, supabase/functions/agent-bills/index.ts, supabase/functions/bill-mcp/index.ts
+
+## Current view
+
+agent-bills and bill-mcp print failures with console.error. The lines show up in the edge-runtime container, not in the npm run dev window. agent-bills logs the request method, a missing env name, sign-in failure, a missing task, an OpenRouter status, a bill-mcp status, a disallowed tool name, and the four-round stop. bill-mcp logs the method and, for any error body, the status plus the JSON error. A snapshot_mismatch body includes fields naming the page value that differed, amount or invoice_number. Tokens and secrets are not written. Follow the container with docker logs -f supabase_edge_runtime_cohort-team-2026-typescript-taskforce. A gateway 401 still happens before either function runs.
+
+## Lessons
+
+- 2026-11-16 · run 5f5079db: Edge function console.error is visible in the edge-runtime container, and a JSON error response alone does not show there.
+
+## History
+
+### 2026-11-17 · run 4fc2914b-887d-43f6-b388-3bc7f447ca6f · Make execute_approved_payment confirm the amount and invoice from the portal page instead of caller…
+**Changed:** execute_approved_payment now confirms the invoice and amount from the portal page. A call with only bill_id pays when that page shows them.
+**Learned:** The snapshot doc now says the portal page supplies the amount and invoice.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 4fc2914b-887d-43f6-b388-3bc7f447ca6f command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.ts@sha256:25ea6f216c2ed39eb32e8c02ba88236b658cce24ba57ef5c0d127a78efc704c0, supabase/functions/agent-bills/index.ts@sha256:16860267bac36003e0a741cd0556e5625ed46fb267ab8843530fbd07f7813e08, supabase/functions/bill-mcp/index.ts@sha256:325a35887dcf2146bc856773ff29ba92f09b7a43e4d6e25b37029d4685359908
+
+### 2026-11-17 · run e2f144f0-7d99-4efa-85f8-99b177fe359c · Stop a matching payment from returning snapshot_mismatch when the tool uses camelCase field names,…
+**Changed:** execute_approved_payment now accepts snake_case or camelCase snapshot names and returns the field that differs. Project typecheck and format were already failing outside this change.
+**Learned:** Both owner docs now say the snapshot accepts either field-name style and the mismatch body names the field.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run e2f144f0-7d99-4efa-85f8-99b177fe359c command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.ts@sha256:6e4111de0cf23d7ce2c495a4083973c0d59cc2da3e89848762e19bb23f70b8f5, supabase/functions/agent-bills/index.ts@sha256:16860267bac36003e0a741cd0556e5625ed46fb267ab8843530fbd07f7813e08, supabase/functions/bill-mcp/index.ts@sha256:325a35887dcf2146bc856773ff29ba92f09b7a43e4d6e25b37029d4685359908
+
+### 2026-11-17 · run 5f5079db-36a1-44e6-aab3-8147a6ddcf1d · Log agent-bills and bill-mcp failures to the edge-runtime terminal, including missing env names, wi…
+**Changed:** agent-bills and bill-mcp now print failure reasons with console.error. Secrets are not logged. The lines appear in the edge-runtime container.
+**Learned:** Failure logs belong in the edge-runtime container. The npm run dev window does not show them.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 5f5079db-36a1-44e6-aab3-8147a6ddcf1d command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/agent-bills/index.ts@sha256:16860267bac36003e0a741cd0556e5625ed46fb267ab8843530fbd07f7813e08, supabase/functions/bill-mcp/handle.ts@sha256:33882fe3d249ee395ec8c289f8224595011984a93664ae93f80719e5768f5fac, supabase/functions/bill-mcp/index.ts@sha256:6740a09ca0e985bd48ca3569e9d12392cf5e61896c6f4ac76281aabf41ea1f89

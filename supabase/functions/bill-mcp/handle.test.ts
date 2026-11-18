@@ -33,8 +33,11 @@ function deps(overrides: Partial<BillMcpDeps> = {}) {
       if (url.endsWith('/api/vendors')) {
         return new Response(JSON.stringify({ vendors: [{ vendor_id: 3, name: 'Power' }] }), { status: 200 });
       }
-      if (url.endsWith('/observe') || url.endsWith('/execute')) {
-        return new Response('page text', { status: 200 });
+      if (url.endsWith('/observe')) {
+        return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $40.50' }), { status: 200 });
+      }
+      if (url.endsWith('/execute')) {
+        return new Response('paid', { status: 200 });
       }
       return new Response('missing', { status: 404 });
     },
@@ -61,11 +64,22 @@ function call(body: unknown, authorization: string | null = `Bearer ${TOKEN}`, h
 }
 
 test('a request without the MCP token is refused and calls nothing', async () => {
-  const { built, run } = call({ method: 'tools/list' }, 'Bearer wrong');
-  const result = await run();
-  assert.deepEqual(result, { status: 401, body: { error: 'unauthorized' } });
-  assert.equal(built.calls.length, 0);
-  assert.equal(built.recorded.length, 0);
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '));
+  };
+  try {
+    const { built, run } = call({ method: 'tools/list' }, 'Bearer wrong');
+    const result = await run();
+    assert.deepEqual(result, { status: 401, body: { error: 'unauthorized' } });
+    assert.equal(built.calls.length, 0);
+    assert.equal(built.recorded.length, 0);
+    assert.match(lines.join('\n'), /\[bill-mcp\] 401/);
+    assert.equal(lines.join('\n').includes('wrong'), false);
+  } finally {
+    console.error = original;
+  }
 });
 
 test('initialize and tools/list name the four tools', async () => {
@@ -126,7 +140,7 @@ test('observe_portal posts the stored portal URL and ignores a URL in the argume
     },
     built.deps,
   );
-  assert.deepEqual(result.body, { observation: 'page text' });
+  assert.deepEqual(result.body, { observation: '{"pageText":"Invoice INV-1 total $40.50"}' });
   const sent = JSON.parse(String(built.calls.at(-1)?.init?.body));
   assert.equal(sent.portalUrl, 'https://portal.example.test/pay');
   assert.equal(built.calls.at(-1)?.url, 'http://127.0.0.1:5000/observe');
@@ -203,8 +217,16 @@ test('a matching approved bill records the database snapshot after the worker su
   });
 });
 
-test('a different amount does not call the worker', async () => {
-  const built = deps();
+test('a portal page with a different amount does not call execute', async () => {
+  const built = deps({
+    fetch: async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
+      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $1.00' }), { status: 200 });
+      if (url.endsWith('/execute')) return new Response('paid', { status: 200 });
+      return new Response('missing', { status: 404 });
+    },
+  });
   const result = await handleBillMcp(
     {
       httpMethod: 'POST',
@@ -226,7 +248,83 @@ test('a different amount does not call the worker', async () => {
     },
     built.deps,
   );
-  assert.deepEqual(result.body, { error: 'snapshot_mismatch' });
+  assert.deepEqual(result.body, { error: 'snapshot_mismatch', fields: ['amount'] });
+  assert.equal(built.calls.some((call) => call.url.endsWith('/execute')), false);
+  assert.equal(built.recorded.length, 0);
+});
+
+function execute(arguments_: Record<string, unknown>) {
+  return handleBillMcp(
+    {
+      httpMethod: 'POST',
+      authorization: `Bearer ${TOKEN}`,
+      userAuthorization: USER,
+      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: arguments_ } },
+    },
+    deps().deps,
+  );
+}
+
+const matching = {
+  bill_id: 12,
+  amount: 40.5,
+  vendor_id: 3,
+  invoice_number: 'INV-1',
+  idempotency_key: 'pay-1',
+};
+
+test('numeric strings for the amount and vendor count as the same snapshot', async () => {
+  const result = await execute({ ...matching, amount: '40.50', vendor_id: '3' });
+  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
+});
+
+test('camelCase bill fields count as the same snapshot', async () => {
+  const result = await execute({
+    billId: 12,
+    amount: '40.50',
+    vendorId: '3',
+    invoiceNumber: 'INV-1',
+    idempotencyKey: 'pay-1',
+  });
+  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
+});
+
+test('bill_id alone pays when the portal page shows the invoice and amount', async () => {
+  const built = deps();
+  const result = await handleBillMcp(
+    {
+      httpMethod: 'POST',
+      authorization: `Bearer ${TOKEN}`,
+      userAuthorization: USER,
+      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } },
+    },
+    built.deps,
+  );
+  assert.deepEqual(result.body, { payment: { payment_id: 9 } });
+  assert.equal(built.recorded[0].idempotencyKey, 'portal-12');
+  const observed = JSON.parse(String(built.calls.find((call) => call.url.endsWith('/observe'))?.init?.body));
+  assert.equal(observed.portalUrl, 'https://portal.example.test/pay');
+});
+
+test('a portal page missing the invoice does not call execute', async () => {
+  const built = deps({
+    fetch: async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
+      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Total $40.50' }), { status: 200 });
+      return new Response('paid', { status: 200 });
+    },
+  });
+  const result = await handleBillMcp(
+    {
+      httpMethod: 'POST',
+      authorization: `Bearer ${TOKEN}`,
+      userAuthorization: USER,
+      body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } },
+    },
+    built.deps,
+  );
+  assert.deepEqual(result.body, { error: 'snapshot_mismatch', fields: ['invoice_number'] });
   assert.equal(built.calls.some((call) => call.url.endsWith('/execute')), false);
   assert.equal(built.recorded.length, 0);
 });
