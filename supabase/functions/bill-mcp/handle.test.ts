@@ -82,12 +82,12 @@ test('a request without the MCP token is refused and calls nothing', async () =>
   }
 });
 
-test('initialize and tools/list name the four tools', async () => {
+test('initialize and tools/list name available tools', async () => {
   const listed = await call({ method: 'tools/list' }).run();
   assert.equal(listed.status, 200);
   assert.deepEqual(
     (listed.body as { tools: { name: string }[] }).tools.map((tool) => tool.name),
-    ['get_bill', 'list_vendors', 'observe_portal', 'execute_approved_payment'],
+    ['get_bill', 'list_vendors', 'observe_portal', 'execute_approved_payment', 'retry_payment_receipt'],
   );
   const started = await call({ method: 'initialize' }).run();
   assert.deepEqual(started.body, { server: 'bill-mcp', tools: true });
@@ -359,4 +359,38 @@ test('a portal page missing the invoice does not call execute', async () => {
   assert.deepEqual(result.body, { error: 'snapshot_mismatch', fields: ['invoice_number'] });
   assert.equal(built.calls.some((call) => call.url.endsWith('/execute')), false);
   assert.equal(built.recorded.length, 0);
+});
+
+test('upload failure returns confirmed payment and retry tool never invokes execute or records payment', async () => {
+  const built = deps();
+  let receiptWrites = 0;
+  built.deps.persistReceipt = async () => { receiptWrites++; throw new Error('offline'); };
+  const request = { httpMethod: 'POST', authorization: `Bearer ${TOKEN}`, userAuthorization: USER,
+    body: { method: 'tools/call', params: { name: 'execute_approved_payment', arguments: { bill_id: 12 } } } };
+  const paid = await handleBillMcp(request, built.deps);
+  assert.deepEqual((paid.body as { payment: unknown }).payment, { payment_id: 9 });
+  assert.equal(receiptWrites, 1);
+  const calls: string[] = [];
+  built.deps.receiptPayment = async () => ({ billId: 12, bill_id: 12, payment_id: 9, status: 'success', amount: 40.5, vendorId: 3, invoiceNumber: 'INV-1', idempotencyKey: 'portal-12' });
+  built.deps.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).endsWith('/api/bills/12')) return Response.json({ bill: { ...bill(), status: 'payment_success' } });
+    if (String(url).endsWith('/receipt')) return Response.json({ receipt: { status: 'captured' } });
+    throw new Error('Retry must not call execute or observe');
+  };
+  built.deps.recordPayment = async () => { throw new Error('Retry must not record payment'); };
+  built.deps.persistReceipt = async () => ({ status: 'stored', path: 'payments/9/receipt.png' });
+  const retried = await handleBillMcp({ ...request, body: { method: 'tools/call', params: { name: 'retry_payment_receipt', arguments: { bill_id: 12, payment_id: 9 } } } }, built.deps);
+  assert.deepEqual(retried.body, { receipt: { status: 'stored', path: 'payments/9/receipt.png' } });
+  assert.ok(calls.every(url => !url.endsWith('/execute')));
+});
+
+test('receipt retry rejects an unauthorized or mismatched payment before worker access', async () => {
+  const built = deps();
+  built.deps.receiptPayment = async () => null;
+  built.deps.persistReceipt = async () => { throw new Error('Must not upload'); };
+  const response = await handleBillMcp({ httpMethod: 'POST', authorization: `Bearer ${TOKEN}`, userAuthorization: USER,
+    body: { method: 'tools/call', params: { name: 'retry_payment_receipt', arguments: { bill_id: 12, payment_id: 9 } } } }, built.deps);
+  assert.deepEqual(response.body, { error: 'receipt not found' });
+  assert.equal(built.calls.length, 1);
 });

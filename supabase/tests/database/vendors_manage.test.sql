@@ -90,10 +90,19 @@ select throws_ok($$insert into public.vendors (name, email, address, phone) valu
 select throws_ok($$insert into public.vendors (name, email, address, phone) values ('DC84 Null Phone', 'x@example.test', 'x', null)$$, '23514', null, 'a NULL phone is refused');
 select lives_ok($$insert into public.vendors (name, email, address, phone) values ('ACME Test', 'acme@example.test', '3 Test Way', '555-0103')$$, 'a complete vendor is accepted');
 select throws_ok($$insert into public.vendors (name, email, address, phone) values ('acme test', 'acme2@example.test', '4 Test Way', '555-0104')$$, '23505', null, 'a name that differs only by case is refused');
+-- A legacy vendor with no contacts, as rows looked before the checks existed. DC-109 filled
+-- in the seeded ones, so make one: drop the checks, insert, and add them back NOT VALID.
+alter table public.vendors drop constraint vendors_email_present,
+  drop constraint vendors_address_present, drop constraint vendors_phone_present;
+insert into public.vendors (name) values ('DC84 Legacy Vendor');
+alter table public.vendors
+  add constraint vendors_email_present check (email is not null and btrim(email) <> '') not valid,
+  add constraint vendors_address_present check (address is not null and btrim(address) <> '') not valid,
+  add constraint vendors_phone_present check (phone is not null and btrim(phone) <> '') not valid;
 select ok(
-  exists (select 1 from public.vendors where email is null and vendor_id < 84000),
-  'seeded vendors without an email are still there and readable');
-select throws_ok($$update public.vendors set contact_name = 'x' where name = 'Maple Junction Storage'$$, '23514', null, 'a legacy vendor with no email, address or phone can''t be updated until they are filled in');
+  exists (select 1 from public.vendors where name = 'DC84 Legacy Vendor' and email is null),
+  'a legacy vendor without an email is still there and readable');
+select throws_ok($$update public.vendors set contact_name = 'x' where name = 'DC84 Legacy Vendor'$$, '23514', null, 'a legacy vendor with no email, address or phone can''t be updated until they are filled in');
 
 -- anon
 set local role anon;

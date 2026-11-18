@@ -26,8 +26,23 @@ export interface ObserveResponse {
 }
 
 /** Only return with HTTP 2xx after portal payment confirmation. */
+export type ReceiptArtifact = {
+  pngBase64: string;
+  sha256: string;
+  reference: string;
+};
+export type PaymentReceipt =
+  | ({
+      status: 'captured';
+      billId: number;
+      vendorId: number;
+      invoiceNumber: string;
+      amountMinor: number;
+    } & ReceiptArtifact)
+  | { status: 'failed' };
 export interface ExecuteResponse {
   confirmed: true;
+  receipt?: PaymentReceipt;
 }
 
 /** Non-2xx response JSON; these codes are not database statuses. */
@@ -58,4 +73,5 @@ export interface StagehandWorker {
    * portal confirmation. HTTP handlers return non-2xx for errors or ambiguity.
    */
   execute(input: ExecuteRequest): Promise<ExecuteResponse>;
+  receipt?(billId: number, idempotencyKey: string): Promise<PaymentReceipt | undefined>;
 }

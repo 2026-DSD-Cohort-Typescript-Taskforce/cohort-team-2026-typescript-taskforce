@@ -1,6 +1,6 @@
 # Sample vendor refresh
 
-Covers: `supabase/migrations/20261117180000_refresh_sample_vendors_from_bills.sql`, `supabase/tests/migrations/sample_vendors_reseed.sql`
+Covers: `supabase/migrations/20261117180000_refresh_sample_vendors_from_bills.sql`, `supabase/scripts/sample_vendors_reseed.sql`
 
 ## Current view
 
@@ -19,7 +19,7 @@ Missing required contacts get synthetic `.invalid` emails, placeholder addresses
 - `sample_vendors_reseed.sql` tests preservation, missing vendors and repeat runs
   against local Supabase, then rolls back. Sequence advancement isn't rolled back.
 
-Run the test with `psql <local-db-url> -X -v ON_ERROR_STOP=1 -f supabase/tests/migrations/sample_vendors_reseed.sql`.
+Run the test with `psql <local-db-url> -X -v ON_ERROR_STOP=1 -f supabase/scripts/sample_vendors_reseed.sql`.
 
 ## History
 

@@ -6,6 +6,7 @@ import type { ExecuteRequest, ExecuteResponse } from './payment-contract';
 
 interface RecordData {
   fingerprint: string;
+  billId?: number;
   state: 'claimed' | 'submitting' | 'confirmed' | 'blocked' | 'retryable';
   result?: ExecuteResponse;
 }
@@ -39,7 +40,7 @@ export class ExecutionStore {
     const save = async (state: RecordData['state'], result?: ExecuteResponse) => {
       const file = await open(join(location, 'record.tmp'), 'w', 0o600);
       try {
-        await file.writeFile(JSON.stringify({ fingerprint, state, result }));
+        await file.writeFile(JSON.stringify({ fingerprint, billId: input.billId, state, result }));
         await file.sync();
       } finally {
         await file.close();
@@ -108,6 +109,24 @@ export class ExecutionStore {
     }
     await save('claimed');
     return handle(false);
+  }
+
+  async receipt(billId: number, key: string) {
+    try {
+      const record: RecordData = JSON.parse(
+        await readFile(join(this.directory, hash(key), 'record.json'), 'utf8'),
+      );
+      if (
+        record.billId !== billId ||
+        record.state !== 'confirmed' ||
+        record.result?.confirmed !== true
+      ) {
+        throw new Error('Unavailable receipt');
+      }
+      return record.result.receipt;
+    } catch {
+      throw new HttpError(404, 'Confirmed receipt is unavailable.', 'portal_error');
+    }
   }
 
   private async syncDirectory(path: string) {
