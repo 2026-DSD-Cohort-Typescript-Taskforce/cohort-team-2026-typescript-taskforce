@@ -82,10 +82,14 @@ const TOOLS = [
   { name: 'retry_payment_receipt' },
 ];
 
+// Logs the status and codes only: payment rows hold references (DC-102 keeps them out of logs).
 function result(body: unknown, status = 200): McpResult {
   const failed =
     status >= 400 || (body !== null && typeof body === 'object' && 'error' in body);
-  if (failed) console.error(`[bill-mcp] ${status} ${JSON.stringify(body)}`);
+  if (failed) {
+    const { error, outcome_code, fields } = (body ?? {}) as Record<string, unknown>;
+    console.error(`[bill-mcp] ${status} ${JSON.stringify({ error, outcome_code, fields })}`);
+  }
   return { status, body };
 }
 
@@ -142,7 +146,6 @@ async function appGet(deps: BillMcpDeps, userAuth: string, path: string) {
 }
 
 async function loadBill(deps: BillMcpDeps, userAuth: string, billId: number) { 
-  console.log("im inside the loadbillfunction")
   const loaded: { bill?: Bill; error?: number } = await appGet(deps, userAuth, `/api/bills/${billId}`);
   if (loaded.error !== undefined || !loaded.bill) return { error: loaded.error ?? 'not_found' };
   return { bill: loaded.bill };

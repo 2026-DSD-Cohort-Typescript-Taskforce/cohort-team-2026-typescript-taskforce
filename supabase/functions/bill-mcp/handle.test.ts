@@ -657,6 +657,42 @@ test('a failed record_payment call is reported as record_payment failed', async 
   assert.equal(rpcNames(thrown).at(-1), 'record_payment');
 });
 
+async function loggedErrors(run: () => Promise<unknown>) {
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '));
+  };
+  try {
+    await run();
+  } finally {
+    console.error = original;
+  }
+  return lines.join('\n');
+}
+
+test('logged results name the codes but not the payment row', async () => {
+  // A recorded row with references, as a reconciled attempt would carry them.
+  const record = (args: Record<string, unknown>): RpcReply => ({
+    data: attempt({ status: args.p_outcome, transaction_reference: 'TX-LOGGED-31', account_reference: 'ACCT-77' }),
+    error: null,
+  });
+  const failed = deps({}, { execute: workerError('portal_error', 502), rpc: { record_payment: record } });
+  const unknown = deps({}, { execute: workerError('outcome_unknown', 409), rpc: { record_payment: record } });
+  const mismatched = deps();
+  const logged = await loggedErrors(async () => {
+    await pay(failed);
+    await pay(unknown);
+    await pay(mismatched, { ...shown, amount: '1.00' });
+  });
+  assert.match(logged, /\[bill-mcp\] 200 \{"error":"payment_failed","outcome_code":"portal_error"\}/);
+  assert.match(logged, /\[bill-mcp\] 200 \{"error":"outcome_unknown"\}/);
+  assert.match(logged, /\[bill-mcp\] 200 \{"error":"summary_mismatch","fields":\["amount"\]\}/);
+  for (const secret of ['TX-LOGGED-31', 'ACCT-77', 'key-31']) {
+    assert.equal(logged.includes(secret), false, secret);
+  }
+});
+
 test('no caller profile is forbidden before preparing', async () => {
   const built = deps({ callerUserId: async () => null });
   const result = await pay(built);
