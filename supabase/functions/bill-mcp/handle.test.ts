@@ -208,13 +208,45 @@ test('a matching approved bill records the database snapshot after the worker su
   const sent = JSON.parse(String(built.calls.find((call) => call.url.endsWith('/execute'))?.init?.body));
   assert.equal(sent.portalUrl, 'https://portal.example.test/pay');
   assert.equal(sent.amount, 40.5);
+  assert.equal(sent.idempotencyKey, 'portal-12');
   assert.deepEqual(built.recorded[0], {
     billId: 12,
     amount: 40.5,
     vendorId: 3,
     invoiceNumber: 'INV-1',
-    idempotencyKey: 'pay-1',
+    idempotencyKey: 'portal-12',
   });
+});
+
+test('a worker outcome_unknown is returned and does not record a payment', async () => {
+  const built = deps({
+    fetch: async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/bills/12')) return new Response(JSON.stringify({ bill: bill() }), { status: 200 });
+      if (url.endsWith('/observe')) return new Response(JSON.stringify({ pageText: 'Invoice INV-1 total $40.50' }), { status: 200 });
+      return new Response(
+        JSON.stringify({ error: 'Payment outcome needs reconciliation. Do not resubmit.', code: 'outcome_unknown' }),
+        { status: 409 },
+      );
+    },
+  });
+  const result = await handleBillMcp(
+    {
+      httpMethod: 'POST',
+      authorization: `Bearer ${TOKEN}`,
+      userAuthorization: USER,
+      body: {
+        method: 'tools/call',
+        params: {
+          name: 'execute_approved_payment',
+          arguments: { bill_id: 12, idempotency_key: 'pay-2' },
+        },
+      },
+    },
+    built.deps,
+  );
+  assert.deepEqual(result.body, { error: 'outcome_unknown' });
+  assert.equal(built.recorded.length, 0);
 });
 
 test('a portal page with a different amount does not call execute', async () => {
