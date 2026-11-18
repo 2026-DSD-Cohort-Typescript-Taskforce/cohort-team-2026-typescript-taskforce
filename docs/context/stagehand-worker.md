@@ -52,7 +52,11 @@ The real demo portal, its authentication flow, and bill-mcp's final amount conve
 - 2026-11-15 · run e30488e3: Stagehand v4's browser handle needs an attached Stagehand client before page access; deterministic browser APIs do not require giving an LLM permission to pay.
 - 2026-11-15 · run e30488e3: Persist an exclusive key claim and submission intent before clicking. An ambiguous outcome must remain blocked across process restarts.
 - 2026-11-17 · run 05303049: Validate observation destinations before Chrome starts. Persist known pre-submission failures as retryable, but claim each retry exclusively and never reopen an uncertain post-intent execution.
+  <<<<<<< HEAD
+  \=======
 - 2026-11-17 · run e2ccbcbd: Let the portal session own the last known-safe pre-click boundary; persist submission intent only after its final readable mismatch check and immediately before atomic check-and-click.
+
+> > > > > > > main
 
 ## History
 
