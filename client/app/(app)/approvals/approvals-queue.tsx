@@ -5,7 +5,6 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   APPROVALS_DEFAULT_SORT,
   approvalRow,
-  canDecideBills,
   decisionBanner,
   type ApprovalRow,
   type Decision,
