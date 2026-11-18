@@ -3,7 +3,7 @@
 -- `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(109);
+select plan(110);
 
 -- Setup (as postgres, marker on): vendor, property, two payment methods, operator and a second
 -- authorizer, and one bill per case.
@@ -124,6 +124,7 @@ $$;
 -- Schema and privileges
 select has_function('public', 'start_payment_submission', ARRAY['integer'], 'start_payment_submission exists');
 select has_function('public', 'record_payment', ARRAY['integer', 'text', 'text', 'text', 'text'], 'record_payment exists');
+select hasnt_function('public', 'record_payment', ARRAY['integer', 'numeric', 'integer', 'text', 'text'], 'the #59 record_payment is dropped');
 select function_returns('public', 'start_payment_submission', ARRAY['integer'], 'payments', 'start_payment_submission returns the payments row');
 select function_returns('public', 'record_payment', ARRAY['integer', 'text', 'text', 'text', 'text'], 'payments', 'record_payment returns the payments row');
 select is_definer('public', 'start_payment_submission', ARRAY['integer'], 'start_payment_submission is security definer');

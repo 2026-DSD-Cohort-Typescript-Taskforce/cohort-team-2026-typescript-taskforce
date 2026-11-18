@@ -6,7 +6,8 @@
 -- definer functions below (added section by section), which set app.payments_write = 'on'.
 -- The payments_guard trigger is the backstop: it refuses any write without that marker,
 -- any DELETE and any TRUNCATE (a second trigger), any illegal status change, any change to the authorized summary, and any
--- row missing the columns its status needs.
+-- row missing the columns its status needs. DC-112's set_payment_receipt is recreated with the
+-- marker in Section 5.
 --
 -- Statuses and transitions:
 --   pending    -> authorized | canceled | expired
@@ -19,7 +20,6 @@
 
 -- New columns. Legacy rows get their summary backfilled from the bill below.
 alter table public.payments
-  add column idempotency_key uuid not null default gen_random_uuid() unique,
   add column vendor_id integer references public.vendors (vendor_id),
   add column payment_method_id integer references public.payment_methods (payment_method_id),
   add column invoice_number text,
@@ -42,6 +42,13 @@ alter table public.payments
   add column outcome_message text,
   add column transaction_reference text,
   add column updated_at timestamptz not null default now();
+
+-- idempotency_key came with #59 (text, unique index payments_idempotency_key_key). It stays
+-- text, because #59's rows hold keys like 'portal-12'. From now on every attempt has one.
+update public.payments set idempotency_key = gen_random_uuid()::text where idempotency_key is null;
+alter table public.payments
+  alter column idempotency_key set default gen_random_uuid()::text,
+  alter column idempotency_key set not null;
 
 -- The authorized summary and its hash. Read-only functions of a row the caller can already
 -- read; the writer functions call them as owner. The jsonb is the exact thing a client
@@ -150,7 +157,9 @@ create unique index payments_one_open_attempt_per_bill on public.payments (bill_
 
 -- Guard trigger. Checked in this order: write marker (and no DELETE), status transition,
 -- immutable columns, columns the new status needs. An INSERT may use any status; only
--- prepare_payment inserts, always as pending.
+-- prepare_payment inserts, always as pending. A row entering a status must have all of that
+-- status's columns. An update that keeps the status only may not clear one that is set, so a
+-- legacy row that never had them (e.g. a #59 success) can still get its receipt.
 create function public.payments_guard() returns trigger
 language plpgsql
 set search_path = ''
@@ -198,7 +207,8 @@ begin
     when 'expired' then array['outcome_code']
     else array[]::text[]
   end loop
-    if v_new ->> v_col is null then
+    if v_new ->> v_col is null
+       and (tg_op = 'INSERT' or new.status <> old.status or v_old ->> v_col is not null) then
       raise exception 'payment_incomplete' using errcode = 'P0001', detail = v_col;
     end if;
   end loop;
@@ -658,6 +668,11 @@ begin
 end
 $$;
 
+-- #59's record_payment(bill, amount, vendor, invoice, key) inserted a success row after the
+-- worker had already paid. The guard refuses that insert, so it would pay and then fail to
+-- record. The attempt flow replaces it.
+drop function public.record_payment(integer, numeric, integer, text, text);
+
 create function public.record_payment(
   p_payment_id integer,
   p_outcome text,
@@ -747,3 +762,36 @@ revoke execute on function public.record_payment(integer, text, text, text, text
   from public, anon, authenticated, service_role;
 grant execute on function public.start_payment_submission(integer) to service_role;
 grant execute on function public.record_payment(integer, text, text, text, text) to service_role;
+
+-- Section 5: DC-112's set_payment_receipt() (#60), recreated so it can still store a receipt on
+-- a success row under the guard. The checks and result are unchanged; only the write marker is
+-- added around its update. Its grants (service_role only) carry over.
+create or replace function public.set_payment_receipt(
+  p_payment_id integer, p_bill_id integer, p_idempotency_key text,
+  p_path text, p_error text default null
+) returns public.payments language plpgsql security definer set search_path = '' as $$
+declare
+  v_marker text := current_setting('app.payments_write', true);
+  v_payment public.payments;
+begin
+  select * into v_payment from public.payments where payment_id = p_payment_id for update;
+  if not found or v_payment.bill_id is distinct from p_bill_id
+    or v_payment.idempotency_key is distinct from p_idempotency_key
+    or v_payment.status is distinct from 'success' then
+    raise sqlstate 'PT409' using message = 'receipt_payment_mismatch';
+  end if;
+  if p_path is not null and (p_path <> 'payments/' || p_payment_id::text || '/receipt.png' or p_error is not null) then
+    raise sqlstate 'PT400' using message = 'invalid_receipt_path';
+  end if;
+  if p_path is null and (p_error is null or p_error not in ('capture_failed', 'upload_failed', 'unavailable')) then
+    raise sqlstate 'PT400' using message = 'invalid_receipt_error';
+  end if;
+  if v_payment.receipt_status = 'stored' then return v_payment; end if;
+  perform set_config('app.payments_write', 'on', true);
+  update public.payments set receipt_path = p_path,
+    receipt_status = case when p_path is null then 'failed' else 'stored' end,
+    receipt_error = p_error where payment_id = p_payment_id returning * into v_payment;
+  perform set_config('app.payments_write', coalesce(v_marker, ''), true);
+  return v_payment;
+end;
+$$;

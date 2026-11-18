@@ -2,7 +2,7 @@
 -- and guard trigger. Run with `supabase test db`. Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(85);
+select plan(88);
 
 -- Setup (as postgres, marker on): one vendor, property, payment method, user and one bill per
 -- case (ids 89001+, users 89101+, to stay clear of seeded rows).
@@ -65,7 +65,7 @@ end
 $$;
 
 -- Columns and types.
-select col_type_is('payments', 'idempotency_key', 'uuid');
+select col_type_is('payments', 'idempotency_key', 'text');
 select col_type_is('payments', 'vendor_id', 'integer');
 select col_type_is('payments', 'payment_method_id', 'integer');
 select col_type_is('payments', 'invoice_number', 'text');
@@ -88,13 +88,14 @@ select col_type_is('payments', 'outcome_code', 'text');
 select col_type_is('payments', 'outcome_message', 'text');
 select col_type_is('payments', 'transaction_reference', 'text');
 select col_type_is('payments', 'updated_at', 'timestamp with time zone');
+select col_has_default('payments', 'idempotency_key');
 select col_default_is('payments', 'fees_cents', 0::bigint);
 select col_default_is('payments', 'policy_refs', '[]'::jsonb);
 select col_not_null('payments', 'idempotency_key');
 select col_not_null('payments', 'fees_cents');
 select col_not_null('payments', 'policy_refs');
 select col_not_null('payments', 'updated_at');
-select col_is_unique('payments', 'idempotency_key');
+select index_is_unique('public', 'payments', 'payments_idempotency_key_key', 'idempotency_key is unique (the #59 index)');
 select col_is_fk('payments', 'vendor_id');
 select col_is_fk('payments', 'payment_method_id');
 select col_is_fk('payments', 'prepared_by');
@@ -204,6 +205,16 @@ select is(pg_temp.sql_error('update public.payments set status = ''canceled'' wh
   array['P0001', 'payment_incomplete', 'canceled_by'], 'canceled needs canceled_by');
 select is(pg_temp.sql_error('update public.payments set status = ''canceled'', canceled_by = 89101 where bill_id = 89003'), null, 'pending to canceled with canceled_by');
 select ok((select updated_at = now() and updated_at <> '2020-01-01T00:00:00Z' from public.payments where bill_id = 89003), 'updated_at advances to now()');
+
+-- A #59-era success row (bill 89006): written before the guard, without the outcome columns a
+-- success now needs. Updates that keep its status (e.g. storing a receipt) still work; clearing
+-- a column the status needs does not.
+alter table public.payments disable trigger payments_guard;
+insert into public.payments (bill_id, status, time_paid, idempotency_key) values (89006, 'success', now(), 'portal-89006');
+alter table public.payments enable trigger payments_guard;
+select is(pg_temp.sql_error('update public.payments set notes = ''receipt'' where bill_id = 89006'), null, 'a legacy success row without outcome columns can still be updated');
+select is(pg_temp.sql_error('update public.payments set time_paid = null where bill_id = 89006'),
+  array['P0001', 'payment_incomplete', 'time_paid'], 'an update that keeps the status can not clear a column it needs');
 
 -- TRUNCATE is refused for every role, even with the marker on (cascade included).
 select is(pg_temp.sql_error('truncate public.payments'), array['42501', 'payments_write_forbidden', null], 'truncate payments refused even with marker');
