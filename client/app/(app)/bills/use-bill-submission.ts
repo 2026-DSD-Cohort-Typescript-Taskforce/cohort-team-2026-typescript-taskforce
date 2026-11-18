@@ -12,6 +12,7 @@ import {
   submissionReducer,
 } from '@/lib/bill-submission';
 import { validateBill, type BillInput, type BillValues } from '@/lib/bill-validation';
+import { canSubmitBills } from '@/lib/roles';   //<- Added this to fix rules for permissions.
 import type { Bill } from '@/lib/bill-view';
 import { useBillsRefresh } from './bills-provider';
 
@@ -143,8 +144,8 @@ export function useBillSubmission({
   return {
     ...submission,
     busy: submission.state === 'saving' || submission.state === 'submitting',
-    /** Whether to offer submit: only billing operators can (submit_bill() answers 403 otherwise). */
-    canSubmit: role === 'billing_operator',
+    /** Whether to offer submit: billing operators, approvers and admins (submit_bill() answers 403 otherwise). */
+    canSubmit: canSubmitBills(role),    //<- Now this uses the canSubmitBills() function so all the correct roles can do this, instead of just billing_operator.
     saveDraft,
     submit,
     update,
