@@ -143,10 +143,26 @@ export class StagehandBrowser implements PortalBrowser {
           guard!.check();
           return read(p.invoiceSelector, p.totalSelector);
         },
-        async submit(expected) {
+        async submit(expected, markSubmitting) {
           const p = executionProfile();
           assertPaymentMatch(await read(p.invoiceSelector, p.totalSelector), expected);
           guard!.check();
+          const controlReady = await page.evaluate(
+            ({ paySelector, confirmationSelector }) => {
+              const buttons = document.querySelectorAll<HTMLElement>(paySelector);
+              return (
+                !document.querySelector(confirmationSelector) &&
+                buttons.length === 1 &&
+                buttons[0].getClientRects().length > 0 &&
+                !buttons[0].matches(':disabled, [aria-disabled="true"]')
+              );
+            },
+            { paySelector: p.paySelector, confirmationSelector: p.confirmationSelector },
+          );
+          if (!controlReady)
+            throw new HttpError(422, 'Payment control changed.', 'payment_mismatch');
+          guard!.check();
+          await markSubmitting();
           // Recheck and click in one browser task, so no navigation/model step can intervene.
           await page.evaluate(
             ({ p, expected }) => {

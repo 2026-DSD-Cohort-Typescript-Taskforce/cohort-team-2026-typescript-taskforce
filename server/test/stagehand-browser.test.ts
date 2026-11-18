@@ -78,7 +78,14 @@ test(
       confirmationReferenceSelector: '#reference',
     };
     const profiles = join(directory, 'profiles.json');
-    await writeFile(profiles, JSON.stringify([profile]));
+    await writeFile(
+      profiles,
+      JSON.stringify([
+        profile,
+        { ...profile, portalUrl: base + '/worker' },
+        { ...profile, portalUrl: base + '/redirect' },
+      ]),
+    );
     const browser = new StagehandBrowser(profiles);
     const worker = new BrowserWorker(browser, new ExecutionStore(join(directory, 'state')));
     const input = {

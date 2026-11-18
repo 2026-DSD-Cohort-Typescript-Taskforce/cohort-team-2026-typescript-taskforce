@@ -8,7 +8,7 @@ Last changed by AI: 2026-11-15 · run e30488e3-524f-4d93-be44-fee5edeb4cbd · fi
 
 The existing Express app exposes POST `/observe` and `/execute` for bill-mcp. `createStagehandRoutes` authenticates the exact bearer secret before parsing a strict 16 KB JSON body. Missing configuration or invalid credentials returns 401. Existing `/api/auth` routes remain separate. No worker module imports Supabase or updates approvals, bills, or payments.
 
-`BrowserWorker` owns execution ordering. Observation opens one isolated browser, returns visible body text, and closes it. Execution pins one validated operator-owned portal profile, converts the request amount to exact USD cents without rounding, claims an idempotency key including the normalized amount, verifies invoice/total, persists submission intent, submits, atomically verifies the confirmation marker, matching invoice/total, and transaction reference in one browser snapshot, then persists and returns `{ confirmed: true }`. Only a confirmed response is HTTP 2xx. Internal errors are translated to safe HTTP messages.
+`BrowserWorker` owns execution ordering. Observation opens one isolated browser, returns visible body text, and closes it. Execution pins one validated operator-owned portal profile, converts the request amount to exact USD cents without rounding, claims an idempotency key including the normalized amount, and verifies invoice/total. The portal session repeats every readable pre-click check—including invoice, total, confirmation absence, and one visible enabled Pay control—before invoking the durable submission-intent callback immediately before its atomic recheck-and-click. It then atomically verifies the confirmation marker, matching invoice/total, and transaction reference in one browser snapshot, persists, and returns `{ confirmed: true }`. Only a confirmed response is HTTP 2xx. Internal errors are translated to safe HTTP messages.
 
 `StagehandBrowser` uses installed Stagehand 4.4.0 and local Chrome through dynamic import in this CommonJS server. It attaches a Stagehand client but disables model-driven actions. Deterministic selectors are server configuration, never request fields. Each browser has a fresh temporary profile; authenticated portals requiring login/MFA need a portal-specific extension. Do not enable an arbitrary live portal with untested selectors.
 
@@ -52,6 +52,7 @@ The real demo portal, its authentication flow, and bill-mcp's final amount conve
 - 2026-11-15 · run e30488e3: Stagehand v4's browser handle needs an attached Stagehand client before page access; deterministic browser APIs do not require giving an LLM permission to pay.
 - 2026-11-15 · run e30488e3: Persist an exclusive key claim and submission intent before clicking. An ambiguous outcome must remain blocked across process restarts.
 - 2026-11-17 · run 05303049: Validate observation destinations before Chrome starts. Persist known pre-submission failures as retryable, but claim each retry exclusively and never reopen an uncertain post-intent execution.
+- 2026-11-17 · run e2ccbcbd: Let the portal session own the last known-safe pre-click boundary; persist submission intent only after its final readable mismatch check and immediately before atomic check-and-click.
 
 ## History
 

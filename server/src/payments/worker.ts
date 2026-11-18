@@ -11,7 +11,10 @@ import { assertPaymentMatch, requestedCents } from './worker-input';
 export interface PortalSession {
   text(): Promise<string>;
   review(): Promise<{ invoice: string; total: string }>;
-  submit(expected: { invoice: string; cents: number }): Promise<void>;
+  submit(
+    expected: { invoice: string; cents: number },
+    markSubmitting: () => Promise<void>,
+  ): Promise<void>;
   confirm(expected: { invoice: string; cents: number }): Promise<void>;
   close(): Promise<void>;
 }
@@ -56,9 +59,10 @@ export class BrowserWorker implements StagehandWorker {
     try {
       session = await execution.open();
       assertPaymentMatch(await session.review(), expected);
-      await claim.submitting();
-      submissionPossible = true;
-      await session.submit(expected);
+      await session.submit(expected, async () => {
+        await claim.submitting();
+        submissionPossible = true;
+      });
       await session.confirm(expected);
       const result = { confirmed: true } as const;
       await claim.confirmed(result);

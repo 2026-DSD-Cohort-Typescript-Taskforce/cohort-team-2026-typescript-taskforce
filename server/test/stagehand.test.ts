@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStagehandRoutes } from '../src/routes/stagehand.routes';
-import { errorHandler } from '../src/middleware/errorHandler';
+import { errorHandler, HttpError } from '../src/middleware/errorHandler';
 import { BrowserWorker, type PortalBrowser, type PortalSession } from '../src/payments/worker';
 import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
@@ -31,7 +31,8 @@ function fixture() {
   const session: PortalSession = {
     text: async () => 'Invoice INV-7, $125.00',
     review: async () => review,
-    submit: async () => {
+    submit: async (_expected, markSubmitting) => {
+      await markSubmitting();
       calls.submitted++;
     },
     confirm: async () => {
@@ -215,6 +216,25 @@ test('a known pre-submission failure permits the same request to retry safely', 
     };
 
     await assert.rejects(worker.execute(request), { code: 'portal_error' });
+    assert.equal(f.calls.submitted, 0);
+    assert.deepEqual(await worker.execute(request), { confirmed: true });
+    assert.equal(f.calls.submitted, 1);
+  });
+});
+
+test('a mismatch in the final pre-click check remains safely retryable', async () => {
+  await withWorker(async (worker, _path, f) => {
+    let mismatch = true;
+    f.session.submit = async (_expected, markSubmitting) => {
+      if (mismatch) {
+        mismatch = false;
+        throw new HttpError(422, 'Payment details changed.', 'payment_mismatch');
+      }
+      await markSubmitting();
+      f.calls.submitted++;
+    };
+
+    await assert.rejects(worker.execute(request), { code: 'payment_mismatch' });
     assert.equal(f.calls.submitted, 0);
     assert.deepEqual(await worker.execute(request), { confirmed: true });
     assert.equal(f.calls.submitted, 1);
