@@ -57,7 +57,7 @@ Decisions:
 - **Matching** follows ADR 0003 "Meaning": keys are ANDed, an absent key matches anything, bounds compare whole cents (`$500.00` is not `gt: 50000`, is `gte`/`lte: 50000`).
 - **Fail closed:** a present condition key whose fact is null (no amount, no property, no payment method) blocks, even when another key in the same rule would not have matched. An absent key never needs its fact, so a draft with nulls is fine under a rule that does not ask about them.
 
-`public.bill_has_qualifying_approval(p_bill_id integer) returns boolean` is true when the bill's newest approval (`created_at desc, approval_id desc`) is `approved` and `approved_by` is not null and differs from `submitted_by`. A self-approval or an auto-approve row never counts. It has the same security and grants.
+`public.bill_has_qualifying_approval(p_bill_id integer) returns boolean` is true when the bill's newest approval (`created_at desc, approval_id desc`) is `approved`, `approved_by` is not null, and the approver is neither the bill's creator (`bills.user_id`) nor the `submitted_by` of any of the bill's approval rows. A send-back records its requester as the new row's `submitted_by`, so the newest row alone can't show who submitted the bill. A self-approval or an auto-approve row never counts. It has the same security and grants.
 
 ## Where it's enforced
 

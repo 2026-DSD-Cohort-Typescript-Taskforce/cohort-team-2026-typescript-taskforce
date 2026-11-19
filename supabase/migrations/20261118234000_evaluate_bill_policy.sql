@@ -132,7 +132,9 @@ end
 $$;
 
 -- True when the bill's newest approval (by created_at, then approval_id) is approved by a
--- known user other than the submitter. A self-approval or an auto-approve row never counts.
+-- known user who neither created the bill (bills.user_id) nor submitted any of its approval
+-- rows. A send-back makes the requester the row's submitter, so the row alone can't show
+-- who submitted the bill. A self-approval or an auto-approve row never counts.
 create function public.bill_has_qualifying_approval(p_bill_id integer)
 returns boolean
 language sql
@@ -143,8 +145,12 @@ as $$
   select coalesce((
     select a.status = 'approved'
        and a.approved_by is not null
-       and a.approved_by is distinct from a.submitted_by
+       and a.approved_by is distinct from b.user_id
+       and not exists (
+         select 1 from public.approvals s
+          where s.bill_id = a.bill_id and s.submitted_by = a.approved_by)
       from public.approvals a
+      join public.bills b on b.bill_id = a.bill_id
      where a.bill_id = p_bill_id
      order by a.created_at desc, a.approval_id desc
      limit 1
