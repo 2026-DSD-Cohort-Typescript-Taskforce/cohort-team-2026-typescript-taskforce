@@ -41,8 +41,29 @@ test('system admin invokes the existing bill-mcp payment tool once', async () =>
   assert.deepEqual(reply.body, {
     outcome: 'success',
     message: 'Payment completed.',
-    payment: { payment_id: 9, bill_id: 12, status: 'success' },
-    receipt: { status: 'stored' },
+    paymentId: 9,
+    receiptStatus: 'stored',
+  });
+});
+
+test('success exposes only validated receipt metadata', async () => {
+  const reply = await runPaymentTrigger({
+    billId: 12,
+    role: 'system_admin',
+    invoke: async () => ({
+      ok: true,
+      status: 200,
+      body: {
+        payment: { payment_id: 9, bill_id: 12, status: 'success', secret: 'hidden' },
+        receipt: { status: 'failed', path: 'private/path.png' },
+      },
+    }),
+  });
+  assert.deepEqual(reply.body, {
+    outcome: 'success',
+    message: 'Payment completed.',
+    paymentId: 9,
+    receiptStatus: 'failed',
   });
 });
 
@@ -51,6 +72,7 @@ test('success requires a successful payment row for the requested bill', async (
     { payment_id: 9, bill_id: 99, status: 'success' },
     { payment_id: 9, bill_id: 12, status: 'failure' },
     { payment_id: 9, status: 'success' },
+    { payment_id: '9', bill_id: 12, status: 'success' },
   ]) {
     const reply = await runPaymentTrigger({
       billId: 12,
