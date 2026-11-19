@@ -12,8 +12,10 @@ export type PaymentInput = {
   idempotencyKey: string;
 };
 
-// The DC-89 payment functions bill-mcp calls (supabase/migrations/20261117200000_payment_attempts.sql).
-export type RpcName = 'prepare_payment' | 'authorize_payment' | 'cancel_payment' | 'start_payment_submission' | 'record_payment';
+// The DC-89 payment functions bill-mcp calls (supabase/migrations/20261117200000_payment_attempts.sql),
+// plus authorize_approved_payment for the hourly sweep (20261119010300_authorize_approved_payment.sql).
+export type RpcName = 'prepare_payment' | 'authorize_payment' | 'authorize_approved_payment' | 'cancel_payment'
+  | 'start_payment_submission' | 'record_payment';
 // error.code is the Postgres error code; a reply that never arrived (or a throw) has none.
 export type RpcReply = { data: unknown; error: { message: string; details?: string | null; code?: string | null } | null };
 
@@ -35,11 +37,15 @@ export type BillMcpDeps = {
   now?: () => number;
   deadlineMs?: number;
   sleep?: (ms: number) => Promise<void>;
-  // The hourly sweep's payer for one bill; without it the sweep calls execute_approved_payment itself.
-  payApproved?: (userAuth: string, billId: number) => Promise<unknown>;
+  // The hourly sweep reads through the service client; it has no user session. Without all three
+  // it refuses with automation not configured.
+  pendingBillIds?: () => Promise<number[]>;
+  serviceBill?: (billId: number) => Promise<Bill | null>;
+  // users.user_id of the approver on the bill's newest approval when it is approved, else null.
+  latestApprover?: (billId: number) => Promise<number | null>;
 };
 
-type Bill = {
+export type Bill = {
   bill_id: number;
   status: string;
   amount: number | string | null;
@@ -57,6 +63,10 @@ type Attempt = {
   amount_cents: number;
   idempotency_key: string;
 } & Record<string, unknown>;
+
+// Who authorizes an attempt: the admin, on the summary the trigger dialog showed them, or for the
+// hourly sweep, authorize_approved_payment on behalf of the bill's newest approver.
+type Authorizer = { kind: 'admin' } | { kind: 'scheduled' };
 
 // The payment summary the admin confirmed in the trigger dialog. Money is in cents.
 type Shown = {
@@ -103,7 +113,7 @@ const FIELD_NAMES: Record<string, string> = { amount_cents: 'amount', fees_cents
 // prepared row), is payment_not_started.
 const RPC_CODES = new Set(['forbidden', 'not_found', 'invalid_payment', 'payment_in_progress', 'already_paid',
   'not_payable', 'not_pending', 'not_prepared', 'summary_stale', 'not_authorized', 'authorization_expired',
-  'worker not configured']);
+  'not_approved', 'worker not configured']);
 
 // start_payment_submission's own refusals: the claim did not happen.
 const CLAIM_CODES = new Set(['not_found', 'not_authorized', 'authorization_expired', 'forbidden', 'not_payable',
@@ -345,15 +355,18 @@ function rpcStop(name: RpcName, error: NonNullable<RpcReply['error']>) {
 }
 
 // Withdraws an attempt that will not be claimed. Best effort: one left behind is superseded by
-// the bill's next prepare_payment.
-async function cancelAndStop<T extends { error: string }>(deps: BillMcpDeps, attempt: Attempt, stop: T) {
-  await callRpc(deps, 'cancel_payment', { p_payment_id: attempt.payment_id, p_note: stop.error }, 'user');
+// the bill's next prepare_payment. cancel_payment needs a signed-in user, so a scheduled attempt
+// is only left behind.
+async function cancelAndStop<T extends { error: string }>(deps: BillMcpDeps, attempt: Attempt, stop: T, by: Authorizer) {
+  if (by.kind === 'admin') {
+    await callRpc(deps, 'cancel_payment', { p_payment_id: attempt.payment_id, p_note: stop.error }, 'user');
+  }
   return stop;
 }
 
-// Every triggered payment is prepared with no fees and the date the admin was shown; a different
-// shown fee is a summary_mismatch.
-async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number, summary: Record<string, unknown>) {
+// Every payment is prepared with no fees and the summary's date (the one the admin was shown, or
+// today for the sweep); a different shown fee is a summary_mismatch.
+async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number, summary: Record<string, unknown>, by: Authorizer) {
   const prepared = await callRpc(deps, 'prepare_payment', {
     p_bill_id: bill.bill_id,
     p_prepared_by: preparedBy,
@@ -366,19 +379,23 @@ async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number,
   if (!isAttempt(prepared.data)) return rpcStop('prepare_payment', { message: 'no payment row returned' });
   const attempt = prepared.data;
   const gaps = summaryGaps(summary, attempt, SUMMARY_KEYS);
-  if (gaps.length > 0) return cancelAndStop(deps, attempt, { error: 'summary_mismatch', fields: gaps });
+  if (gaps.length > 0) return cancelAndStop(deps, attempt, { error: 'summary_mismatch', fields: gaps }, by);
   return { attempt };
 }
 
-// The admin's explicit yes on the summary they were shown (equal to the prepared row), then the
-// atomic claim. A refusal cancels the attempt and returns its code; nothing was charged. null
-// means the attempt is claimed.
-async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: Record<string, unknown>) {
-  const authorized = await callRpc(deps, 'authorize_payment', { p_payment_id: attempt.payment_id, p_summary: summary }, 'user');
-  if (authorized.error) return cancelAndStop(deps, attempt, rpcStop('authorize_payment', authorized.error));
+// The admin's explicit yes on the summary they were shown (equal to the prepared row), or for the
+// sweep authorize_approved_payment, which rechecks the newest approval. Then the atomic claim. A
+// refusal cancels the attempt and returns its code; nothing was charged. null means the attempt
+// is claimed.
+async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: Record<string, unknown>, by: Authorizer) {
+  const authorized = by.kind === 'admin'
+    ? await callRpc(deps, 'authorize_payment', { p_payment_id: attempt.payment_id, p_summary: summary }, 'user')
+    : await callRpc(deps, 'authorize_approved_payment', { p_payment_id: attempt.payment_id }, 'service');
+  const authorizeName = by.kind === 'admin' ? 'authorize_payment' : 'authorize_approved_payment';
+  if (authorized.error) return cancelAndStop(deps, attempt, rpcStop(authorizeName, authorized.error), by);
   const claimed = await callRpc(deps, 'start_payment_submission', { p_payment_id: attempt.payment_id }, 'service');
   if (!claimed.error) return null;
-  if (CLAIM_CODES.has(claimed.error.message)) return cancelAndStop(deps, attempt, { error: claimed.error.message });
+  if (CLAIM_CODES.has(claimed.error.message)) return cancelAndStop(deps, attempt, { error: claimed.error.message }, by);
   // The claim may have committed with its reply lost. Close it as not submitted; if it never
   // committed, record_payment answers not_processing and the cancel withdraws it.
   console.error(`[bill-mcp] start_payment_submission failed: ${claimed.error.message}`);
@@ -389,7 +406,7 @@ async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: R
     p_transaction_reference: null,
     p_message: 'claim reply lost; worker not called',
   }, 'service');
-  return cancelAndStop(deps, attempt, { error: 'payment_not_started' });
+  return cancelAndStop(deps, attempt, { error: 'payment_not_started' }, by);
 }
 
 function unknownOutcome(message: string | null): Outcome {
@@ -469,14 +486,45 @@ async function recordOutcome(deps: BillMcpDeps, attempt: Attempt, outcome: Outco
   return { payment, receipt };
 }
 
-// The summary the admin confirmed must equal the bill and the portal page before an attempt is
-// prepared, and the prepared attempt key for key before it is authorized. Nothing reaches
-// /execute unless start_payment_submission claimed the attempt, and every claimed attempt ends
-// in record_payment.
-async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+// The portal page must show the bill's invoice and amount before an attempt is prepared, and the
+// prepared attempt must equal the summary key for key before it is authorized. Nothing reaches
+// /execute unless start_payment_submission claimed the attempt, and every claimed attempt ends in
+// record_payment. preparedBy returns the users.user_id the attempt is prepared for.
+async function payBill(
+  deps: BillMcpDeps,
+  bill: Bill,
+  summary: Record<string, unknown>,
+  preparedBy: () => Promise<number | null>,
+  by: Authorizer,
+  left: () => number,
+) {
+  const portal = await readPortal(deps, bill, Math.min(OBSERVE_TIMEOUT_MS, left()));
+  if ('error' in portal) return portal;
+  const gaps = snapshotGaps(bill, portal.text);
+  if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
+  const stagehandUrl = deps.stagehandUrl;
+  if (!stagehandUrl) return { error: 'worker not configured' };
+  const preparer = await preparedBy();
+  if (preparer === null) return { error: 'forbidden' };
+  if (left() < PREPARE_MIN_LEFT_MS) return { error: 'payment_not_started' };
+  const prepared = await prepareAttempt(deps, bill, preparer, summary, by);
+  if ('error' in prepared) return prepared;
+  const stopped = await authorizeAndClaim(deps, prepared.attempt, summary, by);
+  if (stopped) return stopped;
+  const executeMs = Math.min(deps.executeTimeoutMs ?? EXECUTE_TIMEOUT_MS, left());
+  const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt, executeMs);
+  return recordOutcome(deps, prepared.attempt, outcome, left);
+}
+
+function deadlineFrom(deps: BillMcpDeps) {
   const now = deps.now ?? Date.now;
   const deadline = now() + (deps.deadlineMs ?? PAYMENT_DEADLINE_MS);
-  const left = () => deadline - now();
+  return () => deadline - now();
+}
+
+// The summary the admin confirmed must equal the bill before the portal is read.
+async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+  const left = deadlineFrom(deps);
   const shown = shownPayment(args);
   if (shown === null) return { error: 'invalid arguments' };
   const loaded = await loadBill(deps, userAuth, shown.billId);
@@ -486,38 +534,75 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   const summary = shownSummary(shown);
   const differs = summaryGaps(summary, { ...bill, amount_cents: moneyCents(bill.amount) }, BILL_KEYS);
   if (differs.length > 0) return { error: 'summary_mismatch', fields: differs };
-  const portal = await readPortal(deps, bill, Math.min(OBSERVE_TIMEOUT_MS, left()));
-  if ('error' in portal) return portal;
-  const gaps = snapshotGaps(bill, portal.text);
-  if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
-  const stagehandUrl = deps.stagehandUrl;
-  if (!stagehandUrl) return { error: 'worker not configured' };
-  const preparedBy = await deps.callerUserId();
-  if (preparedBy === null) return { error: 'forbidden' };
-  if (left() < PREPARE_MIN_LEFT_MS) return { error: 'payment_not_started' };
-  const prepared = await prepareAttempt(deps, bill, preparedBy, summary);
-  if ('error' in prepared) return prepared;
-  const stopped = await authorizeAndClaim(deps, prepared.attempt, summary);
-  if (stopped) return stopped;
-  const executeMs = Math.min(deps.executeTimeoutMs ?? EXECUTE_TIMEOUT_MS, left());
-  const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt, executeMs);
-  return recordOutcome(deps, prepared.attempt, outcome, left);
+  return payBill(deps, bill, summary, () => deps.callerUserId(), { kind: 'admin' }, left);
 }
 
-async function sweepApprovedPayments(deps: BillMcpDeps, userAuth: string) {
-  const listed: { bills?: { bill_id?: unknown; status?: unknown }[]; error?: unknown } = await appGet(deps, userAuth, '/api/bills');
-  if (!Array.isArray(listed.bills)) return listed;
-  const results = [];
-  for (const entry of listed.bills) {
-    if (!entry || entry.status !== 'pending_payment') continue;
-    const billId = integer(entry.bill_id);
-    if (billId === null) continue;
-    const outcome = deps.payApproved
-      ? await deps.payApproved(userAuth, billId)
-      : await executeApprovedPayment(deps, userAuth, { bill_id: billId });
+// What the sweep authorizes for a bill: its own vendor, invoice, method and amount, no fees, USD
+// (the only currency payments allow) and today's date. null when the bill lacks one of them.
+function scheduledSummary(bill: Bill, paymentDate: string): Record<string, unknown> | null {
+  const cents = moneyCents(bill.amount);
+  if (bill.vendor_id === null || bill.payment_method_id === null || !bill.invoice_number || cents === null) return null;
+  return {
+    bill_id: bill.bill_id,
+    vendor_id: bill.vendor_id,
+    invoice_number: bill.invoice_number,
+    account_reference: null,
+    payment_method_id: bill.payment_method_id,
+    amount_cents: cents,
+    fees_cents: 0,
+    total_cents: cents,
+    currency: 'USD',
+    payment_date: paymentDate,
+  };
+}
+
+// One sweep bill. Only pending_payment is paid: a payment_failed bill waits for a person. The
+// newest approval must be approved; its approver prepares the attempt, and
+// authorize_approved_payment checks it again.
+async function payScheduledBill(
+  deps: BillMcpDeps & Required<Pick<BillMcpDeps, 'serviceBill' | 'latestApprover'>>,
+  billId: number,
+  paymentDate: string,
+  left: () => number,
+) {
+  const bill = await deps.serviceBill(billId);
+  if (!bill) return { error: 'not_found' };
+  if (bill.status !== 'pending_payment') return { error: 'not_payable' };
+  const approver = await deps.latestApprover(billId);
+  if (approver === null) return { error: 'not_approved' };
+  const summary = scheduledSummary(bill, paymentDate);
+  if (summary === null) return { error: 'not_payable' };
+  return payBill(deps, bill, summary, async () => approver, { kind: 'scheduled' }, left);
+}
+
+// The hourly cron's call. Every bill shares one payment budget, so the sweep ends before
+// Supabase's limit with each claimed attempt recorded. A bill that no longer fits is deferred to
+// the next hour; nothing is prepared for it.
+async function sweepApprovedPayments(deps: BillMcpDeps) {
+  const { pendingBillIds, serviceBill, latestApprover } = deps;
+  if (!pendingBillIds || !serviceBill || !latestApprover) return { error: 'automation not configured' };
+  const left = deadlineFrom(deps);
+  const paymentDate = new Date((deps.now ?? Date.now)()).toISOString().slice(0, 10);
+  let billIds: number[];
+  try {
+    billIds = await pendingBillIds();
+  } catch (error) {
+    console.error(`[bill-mcp] sweep could not list bills: ${error instanceof Error ? error.message : String(error)}`);
+    return { error: 'bill list failed' };
+  }
+  const results: { bill_id: number; outcome: unknown }[] = [];
+  const deferred: number[] = [];
+  for (const billId of billIds) {
+    if (left() < PREPARE_MIN_LEFT_MS) {
+      deferred.push(billId);
+      continue;
+    }
+    const outcome = await payScheduledBill({ ...deps, serviceBill, latestApprover }, billId, paymentDate, left);
+    const failed = outcome && typeof outcome === 'object' && 'error' in outcome ? outcome.error : null;
+    if (failed) console.error(`[bill-mcp] sweep bill ${billId}: ${String(failed)}`);
     results.push({ bill_id: billId, outcome });
   }
-  return { ok: true, results };
+  return { ok: true, results, deferred };
 }
 
 async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
@@ -541,26 +626,6 @@ async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Re
   return { receipt };
 }
 
-export async function askAgentToPay(
-  fetchImpl: typeof fetch,
-  env: { agentUrl: string | undefined },
-  userAuth: string,
-  billId: number,
-) {
-  if (!env.agentUrl) return { error: 'agent not configured' };
-  const authorization = /^Bearer\s+/i.test(userAuth) ? userAuth : `Bearer ${userAuth}`;
-  const response = await fetchImpl(env.agentUrl, {
-    method: 'POST',
-    headers: { Authorization: authorization, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      task: `Pay bill ${billId}. Call execute_approved_payment with bill_id ${billId}. Do not pay any other bill.`,
-    }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) return { error: 'agent failed', body };
-  return body;
-}
-
 export async function handleBillMcp(
   request: { httpMethod: string; authorization: string | null; body: unknown; userAuthorization: string },
   deps: BillMcpDeps,
@@ -576,7 +641,7 @@ export async function handleBillMcp(
   const method = body && typeof body === 'object' ? (body as { method?: unknown }).method : undefined;
   if (method === 'initialize') return result({ server: 'bill-mcp', tools: true });
   if (method === 'tools/list') return result({ tools: TOOLS });
-  if (method === 'sweep_approved_payments') return result(await sweepApprovedPayments(deps, request.userAuthorization));
+  if (method === 'sweep_approved_payments') return result(await sweepApprovedPayments(deps));
   if (method !== 'tools/call') return result({ error: 'unknown method' }, 400);
 
   const name = toolName(body);

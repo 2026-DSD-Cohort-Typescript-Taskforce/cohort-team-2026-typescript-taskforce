@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { askAgentToPay, handleBillMcp, type BillMcpDeps, type RpcName, type RpcReply } from './handle.ts';
+import { handleBillMcp, type BillMcpDeps, type RpcName, type RpcReply } from './handle.ts';
 
 const TOKEN = 'mcp-secret';
 const USER = 'Bearer user-jwt';
@@ -61,6 +61,7 @@ function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
   const answers: Record<RpcName, (args: Record<string, unknown>) => RpcReply> = {
     prepare_payment: () => ({ data: attempt(), error: null }),
     authorize_payment: () => ({ data: { ...row, status: 'authorized' }, error: null }),
+    authorize_approved_payment: () => ({ data: { ...row, status: 'authorized' }, error: null }),
     start_payment_submission: () => ({ data: { ...row, status: 'processing' }, error: null }),
     record_payment: (args) => ({ data: { ...row, status: args.p_outcome }, error: null }),
     cancel_payment: () => ({ data: { ...row, status: 'canceled' }, error: null }),
@@ -1107,44 +1108,6 @@ test('the agent tool call cannot start the hourly sweep', async () => {
   assert.equal(names.includes('sweep_approved_payments'), false);
 });
 
-test('the hourly sweep cannot pay: execute_approved_payment needs the summary an admin was shown', async () => {
-  const built = deps({
-    fetch: async (input, init) => {
-      const url = String(input);
-      built.calls.push({ url, init });
-      if (url.endsWith('/api/bills')) {
-        return Response.json({
-          bills: [
-            { bill_id: 1, status: 'draft' },
-            { bill_id: 2, status: 'pending_payment' },
-            { bill_id: 4, status: 'pending_payment' },
-          ],
-        });
-      }
-      throw new Error(`sweep must not fetch ${url}`);
-    },
-  });
-  const result = await handleBillMcp(
-    {
-      httpMethod: 'POST',
-      authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
-      body: { method: 'sweep_approved_payments' },
-    },
-    built.deps,
-  );
-  const body = result.body as { results: { bill_id: number; outcome: { error?: string } }[] };
-  assert.deepEqual(
-    body.results.map((row) => [row.bill_id, row.outcome.error]),
-    [
-      [2, 'invalid arguments'],
-      [4, 'invalid arguments'],
-    ],
-  );
-  assert.deepEqual(built.calls.map((entry) => entry.url), ['http://localhost:3000/api/bills']);
-  assert.equal(built.rpcCalls.length, 0);
-});
-
 test('receipt retry rejects an unauthorized or mismatched payment before worker access', async () => {
   const built = deps();
   built.deps.receiptPayment = async () => null;
@@ -1155,67 +1118,119 @@ test('receipt retry rejects an unauthorized or mismatched payment before worker 
   assert.equal(built.calls.length, 1);
 });
 
-test('the hourly sweep asks the agent once per pending bill and continues after an agent error', async () => {
-  const asked: number[] = [];
-  const calls: string[] = [];
-  const built = deps({
-    payApproved: async (_userAuth, billId) => {
-      asked.push(billId);
-      if (billId === 2) return { error: 'agent failed' };
-      return { reply: 'paid' };
+// The hourly sweep's service-client readers: bill 12 is pending_payment and user 21 approved it.
+function sweepDeps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
+  return deps(
+    {
+      pendingBillIds: async () => [12],
+      serviceBill: async (billId) => ({ ...bill(), bill_id: billId }),
+      latestApprover: async () => 21,
+      now: () => Date.parse('2026-11-18T15:00:00Z'),
+      ...overrides,
     },
-    fetch: async (input) => {
-      const url = String(input);
-      calls.push(url);
-      if (url.endsWith('/api/bills')) {
-        return Response.json({
-          bills: [
-            { bill_id: 1, status: 'draft' },
-            { bill_id: 2, status: 'pending_payment' },
-            { bill_id: 4, status: 'pending_payment' },
-          ],
-        });
-      }
-      throw new Error(`sweep must not fetch ${url}`);
-    },
-  });
-  const result = await handleBillMcp(
+    script,
+  );
+}
+
+type SweepBody = { ok?: boolean; error?: string; deferred?: number[]; results?: { bill_id: number; outcome: Record<string, unknown> }[] };
+
+async function sweep(built: ReturnType<typeof deps>) {
+  const response = await handleBillMcp(
     {
       httpMethod: 'POST',
       authorization: `Bearer ${TOKEN}`,
-      userAuthorization: USER,
+      userAuthorization: '',
       body: { method: 'sweep_approved_payments' },
     },
     built.deps,
   );
-  assert.deepEqual(asked, [2, 4]);
-  assert.deepEqual(calls, ['http://localhost:3000/api/bills']);
-  const body = result.body as { results: { bill_id: number; outcome: { error?: string } }[] };
-  assert.equal(body.results[0].outcome.error, 'agent failed');
-  assert.equal(body.results[1].bill_id, 4);
+  return response.body as SweepBody;
+}
+
+test('the hourly sweep pays a pending bill for its newest approver without a user session', async () => {
+  const built = sweepDeps();
+  const body = await sweep(built);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.deferred, []);
+  assert.equal(body.results?.length, 1);
+  assert.equal(body.results?.[0].bill_id, 12);
+  assert.equal((body.results?.[0].outcome.payment as { status?: string }).status, 'success');
+  assert.deepEqual(built.steps, ['/observe', 'prepare_payment', 'authorize_approved_payment', 'start_payment_submission',
+    '/execute', 'record_payment']);
+  assert.ok(built.rpcCalls.every((rpc) => rpc.as === 'service'));
+  const prepare = built.rpcCalls[0].args;
+  assert.equal(prepare.p_prepared_by, 21);
+  assert.equal(prepare.p_payment_date, '2026-11-18');
+  assert.equal(prepare.p_fees_cents, 0);
+  assert.deepEqual(built.rpcCalls[1].args, { p_payment_id: 31 });
+  assert.equal(recorded(built)?.p_transaction_reference, 'TX-31');
+  assert.equal(built.calls.some((call) => call.url.includes('/api/')), false);
 });
 
-test('askAgentToPay posts one bill task and does not fetch without a url', async () => {
-  const skipped = await askAgentToPay(async () => {
-    throw new Error('fetched');
-  }, { agentUrl: undefined }, 'user-jwt', 4);
-  assert.deepEqual(skipped, { error: 'agent not configured' });
+test('the hourly sweep refuses without its service-client readers and calls nothing', async () => {
+  const built = deps();
+  assert.deepEqual(await sweep(built), { error: 'automation not configured' });
+  assert.equal(built.calls.length, 0);
+  assert.equal(built.rpcCalls.length, 0);
+});
 
-  const calls: { url: string; init?: RequestInit }[] = [];
-  const result = await askAgentToPay(
-    async (url, init) => {
-      calls.push({ url: String(url), init });
-      return new Response(JSON.stringify({ reply: 'ok' }), { status: 200 });
+test('the hourly sweep skips an unapproved bill and a bill that is not pending_payment', async () => {
+  const built = sweepDeps({
+    pendingBillIds: async () => [12, 14],
+    serviceBill: async (billId) => ({ ...bill(), bill_id: billId, status: billId === 14 ? 'payment_failed' : 'pending_payment' }),
+    latestApprover: async () => null,
+  });
+  const body = await sweep(built);
+  assert.deepEqual(body.results?.map((row) => [row.bill_id, row.outcome.error]), [
+    [12, 'not_approved'],
+    [14, 'not_payable'],
+  ]);
+  assert.equal(built.calls.length, 0);
+  assert.equal(built.rpcCalls.length, 0);
+});
+
+test('the hourly sweep does not prepare when the portal page lacks the invoice', async () => {
+  const built = sweepDeps({}, { page: 'total $40.50' });
+  const body = await sweep(built);
+  assert.equal(body.results?.[0].outcome.error, 'snapshot_mismatch');
+  assert.equal(built.rpcCalls.length, 0);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('a sweep attempt that differs from the bill is left pending and unpaid', async () => {
+  const built = sweepDeps({}, {
+    rpc: { prepare_payment: () => ({ data: attempt({ amount_cents: 4000, total_cents: 4000 }), error: null }) },
+  });
+  const body = await sweep(built);
+  assert.deepEqual(body.results?.[0].outcome, { error: 'summary_mismatch', fields: ['amount', 'total'] });
+  // cancel_payment needs a signed-in user; the next prepare_payment expires the attempt.
+  assert.deepEqual(rpcNames(built), ['prepare_payment']);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('authorize_approved_payment refusing stops a sweep payment before the claim', async () => {
+  const built = sweepDeps({}, {
+    rpc: { authorize_approved_payment: () => rpcError('not_approved', null, 'PT409') },
+  });
+  const body = await sweep(built);
+  assert.deepEqual(body.results?.[0].outcome, { error: 'not_approved' });
+  assert.deepEqual(rpcNames(built), ['prepare_payment', 'authorize_approved_payment']);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('the hourly sweep defers bills that no longer fit its payment budget', async () => {
+  let clock = Date.parse('2026-11-18T15:00:00Z');
+  const built = sweepDeps(
+    { pendingBillIds: async () => [12, 14], now: () => clock },
+    {
+      execute: () => {
+        clock += 60_000;
+        return Response.json({ confirmed: true, transactionReference: 'TX-31' });
+      },
     },
-    { agentUrl: 'http://agent/agent-bills' },
-    'Bearer user-jwt',
-    4,
   );
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'http://agent/agent-bills');
-  assert.equal(new Headers(calls[0].init?.headers).get('authorization'), 'Bearer user-jwt');
-  const task = (JSON.parse(String(calls[0].init?.body)) as { task: string }).task;
-  assert.match(task, /execute_approved_payment/);
-  assert.match(task, /bill_id 4/);
-  assert.deepEqual(result, { reply: 'ok' });
+  const body = await sweep(built);
+  assert.deepEqual(body.results?.map((row) => row.bill_id), [12]);
+  assert.deepEqual(body.deferred, [14]);
+  assert.equal(executeCalls(built).length, 1);
 });

@@ -1,12 +1,12 @@
 # Hourly payment sweep
 
-Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261119010000_pay_approved_hourly.sql`
+Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261119010000_pay_approved_hourly.sql`, `supabase/migrations/20261119010300_authorize_approved_payment.sql`
 
 Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
 ## Current view
 
-The hourly sweep lists pending_payment bills and calls execute_approved_payment once per bill with only the bill id. Since DC-126 that tool needs the full summary an admin was shown in the Trigger payment dialog, so every bill is refused with `invalid arguments` and nothing is paid. index.ts sets no payApproved, so the sweep does not ask agent-bills, and agent-bills no longer lists execute_approved_payment. Paying from the cron needs a payer that is not a signed-in admin (DC-94). The vault user token also expires after an hour.
+The hourly cron authenticates only with bill-mcp's token (`bill_mcp_token` in Vault); no user access token is stored. bill-mcp lists pending_payment bills with the service client and runs the DC-126 payment steps for each one; no model decides whether to pay. The summary comes from the bill: its vendor, invoice, method and amount, no fees, USD and today's UTC date. The newest approval must be approved. Its approver prepares the attempt, and the service-only `authorize_approved_payment` rechecks that approval and records the approver as `authorized_by`. Before authorization the portal page must show the invoice and amount, and the prepared attempt must equal the summary key for key. A payment_failed bill waits for a person. All bills in one sweep share one 125 s budget; a bill that no longer fits is returned in `deferred` and waits for the next hour. cancel_payment needs a signed-in user, so a sweep attempt refused before the claim stays pending until the next prepare_payment expires it.
 
 ## Lessons
 
@@ -15,6 +15,7 @@ The hourly sweep lists pending_payment bills and calls execute_approved_payment 
 ## History
 
 ### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
+
 **Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
 **Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
 **Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.

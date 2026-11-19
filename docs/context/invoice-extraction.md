@@ -1,12 +1,12 @@
 # invoice extraction
 
-Covers: supabase/functions/extract-invoices/index.ts, supabase/migrations/20261119010100_submit_bill_auto_approve.sql
+Covers: supabase/functions/extract-invoices/index.ts
 
 Last changed by AI: 2026-11-18 · run 712a3774-ff10-4d6d-94db-b21ff575b308 · files: supabase/functions/extract-invoices/index.ts, supabase/migrations/20261118170000_submit_bill_auto_approve.sql
 
 ## Current view
 
-A complete invoice extraction calls submit_bill with p_auto_approve true after the draft is saved. On the pending_payment branch that flag inserts one approvals row in the same transaction: submitted_by and approved_by are the signed-in caller, status is approved, time_approved is now, and the note is "Recorded by invoice extraction so the bill can be paid." execute_approved_payment already requires that newest status, so the bill can be autopaid. A submit that goes to pending_approval ignores the flag and still inserts only a pending row. Form submits omit the flag and still write no approvals row. Signed-in users cannot insert into approvals themselves. The database check is npx supabase test db supabase/tests/database/bills_submit.test.sql.
+A complete invoice extraction saves the draft and submits it with `p_needs_approval: true`. The normal approval workflow creates the pending approval; extraction never records the uploader as an approver. Automated payment remains unavailable until a real approval is the newest decision.
 
 ## Lessons
 

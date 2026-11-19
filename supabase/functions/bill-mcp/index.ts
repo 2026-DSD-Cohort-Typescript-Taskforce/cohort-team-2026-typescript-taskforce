@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
           .maybeSingle();
         return profile?.user_id ?? null;
       },
-      // prepare_payment, start_payment_submission and record_payment are service_role only;
-      // authorize_payment and cancel_payment run as the signed-in caller.
+      // prepare_payment, authorize_approved_payment, start_payment_submission and record_payment are
+      // service_role only; authorize_payment and cancel_payment run as the signed-in caller.
       rpc: async (name, args, as) => {
         const client = as === 'user' ? supabase : admin;
         if (!client) return { data: null, error: { message: 'worker not configured' } };
@@ -57,6 +57,42 @@ Deno.serve(async (req) => {
         // The code tells a function's refusal (PT409 …) from a lost reply (''), which may be retried.
         return { data, error: error && { message: error.message, details: error.details, code: error.code } };
       },
+      // The hourly sweep has no user session: it reads bills and approvals with the service client.
+      pendingBillIds: admin
+        ? async () => {
+            const { data, error } = await admin
+              .from('bills')
+              .select('bill_id')
+              .eq('status', 'pending_payment')
+              .order('bill_id');
+            if (error) throw error;
+            return data.map((row) => row.bill_id);
+          }
+        : undefined,
+      serviceBill: admin
+        ? async (billId) => {
+            const { data, error } = await admin
+              .from('bills')
+              .select('bill_id,status,amount,vendor_id,invoice_number,payment_method_id')
+              .eq('bill_id', billId)
+              .maybeSingle();
+            return error ? null : data;
+          }
+        : undefined,
+      latestApprover: admin
+        ? async (billId) => {
+            const { data, error } = await admin
+              .from('approvals')
+              .select('approved_by,status')
+              .eq('bill_id', billId)
+              .order('created_at', { ascending: false })
+              .order('approval_id', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (error || data?.status !== 'approved' || typeof data.approved_by !== 'number') return null;
+            return data.approved_by;
+          }
+        : undefined,
       receiptPayment: async (billId, paymentId) => {
         const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });
         return error ? null : { ...data, bill_id: data.billId };
@@ -85,8 +121,9 @@ Deno.serve(async (req) => {
         });
       },
       fetch,
+      // The vendor comes from a bill the caller (or the sweep's service client) already read.
       portalUrl: async (vendorId) => {
-        const { data } = await supabase
+        const { data } = await (admin ?? supabase)
           .from('vendors')
           .select('payment_portal_url')
           .eq('vendor_id', vendorId)
