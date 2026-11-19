@@ -35,6 +35,8 @@ export type BillMcpDeps = {
   now?: () => number;
   deadlineMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  // The hourly sweep's payer for one bill; without it the sweep calls execute_approved_payment itself.
+  payApproved?: (userAuth: string, billId: number) => Promise<unknown>;
 };
 
 type Bill = {
@@ -502,6 +504,22 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   return recordOutcome(deps, prepared.attempt, outcome, left);
 }
 
+async function sweepApprovedPayments(deps: BillMcpDeps, userAuth: string) {
+  const listed: { bills?: { bill_id?: unknown; status?: unknown }[]; error?: unknown } = await appGet(deps, userAuth, '/api/bills');
+  if (!Array.isArray(listed.bills)) return listed;
+  const results = [];
+  for (const entry of listed.bills) {
+    if (!entry || entry.status !== 'pending_payment') continue;
+    const billId = integer(entry.bill_id);
+    if (billId === null) continue;
+    const outcome = deps.payApproved
+      ? await deps.payApproved(userAuth, billId)
+      : await executeApprovedPayment(deps, userAuth, { bill_id: billId });
+    results.push({ bill_id: billId, outcome });
+  }
+  return { ok: true, results };
+}
+
 async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
   const billId = integer(args.bill_id);
   const paymentId = integer(args.payment_id);
@@ -523,6 +541,26 @@ async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Re
   return { receipt };
 }
 
+export async function askAgentToPay(
+  fetchImpl: typeof fetch,
+  env: { agentUrl: string | undefined },
+  userAuth: string,
+  billId: number,
+) {
+  if (!env.agentUrl) return { error: 'agent not configured' };
+  const authorization = /^Bearer\s+/i.test(userAuth) ? userAuth : `Bearer ${userAuth}`;
+  const response = await fetchImpl(env.agentUrl, {
+    method: 'POST',
+    headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task: `Pay bill ${billId}. Call execute_approved_payment with bill_id ${billId}. Do not pay any other bill.`,
+    }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) return { error: 'agent failed', body };
+  return body;
+}
+
 export async function handleBillMcp(
   request: { httpMethod: string; authorization: string | null; body: unknown; userAuthorization: string },
   deps: BillMcpDeps,
@@ -538,6 +576,7 @@ export async function handleBillMcp(
   const method = body && typeof body === 'object' ? (body as { method?: unknown }).method : undefined;
   if (method === 'initialize') return result({ server: 'bill-mcp', tools: true });
   if (method === 'tools/list') return result({ tools: TOOLS });
+  if (method === 'sweep_approved_payments') return result(await sweepApprovedPayments(deps, request.userAuthorization));
   if (method !== 'tools/call') return result({ error: 'unknown method' }, 400);
 
   const name = toolName(body);

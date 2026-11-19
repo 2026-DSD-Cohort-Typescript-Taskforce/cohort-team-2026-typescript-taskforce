@@ -1,0 +1,217 @@
+[
+  {
+    "portalUrl": "https://alder-creek-utility-demo.vercel.app",
+    "vendorId": 1,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#payment-form button[type='submit']",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://brightwater-utility-demo.vercel.app",
+    "vendorId": 2,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#statement/']" },
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" },
+      { "action": "click", "selector": "#payment-form button[type='submit']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#confirm-payment",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://copper-ridge-utility-demo.vercel.app",
+    "vendorId": 3,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#payment-form button[type='submit']",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://northline-utility-demo.vercel.app",
+    "vendorId": 4,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#statement/']" },
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#payment-form button[type='submit']",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://sunmeadow-utility-demo.vercel.app",
+    "vendorId": 5,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" },
+      { "action": "click", "selector": "#payment-form button[type='submit']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#confirm-payment",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://cedar-valley-utility-demo.vercel.app",
+    "vendorId": 6,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" },
+      { "action": "click", "selector": "#payment-form button[type='submit']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#confirm-payment",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://harborlight-utility-demo.vercel.app",
+    "vendorId": 7,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#payment-form button[type='submit']",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://prairie-grid-utility-demo.vercel.app",
+    "vendorId": 8,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#statement/']" },
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" },
+      { "action": "click", "selector": "#payment-form button[type='submit']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#confirm-payment",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  },
+  {
+    "portalUrl": "https://summit-trail-utility-demo.vercel.app",
+    "vendorId": 10,
+    "amountUnit": "dollars",
+    "capture": [
+      { "action": "click", "selector": "footer a[href='#signin/account']" },
+      { "action": "login", "selector": "#login-form" },
+      { "action": "wait", "selector": ".balance-amount" }
+    ],
+    "pay": [
+      { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "click", "selector": "#sample-details" },
+      { "action": "check", "selector": "input[name='authorized']" },
+      { "action": "click", "selector": "#payment-form button[type='submit']" }
+    ],
+    "invoiceSelector": ".bill-summary dl dd:first-of-type",
+    "totalSelector": ".total-line strong",
+    "paySelector": "#confirm-payment",
+    "confirmationSelector": "section.receipt h1",
+    "confirmationInvoiceSelector": ".receipt dl dd:nth-of-type(2)",
+    "confirmationTotalSelector": ".receipt dd strong",
+    "confirmationReferenceSelector": ".receipt dl dd:nth-of-type(1)",
+    "receiptSelector": "section.receipt"
+  }
+]

@@ -7,7 +7,10 @@ import type { StagehandWorker } from '../payments/payment-contract';
 import { observeSchema, executeSchema } from '../payments/worker-input';
 import { BrowserWorker } from '../payments/worker';
 import { ExecutionStore } from '../payments/execution-store';
+import type { ExecutionRepository } from '../payments/execution-store';
+import { SupabaseExecutionStore } from '../payments/supabase-execution-store';
 import { StagehandBrowser } from '../payments/stagehand-browser';
+import { createClient } from '@supabase/supabase-js';
 
 export function createStagehandRoutes(worker: StagehandWorker, secret: () => string | undefined) {
   const router = Router();
@@ -67,12 +70,50 @@ export function createStagehandRoutes(worker: StagehandWorker, secret: () => str
   return router;
 }
 
+export function configuredExecutionRepository(): ExecutionRepository {
+  const backend = process.env.STAGEHAND_STATE_BACKEND ?? 'file';
+  if (backend === 'file') {
+    return new ExecutionStore(
+      process.env.STAGEHAND_STATE_DIR || resolve(__dirname, '../../.stagehand-state'),
+    );
+  }
+  if (backend !== 'supabase') {
+    throw new Error('STAGEHAND_STATE_BACKEND must be file or supabase.');
+  }
+  if (process.env.STAGEHAND_STATE_CUTOVER_ACK !== 'supabase-journal-reconciled') {
+    throw new Error(
+      'Reconcile every legacy Stagehand file-journal record before enabling Supabase state, then set STAGEHAND_STATE_CUTOVER_ACK=supabase-journal-reconciled.',
+    );
+  }
+  const url = process.env.SUPABASE_URL;
+  const secret = process.env.STAGEHAND_SUPABASE_SECRET_KEY;
+  if (!url || !secret) {
+    throw new Error(
+      'SUPABASE_URL and STAGEHAND_SUPABASE_SECRET_KEY are required for durable Stagehand state.',
+    );
+  }
+  const client = createClient(url, secret, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  return new SupabaseExecutionStore(client);
+}
+
+function browserProvider() {
+  const provider = process.env.STAGEHAND_BROWSER_PROVIDER ?? 'local';
+  if (provider !== 'local' && provider !== 'browserbase') {
+    throw new Error('STAGEHAND_BROWSER_PROVIDER must be local or browserbase.');
+  }
+  return provider;
+}
+
 export default createStagehandRoutes(
   new BrowserWorker(
-    new StagehandBrowser(process.env.STAGEHAND_PORTALS_FILE),
-    new ExecutionStore(
-      process.env.STAGEHAND_STATE_DIR || resolve(__dirname, '../../.stagehand-state'),
-    ),
+    new StagehandBrowser(process.env.STAGEHAND_PORTALS_FILE, {
+      profilesJson: process.env.STAGEHAND_PORTALS_JSON,
+      provider: browserProvider(),
+      browserbaseApiKey: process.env.BROWSERBASE_API_KEY,
+    }),
+    configuredExecutionRepository(),
   ),
   () => process.env.STAGEHAND_SECRET,
 );
