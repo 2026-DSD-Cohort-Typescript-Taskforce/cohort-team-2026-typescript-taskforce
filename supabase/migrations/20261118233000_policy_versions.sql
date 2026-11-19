@@ -198,8 +198,9 @@ create policy "signed-in users can view policy versions"
   to authenticated
   using (true);
 
-revoke all on public.policy_versions from anon, authenticated;
-grant select on public.policy_versions to authenticated;
+-- service_role gets write grants by default; only the security definer function may write.
+revoke all on public.policy_versions from anon, authenticated, service_role;
+grant select on public.policy_versions to authenticated, service_role;
 
 -- The version a policy currently enforces. Set only by confirm_policy_draft.
 alter table public.policies

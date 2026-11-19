@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(115);
+select plan(119);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. Vendors 91001 and 91002 are fixtures: 91001 has a policy and a
@@ -19,13 +19,17 @@ insert into public.users (user_id, name, email, role, auth_user_id) values
 insert into public.vendors (vendor_id, name, email, address, phone) values
   (91001, 'DC91 Version Vendor', 'v1@example.test', '1 Test Way', '555-0191'),
   (91002, 'DC91 Insert Vendor', 'v2@example.test', '2 Test Way', '555-0192'),
-  (91003, 'DC91 Cascade Vendor', 'v3@example.test', '3 Test Way', '555-0193');
+  (91003, 'DC91 Cascade Vendor', 'v3@example.test', '3 Test Way', '555-0193'),
+  (91004, 'DC91 Active Vendor', 'v4@example.test', '4 Test Way', '555-0194');
 insert into public.policies (policy_id, vendor_id, name, description, is_active) overriding system value values
   (91001, 91001, 'DC91 policy', 'Fixture policy.', true),
-  (91003, 91003, 'DC91 cascade policy', 'Fixture policy.', true);
+  (91003, 91003, 'DC91 cascade policy', 'Fixture policy.', true),
+  (91004, 91004, 'DC91 active policy', 'Fixture policy.', true);
 insert into public.policy_versions (version_id, policy_id, vendor_id, version, rule, original_sentence, sentence, revised_sentence, interpretation, answers, draft_revision, confirmed_by) overriding system value values
   (91001, 91001, 91001, 1, '{"schema_version":1,"vendor_id":91001,"rules":[{"effect":"block","when":{}}]}', 'o', 's', 'r', 'i', '[]', 1, 91102),
-  (91003, 91003, 91003, 1, '{"schema_version":1,"vendor_id":91003,"rules":[{"effect":"block","when":{}}]}', 'o', 's', 'r', 'i', '[]', 1, 91102);
+  (91003, 91003, 91003, 1, '{"schema_version":1,"vendor_id":91003,"rules":[{"effect":"block","when":{}}]}', 'o', 's', 'r', 'i', '[]', 1, 91102),
+  (91004, 91004, 91004, 1, '{"schema_version":1,"vendor_id":91004,"rules":[{"effect":"block","when":{}}]}', 'o', 's', 'r', 'i', '[]', 1, 91102);
+update public.policies set active_version_id = 91004 where policy_id = 91004;
 
 -- How many rows a statement changed (RLS can make an UPDATE match none).
 create function pg_temp.rows_changed(p_sql text) returns integer
@@ -89,6 +93,7 @@ select is(
 select policies_are('public', 'policy_versions', ARRAY['signed-in users can view policy versions'], 'only the read policy exists');
 select table_privs_are('public', 'policy_versions', 'anon', ARRAY[]::text[], 'anon has no privileges on policy_versions');
 select table_privs_are('public', 'policy_versions', 'authenticated', ARRAY['SELECT'], 'authenticated can only select policy_versions');
+select table_privs_are('public', 'policy_versions', 'service_role', ARRAY['SELECT'], 'service_role can only select policy_versions');
 select has_trigger('public', 'policy_versions', 'audit_row_change', 'policy_versions has the audit_row_change trigger');
 select function_privs_are('public', 'policy_rule_is_valid', ARRAY['jsonb', 'integer'], 'authenticated', ARRAY['EXECUTE'], 'authenticated can EXECUTE policy_rule_is_valid');
 select function_privs_are('public', 'policy_rule_is_valid', ARRAY['jsonb', 'integer'], 'service_role', ARRAY['EXECUTE'], 'service_role can EXECUTE policy_rule_is_valid');
@@ -171,6 +176,11 @@ select is((select sentence from public.policy_versions where version_id = 91001)
 select lives_ok($$delete from public.vendors where vendor_id = 91003$$, 'deleting a vendor with a policy and a version is allowed');
 select is((select count(*)::int from public.policies where policy_id = 91003), 0, 'the vendor delete removed its policy');
 select is((select count(*)::int from public.policy_versions where policy_id = 91003), 0, 'the vendor delete removed its versions');
+
+-- Circular cascade: the policy's active_version_id points at a version that is deleted with it
+select lives_ok($$delete from public.vendors where vendor_id = 91004$$, 'deleting a vendor whose policy has an active version is allowed');
+select is((select count(*)::int from public.policies where policy_id = 91004), 0, 'the active-version vendor delete removed its policy');
+select is((select count(*)::int from public.policy_versions where policy_id = 91004), 0, 'the active-version vendor delete removed its versions');
 
 -- Billing operator A: can read versions, cannot write
 set local role authenticated;
