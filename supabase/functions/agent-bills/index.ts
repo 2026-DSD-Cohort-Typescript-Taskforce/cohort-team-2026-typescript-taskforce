@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-4.1-mini";
-const ALLOWED = ["get_bill", "list_vendors", "observe_portal", "execute_approved_payment"];
+const ALLOWED = ["get_bill", "list_vendors", "observe_portal"];
 const TOOLS = ALLOWED.map((name) => ({
   type: "function",
   function: { name, parameters: { type: "object", additionalProperties: true } },

@@ -6,7 +6,7 @@ Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · fi
 
 ## Current view
 
-The hourly cron authenticates only with bill-mcp's service secret. bill-mcp lists pending bills through the service client and deterministically runs the existing payment pipeline for each one; no model decides whether to call it. Each attempt is prepared for the latest real approver, and the service-only `authorize_approved_payment` function rechecks that the newest approval is approved before assigning that approver as `authorized_by`. No user access token is stored in Vault.
+The hourly cron authenticates only with bill-mcp's token (`bill_mcp_token` in Vault); no user access token is stored. bill-mcp lists pending_payment bills with the service client and runs the DC-126 payment steps for each one; no model decides whether to pay. The summary comes from the bill: its vendor, invoice, method and amount, no fees, USD and today's UTC date. The newest approval must be approved. Its approver prepares the attempt, and the service-only `authorize_approved_payment` rechecks that approval and records the approver as `authorized_by`. Before authorization the portal page must show the invoice and amount, and the prepared attempt must equal the summary key for key. A payment_failed bill waits for a person. All bills in one sweep share one 125 s budget; a bill that no longer fits is returned in `deferred` and waits for the next hour. cancel_payment needs a signed-in user, so a sweep attempt refused before the claim stays pending until the next prepare_payment expires it.
 
 ## Lessons
 

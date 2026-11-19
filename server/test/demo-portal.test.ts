@@ -25,6 +25,9 @@ test(
       await readFile(join(__dirname, 'fixtures/demo-portals.json'), 'utf8'),
     );
     profiles[0].portalUrl = process.env.STAGEHAND_DEMO_URL;
+    const transactionReference = /reference: '([^']+)'/.exec(
+      await readFile(join(__dirname, '../../client/lib/demo-payment.ts'), 'utf8'),
+    )![1];
     const profilesPath = join(directory, 'profiles.json');
     await writeFile(profilesPath, JSON.stringify(profiles));
     let opens = 0;
@@ -78,11 +81,11 @@ test(
       }
       const paid = await post('/execute', input);
       assert.equal(paid.status, 200);
-      assert.deepEqual(await paid.json(), { confirmed: true });
+      assert.deepEqual(await paid.json(), { confirmed: true, transactionReference });
       const afterPayment = opens;
       // A fresh store instance must replay without opening another browser.
       const restarted = new BrowserWorker(browser, new ExecutionStore(statePath));
-      assert.deepEqual(await restarted.execute(input), { confirmed: true });
+      assert.deepEqual(await restarted.execute(input), { confirmed: true, transactionReference });
       assert.equal(opens, afterPayment);
       const replay = await post('/execute', input);
       assert.equal(replay.status, 200);
