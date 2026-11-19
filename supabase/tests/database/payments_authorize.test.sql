@@ -248,7 +248,7 @@ select is((select status from public.payments where bill_id = 89005), 'authorize
 select is(
   (select description from public.audit_logs where name = 'payment_authorized'
      and description like format('payment %s (bill 89001):%%', (select payment_id from pg_temp.pay where bill_id = 89001))),
-  format('payment %s (bill 89001): pending → authorized, by user 89111, policies ["POL-1"]', (select payment_id from pg_temp.pay where bill_id = 89001)),
+  format('payment %s (bill 89001): pending → authorized, by user 89111, policies []', (select payment_id from pg_temp.pay where bill_id = 89001)),
   'one exact payment_authorized audit row, with policies and no amounts');
 select is(
   (select count(*)::int from public.audit_logs where name = 'payment_authorized'

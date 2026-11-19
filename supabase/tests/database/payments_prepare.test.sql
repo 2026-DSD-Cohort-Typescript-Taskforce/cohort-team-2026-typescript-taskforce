@@ -149,8 +149,8 @@ reset role;
 select results_eq(
   $$select status::text, amount_cents, fees_cents, total_cents, currency::text, prepared_by, account_reference, policy_refs
       from public.payments where bill_id = 89001$$,
-  $$values ('pending', 12000::bigint, 250::bigint, 12250::bigint, 'USD', 89101, '••••4321', '[{"policy_id": 1}]'::jsonb)$$,
-  'the pending row has the amounts, fees, total, currency, preparer, account and policies');
+  $$values ('pending', 12000::bigint, 250::bigint, 12250::bigint, 'USD', 89101, '••••4321', '[]'::jsonb)$$,
+  'the pending row has the amounts, fees, total, currency, preparer, account and policies (DC-92: computed, the passed refs are ignored)');
 select results_eq(
   $$select p.vendor_id, p.payment_method_id, p.invoice_number::text, p.payment_date
       from public.payments p where p.bill_id = 89001$$,
@@ -170,7 +170,7 @@ select ok(
   'its description names the bill, the preparer and the transition');
 select is(
   (select description from public.audit_logs where name = 'payment_prepared' and created_at = now()),
-  format('payment %s (bill 89001): new → pending, by user 89101, policies [{"policy_id": 1}]',
+  format('payment %s (bill 89001): new → pending, by user 89101, policies []',
     (select payment_id from public.payments where bill_id = 89001)),
   'the audit description has the exact text');
 

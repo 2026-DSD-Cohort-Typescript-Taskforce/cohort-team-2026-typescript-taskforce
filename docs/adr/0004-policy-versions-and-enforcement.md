@@ -2,7 +2,7 @@
 
 Proposed for DC-91 and DC-92 review. 2026-11-18. Owner: Lawrence Crasto.
 
-[DC-91](https://one-atlas-ofwi.atlassian.net/browse/DC-91) turns a complete policy draft (ADR [0003](0003-policy-rule-schema.md)) into a confirmed, active version of the vendor's policy. [DC-92](https://one-atlas-ofwi.atlassian.net/browse/DC-92) makes bills obey it. This record covers confirming now; the enforcement sections are added with DC-92. The code is the source of truth: `supabase/migrations/20261118233000_policy_versions.sql` and `supabase/migrations/20261118233100_confirm_policy_draft.sql`.
+[DC-91](https://one-atlas-ofwi.atlassian.net/browse/DC-91) turns a complete policy draft (ADR [0003](0003-policy-rule-schema.md)) into a confirmed, active version of the vendor's policy. [DC-92](https://one-atlas-ofwi.atlassian.net/browse/DC-92) makes bills obey it. This record covers confirming, evaluating and enforcing. The code is the source of truth: `supabase/migrations/20261118233000_policy_versions.sql`, `supabase/migrations/20261118233100_confirm_policy_draft.sql`, `supabase/migrations/20261118234000_evaluate_bill_policy.sql` and `supabase/migrations/20261118234100_enforce_bill_policy.sql`.
 
 ## Policy versions
 
@@ -58,3 +58,43 @@ Decisions:
 - **Fail closed:** a present condition key whose fact is null (no amount, no property, no payment method) blocks, even when another key in the same rule would not have matched. An absent key never needs its fact, so a draft with nulls is fine under a rule that does not ask about them.
 
 `public.bill_has_qualifying_approval(p_bill_id integer) returns boolean` is true when the bill's newest approval (`created_at desc, approval_id desc`) is `approved` and `approved_by` is not null and differs from `submitted_by`. A self-approval or an auto-approve row never counts. It has the same security and grants.
+
+## Where it's enforced
+
+The database applies the evaluator's answer wherever a bill moves toward payment. A refusal is `PT409` with the evaluator's JSON (above) as the error's `details`, so a caller can name the policy and show its interpretation. `submit_bill`, `prepare_payment` and `start_payment_submission` keep their signatures and grants.
+
+| Function | Checked | Decision | Result |
+| --- | --- | --- | --- |
+| `submit_bill(p_bill_id, p_needs_approval)` | after the completeness check | `block` | `PT409` `policy_blocked`; the bill stays a draft, no approvals row |
+| | | `require_approval` | `pending_approval` and a `pending` approvals row submitted by the caller, even when `p_needs_approval` is false |
+| | | `allow`, `none` | unchanged: `p_needs_approval = true` still goes to approval |
+| `prepare_payment(...)` | after `not_payable`, before older attempts are superseded | `block` | `PT409` `policy_blocked` |
+| | | `require_approval`, no qualifying approval | `PT409` `approval_required` |
+| | | otherwise | prepared, with `policy_refs` = `[{ policy_id, version_id, version, decision }]` for the active version, or `[]` when there is none |
+| `start_payment_submission(p_payment_id)` | after `summary_stale` | `block` | `PT409` `policy_blocked` |
+| | | active version differs from `policy_refs[0].version_id` (a version appearing or disappearing included) | `PT409` `policy_changed`; the admin triggers the payment again |
+| | | `require_approval`, no qualifying approval | `PT409` `approval_required` |
+
+`prepare_payment` still checks `p_policy_refs` is a JSON array, so existing callers keep working, but it no longer stores it.
+
+`public.send_bill_for_approval(p_bill_id integer, p_requested_by integer) returns jsonb` sends a queued bill back to the approver when its vendor's policy now needs an approval. It is security definer and executable by `service_role` only. The checks run in this order:
+
+| Check | Error (code, message, details) |
+| --- | --- |
+| `p_requested_by` is a `billing_operator`, `financial_approver` or `system_admin` | `PT403` `forbidden` |
+| _Lock the bill_ | |
+| Bill exists | `PT404` `not_found` |
+| Status is `pending_payment` or `payment_failed` | `PT409` `not_payable`, details = the status |
+| No `processing` or `unknown` attempt | `PT409` `payment_in_progress`, details = its `payment_id` |
+| Decision is `require_approval` and there is no qualifying approval | `PT409` `approval_not_required`, details = the evaluator's JSON |
+
+Then, in the same transaction: the bill's `pending` or `authorized` attempt is expired with `outcome_code = 'superseded'`, the bill becomes `pending_approval`, and a `pending` approvals row is inserted with `submitted_by = p_requested_by`. It returns the evaluator's JSON. The DC-101 row triggers log the changes; nothing is logged by hand.
+
+Decisions:
+
+- **A blocked bill stays a draft.** There is no new status.
+- **`allow` never removes an approval the operator asked for.**
+- **Only someone else's approval satisfies a policy.** Whoever triggers a send-back is the approval's submitter, so if they approve it themselves, payment is still refused with `approval_required` and the bill can be sent back again.
+- **A policy that is switched off is ignored**, including for a bill it already sent to approval: once approved, it is prepared with `policy_refs = []`.
+- **At the claim, a block wins over `policy_changed`.** Triggering again cannot help a blocked bill, so the claim says so directly. A different version that does not block answers `policy_changed`, and the next trigger applies it (including a send-back).
+- **Lock order.** Like the payment functions, `send_bill_for_approval` locks the bill before its attempt and sets the payments write marker only for its own writes.
