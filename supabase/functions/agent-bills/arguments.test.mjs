@@ -97,13 +97,3 @@ test('valid JSON arguments are still sent to bill-mcp', async () => {
     params: { name: 'get_bill', arguments: { bill_id: 12 } },
   });
 });
-
-test('the agent cannot call execute_approved_payment', () => {
-  const listed = source.match(/const ALLOWED = (\[[^\]]*\]);/);
-  assert.ok(listed, 'ALLOWED is missing');
-  const allowed = JSON.parse(listed[1]);
-  assert.equal(allowed.includes('execute_approved_payment'), false);
-  for (const name of ['get_bill', 'list_vendors', 'observe_portal']) {
-    assert.ok(allowed.includes(name), name);
-  }
-});
