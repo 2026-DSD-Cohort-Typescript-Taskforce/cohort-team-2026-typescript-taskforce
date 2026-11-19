@@ -10,6 +10,7 @@ import {
   type BillInput,
   type FieldErrors,
 } from './bill-validation.ts';
+import { forcedApprovalMessage, type PolicyDecision } from './bill-policy.ts';
 import type { Bill } from './bill-view.ts';
 
 export type SubmissionState =
@@ -35,7 +36,7 @@ export type SubmissionEvent =
   | { type: 'invalid'; fieldErrors: FieldErrors; message: string }
   | { type: 'stored'; bill: Bill }
   | { type: 'saved'; step: 'create' | 'update' }
-  | { type: 'submitted'; status: string }
+  | { type: 'submitted'; status: string; policy?: PolicyDecision }
   | { type: 'failed'; step: Step; failure: ApiFailure }
   | { type: 'reset'; bill: Bill | null };
 
@@ -53,8 +54,15 @@ export const MESSAGES = {
 };
 
 // submit_bill() sends a bill to approval when asked to, or when the approver sent it back
-// for revision, and any other draft to payment; the returned status says which.
-export function submittedMessage(status: string): string {
+// for revision, and any other draft to payment; the returned status says which. `policy` is
+// the vendor policy that sent it to approval when the submitter didn't ask for that.
+export function submittedMessage(status: string, policy?: PolicyDecision | null): string {
+  if (
+    status === 'pending_approval' &&
+    policy?.decision === 'require_approval' &&
+    policy.policy_name
+  )
+    return forcedApprovalMessage(policy);
   return status === 'pending_approval' ? MESSAGES.forApproval : MESSAGES.submitted;
 }
 
@@ -93,7 +101,7 @@ export function submissionReducer(current: Submission, event: SubmissionEvent): 
       return {
         ...current,
         state: 'submitted',
-        message: submittedMessage(event.status),
+        message: submittedMessage(event.status, event.policy),
         bill: current.bill && { ...current.bill, status: event.status },
       };
     case 'failed': {

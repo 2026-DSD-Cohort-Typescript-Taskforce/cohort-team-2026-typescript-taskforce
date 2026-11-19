@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { DECISIONS, NOTE_MAX, noteLength, paymentTypeLabel, type Decision } from '@/lib/approvals';
 import { decideBill } from '@/lib/bill-api';
 import { formatAmount, formatDate, type Bill } from '@/lib/bill-view';
+import { BillPolicyLine } from '../bills/bill-policy-line';
 import { ErrorAlert, Spinner, colorTransition, focusRing, primaryButton } from '@/app/ui';
 
 // Text and border colours are left to each control, which changes them with its state.
@@ -161,6 +162,7 @@ export function ReviewDialog({
             <span>{bill.date_due ? `Due ${formatDate(bill.date_due)}` : 'No due date'}</span>
           </p>
         </div>
+        <BillPolicyLine billId={bill.bill_id} />
       </section>
 
       <div className="mt-6 flex flex-col gap-1">

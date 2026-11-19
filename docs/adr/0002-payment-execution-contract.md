@@ -1,6 +1,6 @@
 # Stagehand worker contract
 
-Proposed for [DC-25](https://one-atlas-ofwi.atlassian.net/browse/DC-25) review. Updated 2026-11-15. Owner: Joe Gallego.
+Proposed for [DC-25](https://one-atlas-ofwi.atlassian.net/browse/DC-25) review. Updated 2026-11-18. Owner: Joe Gallego.
 
 ## Runtime and caller
 
@@ -26,6 +26,7 @@ Before calling `/execute`, bill-mcp checks:
 - The bill is `pending_payment`.
 - The newest approval is `approved`.
 - The amount, vendor, and invoice match the bill row.
+- The vendor's active policy allows payment (DC-92). `prepare_payment` and `start_payment_submission` refuse a bill the policy blocks (`policy_blocked`), one that needs approval from someone other than its submitter (`approval_required`), and an attempt prepared under a policy version that is no longer active (`policy_changed`). See ADR [0004](0004-policy-versions-and-enforcement.md) "Where it's enforced".
 
 Only after the worker returns 2xx does bill-mcp call `record_payment`. If `STAGEHAND_URL` is unset, bill-mcp makes no worker call and writes nothing.
 
