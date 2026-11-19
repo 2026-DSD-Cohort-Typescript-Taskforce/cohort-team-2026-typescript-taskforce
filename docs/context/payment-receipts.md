@@ -1,12 +1,14 @@
 # Payment confirmation receipts
 
-Covers: `server/src/payments`, `supabase/functions/bill-mcp`, `supabase/migrations/20261117190000_payment_receipts.sql`, `client/app/api/bills/[id]/payments/[paymentId]/receipt/route.ts`
+Covers: `server/src/payments`, `supabase/functions/bill-mcp`, `supabase/migrations/20261117190000_payment_receipts.sql`, `client/app/api/bills/[id]/payments/[paymentId]/receipt/route.ts`, `client/app/(app)/bills/[id]/payment-automation-trigger.tsx`, `client/lib/payment-trigger.ts`, `client/lib/payment-trigger-service.ts`
 
 Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.test.ts, supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
 ## Current view
 
 A confirmed receipt is stored at payments/<payment id>/receipt.png after record_payment returns success. The worker and the receipt use the attempt idempotency key.
+
+After a successful manual trigger, the server returns only the validated payment ID and receipt status needed by the UI. The bill page uses the existing authorized receipt route to request a five-minute signed URL and renders the stored image. Missing or failed evidence is shown separately and never changes payment success or retries payment.
 
 ## Lessons
 
@@ -17,6 +19,7 @@ A confirmed receipt is stored at payments/<payment id>/receipt.png after record_
 ## History
 
 ### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
+
 **Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
 **Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
 **Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.

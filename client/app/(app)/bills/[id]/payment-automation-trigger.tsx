@@ -6,8 +6,11 @@ import { formatAmount, type Bill } from '@/lib/bill-view';
 import { loadUserRole } from '@/lib/bill-api';
 import {
   canShowPaymentTrigger,
+  loadPaymentReceipt,
+  paymentReceiptDetails,
   paymentTriggerNotice,
   triggerBillPayment,
+  type PaymentReceiptDetails,
 } from '@/lib/payment-trigger';
 
 type Props = {
@@ -23,6 +26,9 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
     tone: 'success' | 'warning' | 'error';
     message: string;
   } | null>(null);
+  const [receipt, setReceipt] = useState<
+    (PaymentReceiptDetails & { loading: boolean; url?: string; error?: string }) | null
+  >(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -34,6 +40,34 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!receipt || receipt.status !== 'stored' || receipt.url || receipt.error) return;
+    let active = true;
+    loadPaymentReceipt(bill.bill_id, receipt.paymentId)
+      .then((result) => {
+        if (!active || !result) return;
+        if (result.ok)
+          setReceipt((current) =>
+            current ? { ...current, loading: false, url: result.data.url } : null,
+          );
+        else
+          setReceipt((current) =>
+            current ? { ...current, loading: false, error: result.error } : null,
+          );
+      })
+      .catch(() => {
+        if (active)
+          setReceipt((current) =>
+            current
+              ? { ...current, loading: false, error: 'The receipt could not be loaded.' }
+              : null,
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [bill.bill_id, receipt]);
 
   if (!canShowPaymentTrigger(role)) return null;
 
@@ -48,11 +82,16 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
     if (running) return;
     setRunning(true);
     setNotice(null);
+    setReceipt(null);
     try {
       const result = await triggerBillPayment(bill.bill_id);
       if (result?.ok) {
         setNotice(paymentTriggerNotice(result.data));
-        if (result.data.outcome === 'success') await onCompleted?.();
+        if (result.data.outcome === 'success') {
+          const details = paymentReceiptDetails(result.data);
+          if (details) setReceipt({ ...details, loading: details.status === 'stored' });
+          await onCompleted?.();
+        }
       } else if (result) {
         const outcome = result.code === 'outcome_unknown' ? 'unknown' : 'failed';
         setNotice(paymentTriggerNotice({ outcome, message: result.error }));
@@ -98,6 +137,42 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
         >
           {notice.message}
         </p>
+      )}
+
+      {receipt && (
+        <div className="mt-4 rounded-input border border-subtle bg-background p-4">
+          <h3 className="text-body font-semibold">Payment receipt</h3>
+          {receipt.loading && (
+            <p role="status" className="mt-2 text-body-sm text-secondary">
+              Loading receipt…
+            </p>
+          )}
+          {receipt.url && (
+            // The URL is a short-lived, authorized Supabase Storage URL.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={receipt.url}
+              alt={`Payment receipt for invoice ${bill.invoice_number ?? bill.bill_id}`}
+              onError={() =>
+                setReceipt((current) =>
+                  current
+                    ? {
+                        ...current,
+                        url: undefined,
+                        error: 'Payment completed, but the receipt image could not be displayed.',
+                      }
+                    : null,
+                )
+              }
+              className="mt-4 max-h-[36rem] w-full rounded-input border border-subtle bg-white object-contain"
+            />
+          )}
+          {!receipt.loading && !receipt.url && (
+            <p role="status" className="mt-2 text-body-sm text-secondary">
+              {receipt.error ?? 'Payment completed, but the receipt image is not available yet.'}
+            </p>
+          )}
+        </div>
       )}
 
       <dialog

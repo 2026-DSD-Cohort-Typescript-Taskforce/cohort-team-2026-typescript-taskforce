@@ -2,8 +2,8 @@ export type PaymentTriggerBody = {
   outcome?: 'success' | 'ineligible' | 'failed' | 'unknown';
   message: string;
   code?: string;
-  payment?: unknown;
-  receipt?: unknown;
+  paymentId?: number;
+  receiptStatus?: 'stored' | 'failed' | 'unavailable';
 };
 
 export type PaymentTriggerReply = { status: number; body: PaymentTriggerBody };
@@ -55,6 +55,12 @@ const unavailable = (): PaymentTriggerReply => ({
   },
 });
 
+function storedReceiptStatus(receipt: unknown): 'stored' | 'failed' | 'unavailable' {
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) return 'unavailable';
+  const status = (receipt as Record<string, unknown>).status;
+  return status === 'stored' || status === 'failed' ? status : 'unavailable';
+}
+
 /** Server-side authorization and safe response mapping for the manual trigger route. */
 export async function runPaymentTrigger(input: {
   billId: number | null;
@@ -80,6 +86,8 @@ export async function runPaymentTrigger(input: {
     payment &&
     typeof payment === 'object' &&
     !Array.isArray(payment) &&
+    Number.isInteger((payment as Record<string, unknown>).payment_id) &&
+    ((payment as Record<string, unknown>).payment_id as number) > 0 &&
     (payment as Record<string, unknown>).bill_id === input.billId &&
     (payment as Record<string, unknown>).status === 'success'
   ) {
@@ -88,8 +96,8 @@ export async function runPaymentTrigger(input: {
       body: {
         outcome: 'success',
         message: 'Payment completed.',
-        payment,
-        ...(upstream.body.receipt === undefined ? {} : { receipt: upstream.body.receipt }),
+        paymentId: (payment as Record<string, unknown>).payment_id as number,
+        receiptStatus: storedReceiptStatus(upstream.body.receipt),
       },
     };
   }
