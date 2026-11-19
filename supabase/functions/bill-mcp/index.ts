@@ -48,8 +48,9 @@ Deno.serve(async (req) => {
           .maybeSingle();
         return profile?.user_id ?? null;
       },
-      // evaluate_bill_policy and send_bill_for_approval run as the service client with prepare_payment, authorize_approved_payment, start_payment_submission and record_payment are
-      // service_role only; authorize_payment and cancel_payment run as the signed-in caller.
+      // prepare_payment, authorize_approved_payment, start_payment_submission, record_payment and
+      // send_bill_for_approval are service_role only, and evaluate_bill_policy runs as the service
+      // client too; authorize_payment and cancel_payment run as the signed-in caller.
       rpc: async (name, args, as) => {
         const client = as === 'user' ? supabase : admin;
         if (!client) return { data: null, error: { message: 'worker not configured' } };

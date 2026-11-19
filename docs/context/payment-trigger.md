@@ -16,6 +16,10 @@ Outcome mapping (never forwards upstream text or rows on failure): `outcome_unkn
 
 `PaymentAutomationTrigger` owns role visibility, confirmation, request state and result messaging. Another page can mount it later without duplicating the payment call.
 
+## Policy outcomes (DC-92)
+
+bill-mcp checks the vendor's policy with `evaluate_bill_policy` after the bill loads and the status check, before any portal read, on both the admin trigger and the hourly sweep. A `block` returns `policy_blocked`; `require_approval` calls `send_bill_for_approval` and returns `sent_for_approval` (if the database answers `approval_not_required`, the payment continues and `prepare_payment` decides). `prepare_payment` and `start_payment_submission` enforce the same rules: their `policy_blocked` and `approval_required` refusals pass through or send the bill back, and a claim refused with `policy_changed` stops the payment. On the admin trigger a refused claim cancels the attempt; a scheduled attempt is left to expire or to be superseded by the bill's next `prepare_payment`, since `cancel_payment` needs a signed-in user. Each reply carries the evaluator's `policy`. The trigger route maps `policy_blocked` and `sent_for_approval` to `ineligible` and `policy_changed` to `failed` ("This vendor's policy changed. Trigger the payment again."), and the bill page reloads after every answer.
+
 ## Lessons
 
 - 2026-11-18 · run 8e2f0a10: Treat any lost post-dispatch response or database-recording failure as uncertain, and bind success to the requested bill's successful payment row.
@@ -28,7 +32,3 @@ Outcome mapping (never forwards upstream text or rows on failure): `outcome_unkn
 **Learned:** Recorded the authorization, bill-mcp boundary, uncertain-outcome, and reuse contracts.
 **Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 8e2f0a10-c094-4a12-8e67-3009feaa3b32 command receipts separately. Local receipts may not travel with source.
 **Files:** client/app/(app)/bills/[id]/bill-details.tsx@sha256:f28c61f4119fa0cf59b0a26e6652914157881bd304b7c3ff66d02e820b3872fe, client/app/(app)/bills/[id]/payment-automation-trigger.tsx@sha256:78165d77cb29bc28c72136ac202c658a082072bdd5391a253114bb28cdb1f690, client/app/api/bills/[id]/payment-trigger/route.ts@sha256:9400f87f83a6b19131c4dbc397c38be6c5bcd12ae91652b11dcaf52d8669804e, client/lib/payment-trigger-service.ts@sha256:7a4e8a260017a0521fef3598d4900b475adc9b168a4f6e0136d7b52e35faac10, client/lib/payment-trigger.ts@sha256:e7ea31959564505353fa72a83874d2a3e5b7d46eccc3ef791327d5a5b7397efc
-
-## Policy outcomes (DC-92)
-
-bill-mcp checks the vendor's policy with `evaluate_bill_policy` after the bill loads and the status check, before any portal read, on both the admin trigger and the hourly sweep. A `block` returns `policy_blocked`; `require_approval` calls `send_bill_for_approval` and returns `sent_for_approval` (if the database answers `approval_not_required`, the payment continues and `prepare_payment` decides). `prepare_payment` and `start_payment_submission` enforce the same rules: their `policy_blocked` and `approval_required` refusals pass through or send the bill back, and a claim refused with `policy_changed` cancels the attempt. Each reply carries the evaluator's `policy`. The trigger route maps `policy_blocked` and `sent_for_approval` to `ineligible` and `policy_changed` to `failed` ("This vendor's policy changed. Trigger the payment again."), and the bill page reloads after every answer.

@@ -1331,3 +1331,31 @@ test('start_payment_submission approval_required cancels and sends the bill back
   assert.equal(names.includes('send_bill_for_approval'), true);
   assert.equal(executeCalls(built).length, 0);
 });
+
+test('the hourly sweep stops a bill its policy blocks before the portal and prepare', async () => {
+  const built = sweepDeps({}, { rpc: { evaluate_bill_policy: evaluates(blockDecision) } });
+  const body = await sweep(built);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.results, [{ bill_id: 12, outcome: { error: 'policy_blocked', policy: blockDecision } }]);
+  assert.deepEqual(body.deferred, []);
+  assert.deepEqual(rpcNames(built), ['evaluate_bill_policy']);
+  assert.deepEqual(built.rpcCalls[0].args, { p_bill_id: 12 });
+  assert.equal(built.rpcCalls[0].as, 'service');
+  // No observe, no execute.
+  assert.equal(built.calls.length, 0);
+});
+
+test('the hourly sweep sends a bill back for approval in the name of its newest approver', async () => {
+  const built = sweepDeps({}, {
+    rpc: { evaluate_bill_policy: evaluates(approvalDecision), send_bill_for_approval: evaluates(approvalDecision) },
+  });
+  const body = await sweep(built);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.results, [{ bill_id: 12, outcome: { error: 'sent_for_approval', policy: approvalDecision } }]);
+  assert.deepEqual(body.deferred, []);
+  assert.deepEqual(rpcNames(built), ['evaluate_bill_policy', 'send_bill_for_approval']);
+  // 21 is latestApprover's answer, the user the sweep prepares for; 7 (callerUserId) is not used.
+  assert.deepEqual(built.rpcCalls[1].args, { p_bill_id: 12, p_requested_by: 21 });
+  assert.equal(built.rpcCalls[1].as, 'service');
+  assert.equal(built.calls.length, 0);
+});

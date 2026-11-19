@@ -29,7 +29,7 @@ Before calling `/execute`, bill-mcp checks:
 - A prepared, authorized attempt was claimed with `start_payment_submission`.
 - The vendor's active policy allows payment (DC-92). `prepare_payment` and `start_payment_submission` refuse a bill the policy blocks (`policy_blocked`), one that needs approval from someone other than its submitter (`approval_required`), and an attempt prepared under a policy version that is no longer active (`policy_changed`). See ADR [0004](0004-policy-versions-and-enforcement.md) "Where it's enforced".
 
-Every claimed attempt ends in `record_payment`: success with the worker's `transactionReference`, failure, or unknown. If `STAGEHAND_URL` is unset, bill-mcp makes no worker call and writes nothing.
+Every claimed attempt ends in `record_payment`: success with the worker's `transactionReference`, failure, or unknown. If `STAGEHAND_URL` is unset, bill-mcp makes no worker call and prepares no attempt. The policy check still runs first, so a bill whose policy now needs approval is still sent back with `send_bill_for_approval`; that is the only write.
 
 Joe owns browser execution and confirmation. He does not approve bills, call `decide_bill`, insert into `payments`, or change bill statuses. Keep the existing database schema and statuses.
 
