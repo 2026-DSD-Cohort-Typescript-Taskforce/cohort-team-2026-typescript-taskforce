@@ -13,7 +13,7 @@ export type PaymentInput = {
 };
 
 // The DC-89 payment functions bill-mcp calls (supabase/migrations/20261117200000_payment_attempts.sql),
-// plus authorize_approved_payment for the hourly sweep (20261119010300_authorize_approved_payment.sql).
+// plus authorize_approved_payment for the hourly sweep (20261118230200_authorize_approved_payment.sql).
 export type RpcName = 'prepare_payment' | 'authorize_payment' | 'authorize_approved_payment' | 'cancel_payment'
   | 'start_payment_submission' | 'record_payment';
 // error.code is the Postgres error code; a reply that never arrived (or a throw) has none.
