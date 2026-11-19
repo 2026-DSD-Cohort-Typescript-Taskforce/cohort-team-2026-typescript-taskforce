@@ -101,6 +101,15 @@ export function updateDraftBill(billId: number, input: Partial<BillInput>) {
   );
 }
 
+export function deleteBill(billId: number) {
+  return call(
+    `/api/bills/${billId}`,
+    { method: 'DELETE' },
+    () => undefined,
+    "Couldn't delete the bill. Try again.",
+  );
+}
+
 /** submit_bill() returns the bills row, without the embedded names. */
 export function submitBill(billId: number, needsApproval = false) {
   return call(

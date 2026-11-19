@@ -4,6 +4,7 @@ import {
   ROLES,
   ROLE_LABELS,
   canDecideBills,
+  canDeleteBill,
   canManageUsers,
   canSubmitBills,
   roleLabel,
@@ -46,7 +47,15 @@ test('canDecideBills is true for financial_approver and system_admin', () => {
 });
 
 test('canDecideBills is false for every other value', () => {
-  for (const role of ['billing_operator', 'viewer', 'system_administrator', 'admin', '', null, undefined]) {
+  for (const role of [
+    'billing_operator',
+    'viewer',
+    'system_administrator',
+    'admin',
+    '',
+    null,
+    undefined,
+  ]) {
     assert.equal(canDecideBills(role), false, `expected false for ${String(role)}`);
   }
 });
@@ -70,4 +79,19 @@ test('roleLabel shows an unknown role as it is stored', () => {
 
 test('roleLabel shows a dash for no role', () => {
   assert.equal(roleLabel(null), '—');
+});
+
+test('canDeleteBill offers drafts to everyone and reviewed bills to approvers and admins', () => {
+  for (const role of ['viewer', 'billing_operator', 'financial_approver', 'system_admin', null]) {
+    assert.equal(canDeleteBill(role, 'draft'), true, `draft for ${String(role)}`);
+  }
+  for (const status of ['pending_approval', 'approval_denied']) {
+    assert.equal(canDeleteBill('financial_approver', status), true, `${status} for approver`);
+    assert.equal(canDeleteBill('system_admin', status), true, `${status} for admin`);
+    assert.equal(canDeleteBill('billing_operator', status), false, `${status} for operator`);
+    assert.equal(canDeleteBill('viewer', status), false, `${status} for viewer`);
+  }
+  for (const status of ['pending_payment', 'processing', 'payment_success', 'payment_failed']) {
+    assert.equal(canDeleteBill('system_admin', status), false, `${status} for admin`);
+  }
 });

@@ -52,8 +52,9 @@ insert into public.approvals (bill_id, submitted_by, status) values (21011, pg_t
 -- Policies and privileges
 select policies_are('public', 'bills',
   ARRAY['authenticated users can view bills', 'authenticated users can insert draft bills',
-        'authenticated users can update draft bills', 'authenticated users can delete draft bills'],
-  'bills has the signed-in read policy and the three draft-only write policies');
+        'authenticated users can update draft bills', 'authenticated users can delete draft bills',
+        'approvers can delete reviewed bills'],
+  'bills has the signed-in read policy, the three draft-only write policies and the approver delete policy');
 select policy_cmd_is('public', 'bills', 'authenticated users can view bills', 'select', 'the read policy covers SELECT');
 select policy_roles_are('public', 'bills', 'authenticated users can view bills', ARRAY['authenticated'], 'the read policy is for authenticated only');
 select policy_cmd_is('public', 'bills', 'authenticated users can delete draft bills', 'delete', 'the draft delete policy covers DELETE');
@@ -214,10 +215,9 @@ select is(
 );
 select is(pg_temp.rows_changed($$delete from public.bills where bill_id = 21003$$), 1, 'a draft can be deleted');
 select is(pg_temp.rows_changed($$delete from public.bills where bill_id = 21010$$), 0, 'a bill that is not a draft can''t be deleted (0 rows)');
-select throws_ok(
-  $$delete from public.bills where bill_id = 21011$$,
-  '23503', 'update or delete on table "bills" violates foreign key constraint "approvals_bill_id_fkey" on table "approvals"',
-  'a draft with approval history can''t be deleted'
+select is(
+  pg_temp.rows_changed($$delete from public.bills where bill_id = 21011$$), 0,
+  'a draft with approval history can''t be deleted without an approver role (0 rows)'
 );
 reset role;
 
