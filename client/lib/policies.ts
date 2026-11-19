@@ -92,6 +92,12 @@ export function replacePolicy(
   return list.map((v) => (v.vendor_id === vendorId ? { ...v, policy } : v));
 }
 
+/** Applied: on with a confirmed version. Not applied: on, nothing confirmed yet. */
+export function appliedState(policy: Policy | null): 'applied' | 'not_applied' | 'off' {
+  if (!policy?.is_active) return 'off';
+  return policy.active_version ? 'applied' : 'not_applied';
+}
+
 export function checkboxLabel(v: PolicyVendor): string {
   return v.policy ? `Run ${v.policy.name} for ${v.name}` : `${v.name} has no policy yet`;
 }
@@ -116,7 +122,6 @@ export function policyBanner(action: 'updated' | 'added' | 'on' | 'off', subject
   }
 }
 
-export const NOT_APPLIED_NOTICE = "Policies are saved here but aren't applied to bills yet.";
 export const LOAD_POLICIES_FAILED = "Couldn't load policies. Try again.";
 export const SAVE_POLICY_FAILED = "Couldn't save the policy. Try again.";
 export const TOGGLE_POLICY_FAILED = "Couldn't change the policy. Try again.";

@@ -10,6 +10,7 @@ import {
   type Policy,
   type PolicyVendor,
 } from './policies';
+import type { PolicyDraft } from './policy-drafts';
 import type { PolicyInput } from './policy-validation';
 
 const readPolicy = (body: { policy: Policy }) => body.policy;
@@ -40,5 +41,42 @@ export function setPolicyActive(vendorId: number, isActive: boolean) {
     sendJson('PATCH', { is_active: isActive }),
     readPolicy,
     TOGGLE_POLICY_FAILED,
+  );
+}
+
+const readDraft = (body: { draft: PolicyDraft | null }) => body.draft;
+const DRAFT_FAILED = "Couldn't check the policy. Try again.";
+const CONFIRM_FAILED = "Couldn't turn the policy on. Try again.";
+const draftPath = (vendorId: number) => `/api/policies/${vendorId}/draft`;
+
+/** The vendor's stored draft, or null when there is none. */
+export function loadDraft(vendorId: number) {
+  return call(draftPath(vendorId), undefined, readDraft, DRAFT_FAILED);
+}
+
+export function startDraft(vendorId: number, sentence: string) {
+  return call(draftPath(vendorId), sendJson('POST', { sentence }), readDraft, DRAFT_FAILED);
+}
+
+export function continueDraft(
+  vendorId: number,
+  revision: number,
+  extra: { answers?: Array<{ question_id: string; answer: string }>; sentence?: string },
+) {
+  return call(
+    draftPath(vendorId),
+    sendJson('POST', { revision, ...extra }),
+    readDraft,
+    DRAFT_FAILED,
+  );
+}
+
+/** Turns a complete draft into the policy's active version; answers { policy, version }. */
+export function confirmDraft(vendorId: number, revision: number, name: string) {
+  return call(
+    `/api/policies/${vendorId}/confirm`,
+    sendJson('POST', { revision, name }),
+    (body: { policy: Policy }) => body.policy,
+    CONFIRM_FAILED,
   );
 }
