@@ -1,5 +1,5 @@
 import { HttpError } from '../middleware/errorHandler';
-import { ExecutionStore } from './execution-store';
+import type { ExecutionRepository } from './execution-store';
 import type {
   ExecuteRequest,
   ExecuteResponse,
@@ -35,7 +35,7 @@ export interface PortalBrowser {
 export class BrowserWorker implements StagehandWorker {
   constructor(
     private readonly browser: PortalBrowser,
-    private readonly store: ExecutionStore,
+    private readonly store: ExecutionRepository,
   ) {}
 
   async receipt(billId: number, key: string) {

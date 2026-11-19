@@ -12,6 +12,28 @@ export type PaymentInput = {
   idempotencyKey: string;
 };
 
+export type PaymentAttempt = {
+  paymentId: number;
+  billId: number;
+  idempotencyKey: string;
+  summary: Record<string, unknown>;
+};
+
+export type PaymentOutcome = {
+  paymentId: number;
+  outcome: 'success' | 'failure' | 'unknown';
+  outcomeCode: string;
+  transactionReference: string | null;
+  message: string | null;
+};
+
+export type RecordedPayment = {
+  payment_id: number;
+  bill_id: number;
+  status: string;
+  idempotency_key: string;
+};
+
 export type BillMcpDeps = {
   mcpToken: string | undefined;
   clientUrl: string;
@@ -23,7 +45,14 @@ export type BillMcpDeps = {
   fetch: typeof fetch;
   portalUrl: (vendorId: number) => Promise<string | null>;
   latestApproval: (billId: number) => Promise<string | null>;
-  recordPayment: (input: PaymentInput) => Promise<{ payment?: unknown; error?: string }>;
+  preparePayment: (billId: number) => Promise<{ attempt?: PaymentAttempt; error?: string }>;
+  authorizePayment: (attempt: PaymentAttempt) => Promise<{ error?: string }>;
+  startSubmission: (paymentId: number) => Promise<{ error?: string }>;
+  recordOutcome: (outcome: PaymentOutcome) => Promise<{ payment?: RecordedPayment; error?: string }>;
+  pendingBillIds?: () => Promise<number[]>;
+  billForAutomation?: (billId: number) => Promise<Bill | null>;
+  prepareAutomatedPayment?: (billId: number) => Promise<{ attempt?: PaymentAttempt; error?: string }>;
+  authorizeAutomatedPayment?: (attempt: PaymentAttempt) => Promise<{ error?: string }>;
 };
 
 type Bill = {
@@ -177,17 +206,40 @@ async function readPortal(deps: BillMcpDeps, bill: Bill) {
 async function workerFailure(response: Response) {
   try {
     const body = (await response.json()) as { code?: unknown };
-    if (body.code === 'outcome_unknown') return { error: 'outcome_unknown' as const };
+    if (body.code === 'outcome_unknown') return { error: 'outcome_unknown' as const, code: 'outcome_unknown' };
+    if (typeof body.code === 'string') return { error: 'worker failed' as const, code: body.code };
   } catch {
     // A non-JSON worker failure stays generic.
   }
-  return { error: 'worker failed' as const };
+  return { error: 'worker failed' as const, code: 'portal_error' };
 }
 
-async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+function failureCode(code: string) {
+  if (code === 'payment_mismatch' || code === 'portal_rejected' || code === 'portal_error' || code === 'not_submitted') return code;
+  return 'not_submitted';
+}
+
+function transactionReference(execution: { receipt?: unknown } | null, fallback: string) {
+  const receipt = execution?.receipt;
+  const reference = receipt && typeof receipt === 'object' && 'reference' in receipt ? receipt.reference : undefined;
+  if (typeof reference === 'string' && reference.trim()) return reference.trim();
+  return fallback;
+}
+
+async function executeApprovedPayment(
+  deps: BillMcpDeps,
+  userAuth: string,
+  args: Record<string, unknown>,
+  automated = false,
+) {
   const billId = integer(field(args, 'bill_id', 'billId'));
   if (billId === null) return { error: 'invalid arguments' };
-  const loaded = await loadBill(deps, userAuth, billId);
+  const automatedBill = automated ? await deps.billForAutomation?.(billId) : undefined;
+  const loaded = automated
+    ? automatedBill
+      ? { bill: automatedBill }
+      : { error: 'not_found' as const }
+    : await loadBill(deps, userAuth, billId);
   if ('error' in loaded) return loaded;
   const bill = loaded.bill;
   if (bill.status !== 'pending_payment') return { error: 'not_pending_payment' };
@@ -195,11 +247,24 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if ('error' in portal) return portal;
   const gaps = snapshotGaps(bill, portal.text);
   if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
-  if ((await deps.latestApproval(bill.bill_id)) !== 'approved') return { error: 'not_approved' };
+  if ((await deps.latestApproval(bill.bill_id)) !== 'approved' ) return { error: 'not_approved' };
   if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.stagehandUrl || !deps.canRecord) {
     return { error: 'worker not configured' };
   }
-  const idempotencyKey = `portal-${bill.bill_id}`;
+  const prepared = automated
+    ? await deps.prepareAutomatedPayment?.(bill.bill_id)
+    : await deps.preparePayment(bill.bill_id);
+  if (!prepared) return { error: 'automation not configured' };
+  if (prepared.error || !prepared.attempt) return { error: prepared.error ?? 'prepare_payment failed' };
+  const authorized = automated
+    ? await deps.authorizeAutomatedPayment?.(prepared.attempt)
+    : await deps.authorizePayment(prepared.attempt);
+  if (!authorized) return { error: 'automation not configured' };
+  if (authorized.error) return { error: authorized.error };
+  const started = await deps.startSubmission(prepared.attempt.paymentId);
+  if (started.error) return { error: started.error };
+  const attempt = prepared.attempt;
+  const idempotencyKey = attempt.idempotencyKey;
   const portalUrl = portal.portalUrl;
   const response = await deps.fetch(joinUrl(deps.stagehandUrl, '/execute'), {
     method: 'POST',
@@ -216,24 +281,44 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
       idempotencyKey,
     }),
   });
-  if (!response.ok) return workerFailure(response);
+  if (!response.ok) {
+    const failure = await workerFailure(response);
+    const recorded = await deps.recordOutcome(
+      failure.error === 'outcome_unknown'
+        ? { paymentId: attempt.paymentId, outcome: 'unknown', outcomeCode: 'outcome_unknown', transactionReference: null, message: null }
+        : { paymentId: attempt.paymentId, outcome: 'failure', outcomeCode: failureCode(failure.code), transactionReference: null, message: null },
+    );
+    if (recorded.error) return { error: 'record_payment failed' };
+    return failure.error === 'outcome_unknown' ? { error: 'outcome_unknown' } : { error: 'worker failed' };
+  }
   const execution = (await response.json().catch(() => null)) as {
     confirmed?: boolean;
     receipt?: unknown;
   } | null;
-  const recorded = await deps.recordPayment({
-    billId: bill.bill_id,
-    amount: Number(bill.amount),
-    vendorId: bill.vendor_id,
-    invoiceNumber: bill.invoice_number,
-    idempotencyKey,
+  const recorded = await deps.recordOutcome({
+    paymentId: attempt.paymentId,
+    outcome: 'success',
+    outcomeCode: 'confirmed',
+    transactionReference: transactionReference(execution, idempotencyKey),
+    message: null,
   });
-  if (recorded.error) return { error: 'record_payment failed' };
+  if (recorded.error || !recorded.payment) return { error: 'record_payment failed' };
   const input: PaymentInput = { billId: bill.bill_id, amount: Number(bill.amount), vendorId: bill.vendor_id, invoiceNumber: bill.invoice_number, idempotencyKey };
   if (!deps.persistReceipt) return { payment: recorded.payment };
   const receipt = await deps.persistReceipt(input, recorded.payment, execution?.confirmed === true ? execution.receipt : undefined)
     .catch(() => ({ status: 'failed', error: 'upload_failed' } as const));
   return { payment: recorded.payment, receipt };
+}
+
+async function sweepApprovedPayments(deps: BillMcpDeps, userAuth: string) {
+  if (!deps.pendingBillIds) return { error: 'automation not configured' };
+  const billIds = await deps.pendingBillIds();
+  const results = [];
+  for (const billId of billIds) {
+    const outcome = await executeApprovedPayment(deps, userAuth, { bill_id: billId }, true);
+    results.push({ bill_id: billId, outcome });
+  }
+  return { ok: true, results };
 }
 
 async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
@@ -272,6 +357,7 @@ export async function handleBillMcp(
   const method = body && typeof body === 'object' ? (body as { method?: unknown }).method : undefined;
   if (method === 'initialize') return result({ server: 'bill-mcp', tools: true });
   if (method === 'tools/list') return result({ tools: TOOLS });
+  if (method === 'sweep_approved_payments') return result(await sweepApprovedPayments(deps, request.userAuthorization));
   if (method !== 'tools/call') return result({ error: 'unknown method' }, 400);
 
   const name = toolName(body);

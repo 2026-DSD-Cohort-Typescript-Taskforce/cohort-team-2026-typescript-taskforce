@@ -79,9 +79,19 @@ export async function guardNavigation(cdpUrl: string, allowed: string[], observe
         resourceType: string;
         request: { url: string; method: string };
       };
+      const samePortal =
+        observe &&
+        !['GET', 'HEAD', 'OPTIONS'].includes(params.request.method) &&
+        [...canonical].some((allowed) => {
+          try {
+            return new URL(allowed).origin === new URL(params.request.url).origin;
+          } catch {
+            return false;
+          }
+        });
       const blocked =
         (params.resourceType === 'Document' && !canonical.has(params.request.url)) ||
-        (observe && !['GET', 'HEAD', 'OPTIONS'].includes(params.request.method));
+        (observe && !['GET', 'HEAD', 'OPTIONS'].includes(params.request.method) && !samePortal);
       if (blocked) violated = true;
       void send(
         blocked ? 'Fetch.failRequest' : 'Fetch.continueRequest',

@@ -2,45 +2,11 @@
 
 Covers: `server/src/payments`, `supabase/functions/bill-mcp`, `supabase/migrations/20261117190000_payment_receipts.sql`, `client/app/api/bills/[id]/payments/[paymentId]/receipt/route.ts`
 
-Last changed by AI: 2026-11-17 · run cf5b5baf-d7bd-4196-ab52-cc8c0d8f1253 · files: client/app/api/bills/[id]/payments/[paymentId]/receipt/route.ts, server/src/payments/capture-receipt.ts, server/src/payments/execution-store.ts, server/src/payments/payment-contract.ts, server/src/payments/stagehand-browser.ts, server/src/payments/worker.ts, supabase/functions/bill-mcp/handle.test.ts, supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts, supabase/functions/bill-mcp/receipt.test.ts, supabase/functions/bill-mcp/receipt.ts, supabase/migrations/20261117190000_payment_receipts.sql
+Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.test.ts, supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
 ## Current view
 
-DC-112 builds on the merged testing branch. After verified payment confirmation,
-the worker durably records success, captures receipt evidence before closing Chrome,
-and caches it in the existing private execution journal. Capture or cache failure
-cannot reverse success or permit another charge.
-
-Operator profiles opt in with `receiptSelector` containing all four confirmation
-selectors. The capture sanitizes a copy of that receipt, retaining only the verified
-invoice, amount, reference and a fixed confirmation heading. Other text, attributes,
-inputs and images are removed, then rendered in an isolated blank tab so portal
-scripts, styles or dialogs cannot overlay the capture. PNGs are limited to 2 MB. This is sanitized evidence,
-not a full-page screenshot or independent proof that money moved.
-
-bill-mcp records payment first, then validates the artifact identity, PNG signature,
-size and SHA-256. It uploads without overwrite to private bucket `payment-receipts`
-at `payments/<payment_id>/receipt.png`. Existing bytes must match on retry. The
-service-only `set_payment_receipt` RPC binds the path to the successful payment,
-bill and execution key. Artifact bytes and credentials are never sent to the model.
-
-`receipt_status`/`receipt_error` track evidence separately from payment status.
-`retry_payment_receipt` accepts `bill_id` and `payment_id`; it retrieves the cached
-artifact through authenticated worker POST `/receipt` and uploads only. It does not
-call execute, record_payment or open Chrome. This tool is available through bill-mcp;
-the current agent allowlist does not automatically expose it.
-
-Direct anonymous/authenticated payment writes are revoked; controlled backend RPCs
-own payment identity and receipt metadata. The shared database access helper permits the bill owner, financial approvers and
-system admins to read evidence or retry uploads. Other operators, missing profiles
-and anonymous callers are denied. GET `/api/bills/<billId>/payments/<paymentId>/receipt`
-returns a five-minute signed image URL using the caller's session and storage policy.
-
-Apply the receipt migration and deploy the updated worker/bill-mcp together. No new
-secret or browser package is required. The service role remains in bill-mcp only.
-Old journal records or failed/lost captures may have no recoverable image; never retry
-payment to obtain one. An orphan upload remains private until its path is associated.
-Retention/cleanup and automatic retry scheduling are separate work.
+A confirmed receipt is stored at payments/<payment id>/receipt.png after record_payment returns success. The worker and the receipt use the attempt idempotency key.
 
 ## Lessons
 
@@ -49,6 +15,19 @@ Retention/cleanup and automatic retry scheduling are separate work.
 - 2026-11-17 · run cf5b5baf: Verify existing-object hashes and isolate screenshot rendering from portal scripts and overlays.
 
 ## History
+
+### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
+**Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
+**Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.test.ts@sha256:d5d27ab2558f1a2d5c96d12d768c65c41cbd8ccd2c2213c9f46a28f37a4c9ba4, supabase/functions/bill-mcp/handle.ts@sha256:cae024a1ae6586b68b102fff6590cbf04465b3e94af184cbe95353409e0df297, supabase/functions/bill-mcp/index.ts@sha256:ce59ec08be5877bd781c967c0f68a2181d30d133a92936d89a215238a9e27fd8
+
+### 2026-11-18 · run 111388b7-1ae4-4138-9875-04ae50872341 · Make the hourly bill-mcp sweep ask agent-bills to pay each pending bill, so the agent calls execute…
+
+**Changed:** The hourly sweep now asks agent-bills to pay each pending bill. The agent is the caller of execute_approved_payment. canRecord stays false, so that call still does not charge. The model can skip the tool.
+**Learned:** The hour lists bills and the agent pays them. canRecord and the model remain limits.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 111388b7-1ae4-4138-9875-04ae50872341 command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.test.ts@sha256:e4737870380c3161a0bdabe79a284560aa41ed883d76f409617c7deb2f0aada9, supabase/functions/bill-mcp/handle.ts@sha256:2127fca435fece23060c9f1ded6c71f67c5d85e0b53e0ae6de1f633379333dbb, supabase/functions/bill-mcp/index.ts@sha256:f07686ed6879252378ab253f398e564f7215e0dc682328d2499dc2584fade4b3
 
 ### 2026-11-17 · run cf5b5baf-d7bd-4196-ab52-cc8c0d8f1253 · DC112 capture sanitized payment receipts, store privately and retry evidence without payment
 

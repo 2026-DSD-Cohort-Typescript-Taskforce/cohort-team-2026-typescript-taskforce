@@ -556,6 +556,7 @@ Deno.serve(async (req) => {
 
   const { data: submitted, error: submitError } = await supabase.rpc("submit_bill", {
     p_bill_id: bill.bill_id,
+    p_needs_approval: true,
   });
   if (submitError) {
     if (submitError.message === "policy_blocked") {
