@@ -3,29 +3,32 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(101);
+select plan(114);
 
--- Setup (as postgres): one user per role (96101+), vendors 96001..96013, each with its own
--- policy (policy_id = vendor_id, on, no version yet) except 96009, which has none. Bills per
--- section: submit 963xx, prepare 964xx, start 965xx, send-back 966xx, review focus 967xx/968xx.
+-- Setup (as postgres): one user per role (96101+) and a second financial approver (96105),
+-- vendors 96001..96015, each with its own policy (policy_id = vendor_id, on, no version yet)
+-- except 96009, which has none. Bills per section: submit 963xx, prepare 964xx, start 965xx,
+-- send-back 966xx, review focus 967xx/968xx, the bill's own submitter approving 969xx.
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000096a1', 'dc92e-a@example.test'),
   ('00000000-0000-4000-8000-0000000096a2', 'dc92e-b@example.test'),
   ('00000000-0000-4000-8000-0000000096a3', 'dc92e-c@example.test'),
-  ('00000000-0000-4000-8000-0000000096a4', 'dc92e-d@example.test');
+  ('00000000-0000-4000-8000-0000000096a4', 'dc92e-d@example.test'),
+  ('00000000-0000-4000-8000-0000000096a5', 'dc92e-e@example.test');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (96101, 'Operator A', 'dc92e-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000096a1'),
   (96102, 'Approver B', 'dc92e-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000096a2'),
   (96103, 'Admin C', 'dc92e-c@example.test', 'system_admin', '00000000-0000-4000-8000-0000000096a3'),
-  (96104, 'Viewer D', 'dc92e-d@example.test', 'viewer', '00000000-0000-4000-8000-0000000096a4');
+  (96104, 'Viewer D', 'dc92e-d@example.test', 'viewer', '00000000-0000-4000-8000-0000000096a4'),
+  (96105, 'Approver O', 'dc92e-e@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000096a5');
 insert into public.vendors (vendor_id, name, email, address, phone)
 select g, 'DC92E Vendor ' || g, 'v' || g || '@example.test', g || ' Test Way', '555-0196'
-  from generate_series(96001, 96013) g;
+  from generate_series(96001, 96015) g;
 insert into public.properties (property_id, name) values (96001, 'DC92E P1'), (96002, 'DC92E P2');
 insert into public.payment_methods (payment_method_id, payment_type, name, billing_zip)
   values (96001, 'card', 'DC92E Card', '75001');
 insert into public.policies (policy_id, vendor_id, name, description, is_active) overriding system value
-select g, g, 'DC92E policy ' || g, 'Fixture.', true from generate_series(96001, 96013) g where g <> 96009;
+select g, g, 'DC92E policy ' || g, 'Fixture.', true from generate_series(96001, 96015) g where g <> 96009;
 
 insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
 select b, s, v, 96001, 96101, 96001, 'DC92E-' || b, 120.00, current_date + 7
@@ -48,6 +51,10 @@ select b, s, v, 96001, 96101, 96001, 'DC92E-' || b, 120.00, current_date + 7
     (96701, 'pending_payment', 96012), (96801, 'pending_payment', 96013), (96802, 'pending_payment', 96013)
   ) t(b, s, v);
 update public.bills set invoice_number = null where bill_id = 96302;
+-- Created by approver O (bills.user_id = 96105).
+insert into public.bills (bill_id, status, vendor_id, property_id, user_id, payment_method_id, invoice_number, amount, date_due)
+values (96901, 'draft', 96014, 96001, 96105, 96001, 'DC92E-96901', 120.00, current_date + 7),
+       (96902, 'draft', 96015, 96001, 96105, 96001, 'DC92E-96902', 120.00, current_date + 7);
 
 -- Confirm a new version of a vendor's policy and turn the policy on (as postgres, as
 -- confirm_policy_draft would). Returns the new version_id.
@@ -377,6 +384,54 @@ select lives_ok($$select public.prepare_payment(96802, 96103, 0, current_date)$$
 reset role;
 select is((select policy_refs from public.payments where bill_id = 96801), '[]'::jsonb, 'policy off: policy_refs is empty');
 select is((select policy_refs from public.payments where bill_id = 96802), '[]'::jsonb, 'policy off: policy_refs is empty (self-approved)');
+
+-- Review focus 3: the bill's own submitter approves it --------------------------------------
+
+-- O submits 96901 straight to payment before its vendor's policy has a version. After C's
+-- send-back the approval row's submitter is C, so only bills.user_id shows it is O's bill.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000096a5","role":"authenticated"}';
+select is((select status from public.submit_bill(96901)), 'pending_payment', 'approver O submits their bill straight to payment');
+reset role;
+select pg_temp.activate(96014, '[{"effect":"require_approval","when":{}}]');
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select lives_ok($$select public.send_bill_for_approval(96901, 96103)$$, 'admin C sends 96901 back for approval');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000096a5","role":"authenticated"}';
+select lives_ok($$select public.decide_bill(96901, 'approved')$$, 'O approves the bill they submitted');
+reset role;
+select is(public.bill_has_qualifying_approval(96901), false, 'an approval by the bill''s own submitter does not count');
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select throws_ok($$select public.prepare_payment(96901, 96103, 0, current_date)$$, 'PT409', 'approval_required',
+  'payment is refused after the submitter approves their own bill');
+select lives_ok($$select public.send_bill_for_approval(96901, 96103)$$, 'the bill O approved is sent back again');
+reset role;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000096a2","role":"authenticated"}';
+select lives_ok($$select public.decide_bill(96901, 'approved')$$, 'approver B approves 96901');
+reset role;
+select is(public.bill_has_qualifying_approval(96901), true, 'an approval by someone who never submitted the bill counts');
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select lives_ok($$select public.prepare_payment(96901, 96103, 0, current_date)$$, 'after B approves, 96901 is prepared');
+reset role;
+
+-- O submits 96902 under require_approval and approves it themselves.
+select pg_temp.activate(96015, '[{"effect":"require_approval","when":{}}]');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000096a5","role":"authenticated"}';
+select is((select status from public.submit_bill(96902)), 'pending_approval', 'O submits 96902 under require_approval');
+select lives_ok($$select public.decide_bill(96902, 'approved')$$, 'O approves their own submission');
+reset role;
+select is(public.bill_has_qualifying_approval(96902), false, 'approving your own submission does not count');
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+select throws_ok($$select public.prepare_payment(96902, 96105, 0, current_date)$$, 'PT409', 'approval_required',
+  'payment is refused after O approves their own submission');
+reset role;
 
 -- Signature, security, grants ------------------------------------------------------------
 

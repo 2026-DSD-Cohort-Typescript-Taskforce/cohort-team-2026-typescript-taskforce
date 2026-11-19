@@ -2,14 +2,16 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(82);
+select plan(84);
 
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-0000000092a1', 'dc92-a@example.test'),
-  ('00000000-0000-4000-8000-0000000092a2', 'dc92-b@example.test');
+  ('00000000-0000-4000-8000-0000000092a2', 'dc92-b@example.test'),
+  ('00000000-0000-4000-8000-0000000092a3', 'dc92-c@example.test');
 insert into public.users (user_id, name, email, role, auth_user_id) values
   (92101, 'Submitter', 'dc92-a@example.test', 'billing_operator', '00000000-0000-4000-8000-0000000092a1'),
-  (92102, 'Approver', 'dc92-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000092a2');
+  (92102, 'Approver', 'dc92-b@example.test', 'financial_approver', '00000000-0000-4000-8000-0000000092a2'),
+  (92103, 'Admin', 'dc92-c@example.test', 'system_admin', '00000000-0000-4000-8000-0000000092a3');
 insert into public.vendors (vendor_id, name, email, address, phone) values
   (92001, 'DC92 Vendor', 'v1@example.test', '1 Test Way', '555-0192'),
   (92002, 'DC92 Other Vendor', 'v2@example.test', '2 Test Way', '555-0193'),
@@ -141,6 +143,10 @@ insert into public.approvals (bill_id, submitted_by, approved_by, status, create
 select is(public.bill_has_qualifying_approval(92305), true, 'older pending + newer approved: true');
 insert into public.approvals (bill_id, submitted_by, approved_by, status, created_at) values (92306, 92101, 92102, 'approved', '2026-11-01 10:00'), (92306, 92101, 92102, 'rejected', '2026-11-01 10:00');
 select is(public.bill_has_qualifying_approval(92306), false, 'same created_at: higher approval_id (rejected) wins: false');
+insert into public.approvals (bill_id, submitted_by, approved_by, status, created_at) values (92307, 92102, 92101, 'approved', '2026-11-01 10:00');
+select is(public.bill_has_qualifying_approval(92307), false, 'approved by the bill''s own user, another user submitted the row: false');
+insert into public.approvals (bill_id, submitted_by, approved_by, status, created_at) values (92399, 92103, 92102, 'approved', '2026-11-01 10:00'), (92399, 92102, 92103, 'approved', '2026-11-02 10:00');
+select is(public.bill_has_qualifying_approval(92399), false, 'approved by the submitter of an earlier approval row: false');
 select is(public.bill_has_qualifying_approval(99999999), false, 'unknown bill: false');
 select is(has_function_privilege('anon', 'public.evaluate_bill_policy(integer)', 'execute'), false, 'anon execute on evaluate_bill_policy(integer): false');
 select is(has_function_privilege('authenticated', 'public.evaluate_bill_policy(integer)', 'execute'), true, 'authenticated execute on evaluate_bill_policy(integer): true');
