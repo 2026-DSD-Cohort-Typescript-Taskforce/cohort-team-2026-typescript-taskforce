@@ -10,7 +10,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" }
     ],
     "invoiceSelector": ".bill-summary dl dd:first-of-type",
@@ -34,7 +40,13 @@
     "pay": [
       { "action": "click", "selector": "a.button[href^='#statement/']" },
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" },
       { "action": "click", "selector": "#payment-form button[type='submit']" }
     ],
@@ -58,7 +70,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" }
     ],
     "invoiceSelector": ".bill-summary dl dd:first-of-type",
@@ -82,7 +100,13 @@
     "pay": [
       { "action": "click", "selector": "a.button[href^='#statement/']" },
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" }
     ],
     "invoiceSelector": ".bill-summary dl dd:first-of-type",
@@ -105,7 +129,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" },
       { "action": "click", "selector": "#payment-form button[type='submit']" }
     ],
@@ -129,7 +159,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" },
       { "action": "click", "selector": "#payment-form button[type='submit']" }
     ],
@@ -153,7 +189,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" }
     ],
     "invoiceSelector": ".bill-summary dl dd:first-of-type",
@@ -177,7 +219,13 @@
     "pay": [
       { "action": "click", "selector": "a.button[href^='#statement/']" },
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" },
       { "action": "click", "selector": "#payment-form button[type='submit']" }
     ],
@@ -201,7 +249,13 @@
     ],
     "pay": [
       { "action": "click", "selector": "a.button[href^='#pay/']" },
+      { "action": "select", "selector": "#payment-form select[name='method']", "value": "bank" },
       { "action": "click", "selector": "#sample-details" },
+      {
+        "action": "select",
+        "selector": "#payment-form select[name='scenario']",
+        "value": "success"
+      },
       { "action": "check", "selector": "input[name='authorized']" },
       { "action": "click", "selector": "#payment-form button[type='submit']" }
     ],
