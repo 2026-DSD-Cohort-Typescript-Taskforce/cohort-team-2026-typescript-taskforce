@@ -36,7 +36,7 @@ test('range, property and payment type', () => {
     payment_types: ['bank'],
   });
   assert.deepEqual(ruleLines(rule, props), [
-    'Auto-pay · $100.00 to $500.00 · Maple Court · bank only',
+    'Allow · $100.00 to $500.00 · Maple Court · bank only',
   ]);
 });
 

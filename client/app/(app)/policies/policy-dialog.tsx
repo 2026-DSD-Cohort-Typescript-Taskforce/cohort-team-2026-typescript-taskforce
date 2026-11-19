@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { confirmDraft, continueDraft, loadDraft, savePolicy, startDraft } from '@/lib/policy-api';
 import type { Policy, PolicyVendor } from '@/lib/policies';
-import type { PolicyDraft } from '@/lib/policy-drafts';
+import { chooseDraftAction, draftPolicyIsStale, type PolicyDraft } from '@/lib/policy-drafts';
 import type { PropertyRef } from '@/lib/policy-rule';
 import {
   POLICY_FIELDS,
@@ -63,6 +63,8 @@ export function PolicyDialog({
   const [action, setAction] = useState<Action | null>(null);
   const [step, setStep] = useState<Step>('loading');
   const [draft, setDraft] = useState<PolicyDraft | null>(null);
+  // The policy changed since the draft was made, so "Check policy" starts it again.
+  const [policyChanged, setPolicyChanged] = useState(false);
   const [error, setError] = useState('');
   // busy as a ref too, set at once: the close guards read it, and a dialog closed straight
   // after a save ends must not see the value from the last render.
@@ -84,6 +86,9 @@ export function PolicyDialog({
       // null: apiFetch is sending the user to /login.
       if (!active || !result) return;
       if (result.ok && result.data) {
+        setPolicyChanged(
+          draftPolicyIsStale(result.data.policy_updated_at, vendor.policy?.updated_at ?? null),
+        );
         showDraft(result.data);
       } else {
         if (!result.ok) {
@@ -203,6 +208,7 @@ export function PolicyDialog({
     } else {
       // 403, 400, 409 (stale_draft, policy_changed, draft_not_complete, invalid_rule),
       // 422, 502 or offline: the reply's own message; 503 says checking isn't set up.
+      if (result.code === 'policy_changed') setPolicyChanged(true);
       setError(result.status === 503 ? NOT_SET_UP : result.error);
       if (result.draft) showDraft(result.draft);
     }
@@ -226,13 +232,16 @@ export function PolicyDialog({
       );
       return;
     }
+    const restart = chooseDraftAction({ hasDraft: draft !== null, policyChanged }) === 'start';
     await run(
       'check',
       () =>
-        draft
+        draft && !restart
           ? continueDraft(vendor.vendor_id, draft.revision, { sentence: input.description })
           : startDraft(vendor.vendor_id, input.description),
       (next) => {
+        // A start reads the policy's updated_at again.
+        if (restart) setPolicyChanged(false);
         if (next) showDraft(next);
       },
     );

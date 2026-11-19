@@ -4,7 +4,7 @@
 import type { AmountCondition, Effect, PolicyRuleV1, PropertyRef } from './policy-rule.ts';
 
 const EFFECT_WORDS: Record<Effect, string> = {
-  allow: 'Auto-pay',
+  allow: 'Allow',
   require_approval: 'Need approval',
   block: 'Block',
 };
