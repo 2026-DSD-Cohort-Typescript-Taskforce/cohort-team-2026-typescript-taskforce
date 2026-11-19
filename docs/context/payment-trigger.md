@@ -10,7 +10,7 @@ The bill detail page shows a reusable payment trigger only to system administrat
 
 The component confirms the vendor, invoice number and amount. `POST /api/bills/[id]/payment-trigger` independently validates the signed-in user's database role, then calls bill-mcp's `execute_approved_payment` tool with only the bill ID. `BILL_MCP_URL` and `BILL_MCP_TOKEN` stay server-only, while the caller's JWT is forwarded for the existing bill read.
 
-bill-mcp remains responsible for approval, snapshot, portal, idempotency, payment recording and receipt safeguards. A lost response or payment-recording failure is uncertain because the portal may already have submitted payment; it must not be retried. Success requires a `success` payment row for the requested bill.
+An ineligible result names the stop: the bill is not pending payment, the newest approval is not approved, the vendor has no portal URL, or the signed-in portal page does not show the invoice number or the amount. bill-mcp remains responsible for approval, snapshot, portal, idempotency, payment recording and receipt safeguards. A lost response or payment-recording failure is uncertain because the portal may already have submitted payment; it must not be retried. Success requires a `success` payment row for the requested bill.
 
 `PaymentAutomationTrigger` owns role visibility, confirmation, request state and result messaging. Another page can mount it later without duplicating the payment call.
 

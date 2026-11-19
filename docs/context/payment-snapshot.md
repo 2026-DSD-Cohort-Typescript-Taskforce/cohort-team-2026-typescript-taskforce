@@ -2,11 +2,11 @@
 
 Covers: supabase/functions/bill-mcp/handle.ts
 
-Last changed by AI: 2026-11-18 · run 92a5b424-2f02-45aa-b88c-67bb21a2e6bb · files: supabase/functions/bill-mcp/handle.ts
+Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.ts
 
 ## Current view
 
-execute_approved_payment loads the bill, opens that vendor's portal URL, and reads the page text. The amount matches when the page shows the bill amount in dollars, such as $40.50. The invoice matches when the page shows the bill's invoice number. A miss returns snapshot_mismatch with fields naming amount or invoice_number, and does not call execute. The vendor comes from the portal URL lookup. The idempotency key is always portal- plus the bill id, and a caller-supplied key is ignored. A worker outcome_unknown is returned as that error. Status and the newest approval stay separate checks.
+The snapshot check still runs before any payment attempt is prepared. A mismatch does not charge.
 
 ## Lessons
 
@@ -16,6 +16,19 @@ execute_approved_payment loads the bill, opens that vendor's portal URL, and rea
 - 2026-11-17 · run 92fa34c4: Strict equality on vendor_id rejected a digits-only string of the same vendor, so a tool call that copied the bill as JSON text failed the snapshot.
 
 ## History
+
+### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
+**Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
+**Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.ts@sha256:cae024a1ae6586b68b102fff6590cbf04465b3e94af184cbe95353409e0df297
+
+### 2026-11-18 · run 111388b7-1ae4-4138-9875-04ae50872341 · Make the hourly bill-mcp sweep ask agent-bills to pay each pending bill, so the agent calls execute…
+
+**Changed:** The hourly sweep now asks agent-bills to pay each pending bill. The agent is the caller of execute_approved_payment. canRecord stays false, so that call still does not charge. The model can skip the tool.
+**Learned:** The hour lists bills and the agent pays them. canRecord and the model remain limits.
+**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 111388b7-1ae4-4138-9875-04ae50872341 command receipts separately. Local receipts may not travel with source.
+**Files:** supabase/functions/bill-mcp/handle.ts@sha256:2127fca435fece23060c9f1ded6c71f67c5d85e0b53e0ae6de1f633379333dbb
 
 ### 2026-11-18 · run 92a5b424-2f02-45aa-b88c-67bb21a2e6bb · Pin execute_approved_payment to portal-${bill.bill_id} and return outcome_unknown from the worker.
 
