@@ -42,6 +42,7 @@ function fixture() {
     },
     confirm: async () => {
       calls.confirmed++;
+      return 'TX-1';
     },
     close: async () => {
       calls.closed++;
@@ -146,7 +147,7 @@ test('HTTP routes enforce bearer authentication and strict request bodies', asyn
       assert.equal(f.calls.submitted, 0);
       const executed = await post('/execute', request);
       assert.equal(executed.status, 200);
-      assert.deepEqual(await executed.json(), { confirmed: true });
+      assert.deepEqual(await executed.json(), { confirmed: true, transactionReference: 'TX-1' });
       const replayed = await post('/execute', request);
       assert.equal(replayed.status, 200);
       assert.equal(f.calls.submitted, 1);
@@ -246,7 +247,10 @@ test('a known pre-submission failure permits the same request to retry safely', 
 
     await assert.rejects(worker.execute(request), { code: 'portal_error' });
     assert.equal(f.calls.submitted, 0);
-    assert.deepEqual(await worker.execute(request), { confirmed: true });
+    assert.deepEqual(await worker.execute(request), {
+      confirmed: true,
+      transactionReference: 'TX-1',
+    });
     assert.equal(f.calls.submitted, 1);
   });
 });
@@ -265,7 +269,10 @@ test('a mismatch in the final pre-click check remains safely retryable', async (
 
     await assert.rejects(worker.execute(request), { code: 'payment_mismatch' });
     assert.equal(f.calls.submitted, 0);
-    assert.deepEqual(await worker.execute(request), { confirmed: true });
+    assert.deepEqual(await worker.execute(request), {
+      confirmed: true,
+      transactionReference: 'TX-1',
+    });
     assert.equal(f.calls.submitted, 1);
   });
 });
@@ -290,8 +297,24 @@ test('concurrent requests with one key submit once; confirmed result survives re
     assert.ok(results.some((r) => r.status === 'fulfilled'));
     assert.equal(f.calls.submitted, 1);
     const restarted = new BrowserWorker(f.browser, new ExecutionStore(path));
-    assert.deepEqual(await restarted.execute(request), { confirmed: true });
+    assert.deepEqual(await restarted.execute(request), {
+      confirmed: true,
+      transactionReference: 'TX-1',
+    });
     assert.equal(f.calls.opened, 1);
+  });
+});
+
+test('success returns the confirmation reference the portal shows', async () => {
+  await withWorker(async (worker, path, f) => {
+    const result = await worker.execute(request);
+    assert.equal(result.transactionReference, 'TX-1');
+    const restarted = new BrowserWorker(f.browser, new ExecutionStore(path));
+    assert.deepEqual(await restarted.execute(request), {
+      confirmed: true,
+      transactionReference: 'TX-1',
+    });
+    assert.equal(f.calls.confirmed, 1);
   });
 });
 
@@ -311,8 +334,8 @@ test('confirmation timeout remains blocked after restart and never reports succe
 test('success waits for confirmation rather than the submit click', async () => {
   await withWorker(async (worker, _path, f) => {
     let release!: () => void;
-    const confirmed = new Promise<void>((resolve) => {
-      release = resolve;
+    const confirmed = new Promise<string>((resolve) => {
+      release = () => resolve('TX-1');
     });
     f.session.confirm = () => confirmed;
     let completed = false;
@@ -323,7 +346,7 @@ test('success waits for confirmation rather than the submit click', async () => 
     while (!f.calls.submitted) await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(completed, false);
     release();
-    assert.deepEqual(await result, { confirmed: true });
+    assert.deepEqual(await result, { confirmed: true, transactionReference: 'TX-1' });
   });
 });
 

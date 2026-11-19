@@ -370,6 +370,12 @@ export class StagehandBrowser implements PortalBrowser {
             { p, expected },
             { timeout: 15000 },
           );
+          const reference = await page.evaluate(
+            (s) => document.querySelector<HTMLElement>(s)!.innerText.trim(),
+            p.confirmationReferenceSelector,
+          );
+          guard!.check();
+          return reference;
         },
         async captureReceipt(expected) {
           const p = executionProfile();

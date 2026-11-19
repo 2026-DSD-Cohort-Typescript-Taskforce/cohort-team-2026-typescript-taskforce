@@ -26,7 +26,7 @@ test('Supabase execution claims use hashed keys and guarded transitions', async 
   });
   const claim = await store.claim(input, 12500);
   await claim.submitting();
-  await claim.confirmed({ confirmed: true });
+  await claim.confirmed({ confirmed: true, transactionReference: 'TX-7' });
 
   assert.equal(calls[0].name, 'claim_stagehand_execution');
   assert.match(String(calls[0].args.p_key_hash), /^[a-f0-9]{64}$/);

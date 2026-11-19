@@ -25,7 +25,10 @@ export interface ObserveResponse {
   pageText: string;
 }
 
-/** Only return with HTTP 2xx after portal payment confirmation. */
+/**
+ * Only return with HTTP 2xx after portal payment confirmation; transactionReference is the
+ * confirmation page's reference.
+ */
 export type ReceiptArtifact = {
   pngBase64: string;
   sha256: string;
@@ -42,6 +45,7 @@ export type PaymentReceipt =
   | { status: 'failed' };
 export interface ExecuteResponse {
   confirmed: true;
+  transactionReference: string;
   receipt?: PaymentReceipt;
 }
 

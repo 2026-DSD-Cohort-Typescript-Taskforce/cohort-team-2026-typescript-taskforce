@@ -93,7 +93,7 @@ test(
     const input = {
       billId: 7,
       vendorId: 9,
-      portalUrl: profile.portalUrl,
+      portalUrl: base + '/pay',
       amount: 125,
       invoiceNumber: 'INV-7',
       idempotencyKey: 'real-payment',
