@@ -24,6 +24,15 @@ export const canSubmitBills = (role: string | null | undefined): boolean =>
 export const canDecideBills = (role: string | null | undefined): boolean =>
   role === 'financial_approver' || role === 'system_admin';
 
+/**
+ * Whether to offer Delete for a bill. Matches the bills delete policies (20261118235000):
+ * anyone deletes a draft, and approvers and admins also delete a bill in review or denied.
+ * A sent-back draft is approvers-only too; the database refuses it for anyone else.
+ */
+export const canDeleteBill = (role: string | null | undefined, status: string): boolean =>
+  status === 'draft' ||
+  (canDecideBills(role) && (status === 'pending_approval' || status === 'approval_denied'));
+
 /** A role for display: its label when known, the raw value otherwise, '—' when there is none. */
 export function roleLabel(role: string | null): string {
   if (role === null) return '—';

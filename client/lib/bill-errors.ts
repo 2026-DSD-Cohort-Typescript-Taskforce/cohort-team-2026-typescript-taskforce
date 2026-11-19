@@ -32,6 +32,21 @@ export function notDraft(status: string): ErrorResponse {
   };
 }
 
+/** DELETE that the bills delete policies refused for this user, with the bill's status now. */
+export function notDeletable(status: string): ErrorResponse {
+  return {
+    status: 409,
+    body: {
+      error:
+        status === 'draft' || status === 'pending_approval' || status === 'approval_denied'
+          ? 'Only a financial approver or system admin can delete a bill that was reviewed.'
+          : "A bill that's gone to payment can't be deleted.",
+      code: 'not_deletable',
+      status,
+    },
+  };
+}
+
 // Values the database refused: bad text for a number or date, a number or text too large,
 // or a check constraint.
 const INVALID_VALUE_CODES = new Set(['22P02', '22003', '22007', '22008', '22001', '23514']);

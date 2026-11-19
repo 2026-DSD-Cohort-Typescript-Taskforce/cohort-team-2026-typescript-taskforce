@@ -7,8 +7,11 @@
 // fix form on the Bills page.
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
+import { deleteBill, loadUserRole } from '@/lib/bill-api';
+import { canDeleteBill } from '@/lib/roles';
 import { FIELD_LABELS, formatAmount, formatDate, type Bill } from '@/lib/bill-view';
 import { billMissing } from '@/lib/current-issues';
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from '@/app/ui';
@@ -40,7 +43,10 @@ export function BillDetails({ id }: { id: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let active = true;
@@ -49,10 +55,30 @@ export function BillDetails({ id }: { id: string }) {
       if ('bill' in result) setBill(result.bill);
       else setLoadError(result.error);
     });
+    loadUserRole().then((result) => {
+      if (active && result?.ok) setRole(result.data);
+    });
     return () => {
       active = false;
     };
   }, [id]);
+
+  // The delete policies decide; the button only hides what they'd refuse.
+  async function remove() {
+    if (!bill || deleting || !window.confirm('Delete this bill? This can’t be undone.')) return;
+    setSuccess('');
+    setError('');
+    setDeleting(true);
+    const result = await deleteBill(bill.bill_id);
+    if (!result) return;
+    if (result.ok) {
+      router.push('/bills');
+      return;
+    }
+    setError(result.error);
+    if (result.billStatus) setBill({ ...bill, status: result.billStatus });
+    setDeleting(false);
+  }
 
   // The server checks the role, status and required fields; the page doesn't pre-check.
   async function submit() {
@@ -148,23 +174,41 @@ export function BillDetails({ id }: { id: string }) {
               <p className="text-body text-secondary">Invoice {bill.invoice_number}</p>
             )}
           </div>
-          {bill.status === 'draft' && (
+          {canDeleteBill(role, bill.status) && (
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
-              <button type="button" onClick={() => setEditing(true)} className={secondaryButton}>
-                Edit bill
+              <button
+                type="button"
+                onClick={remove}
+                disabled={deleting}
+                data-pending={deleting || undefined}
+                className={secondaryButton}
+              >
+                {deleting && <Spinner />}
+                {deleting ? 'Deleting…' : 'Delete bill'}
               </button>
-              {missing.length > 0 ? (
-                <Link href={`/bills?fix=${bill.bill_id}`} className={primaryButton}>
-                  Finish this bill
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => dialogRef.current?.showModal()}
-                  className={primaryButton}
-                >
-                  Submit bill
-                </button>
+              {bill.status === 'draft' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className={secondaryButton}
+                  >
+                    Edit bill
+                  </button>
+                  {missing.length > 0 ? (
+                    <Link href={`/bills?fix=${bill.bill_id}`} className={primaryButton}>
+                      Finish this bill
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => dialogRef.current?.showModal()}
+                      className={primaryButton}
+                    >
+                      Submit bill
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
