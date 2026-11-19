@@ -1,5 +1,7 @@
 # Error ledger
 
+- 2026-11-18: Production `POST /observe` authenticated but returned `502 portal_error` before Browserbase created a session. Stagehand reads `dist/assets/stagehand-extension.zip` dynamically, while the Express deployment had no Vercel `includeFiles` rule. Add the archive to `server/vercel.json`; `server/test/vercel-config.test.ts` guards the entry point, include path, and installed asset. A deployed `/observe` smoke test remains required because local tests cannot inspect Vercel's built bundle.
+
 ## 2026-11-18 — Malformed model arguments
 
 - Cause: `callMcp` passed `call.function.arguments` to `JSON.parse` with no catch. A model tool call whose arguments were not JSON threw, and the agent-bills request stopped before bill-mcp or any later tool call.
