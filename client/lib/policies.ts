@@ -3,12 +3,30 @@
 
 import { toErrorResponse, type ErrorResponse, type SupabaseError } from './submit-errors.ts';
 
+export type ActiveVersion = {
+  version_id: number;
+  version: number;
+  interpretation: string;
+  confirmed_at: string;
+  confirmed_by_name: string | null;
+};
+
 export type Policy = {
   policy_id: number;
   name: string;
   description: string;
   is_active: boolean;
   updated_at: string;
+  active_version: ActiveVersion | null;
+};
+
+type Confirmer = { name: string | null };
+
+/** A policies row as PostgREST sends it: the active version with the confirmer embedded. */
+export type PolicyRow = Omit<Policy, 'active_version'> & {
+  active_version:
+    | (Omit<ActiveVersion, 'confirmed_by_name'> & { confirmer: Confirmer | Confirmer[] | null })
+    | null;
 };
 
 export type PolicyVendor = {
@@ -20,7 +38,9 @@ export type PolicyVendor = {
 };
 
 /** A vendors row with its policy embedded; PostgREST sends an object or an array. */
-export type PolicyVendorRow = Omit<PolicyVendor, 'policy'> & { policies: Policy | Policy[] | null };
+export type PolicyVendorRow = Omit<PolicyVendor, 'policy'> & {
+  policies: PolicyRow | PolicyRow[] | null;
+};
 
 const MANAGER_ROLES = ['financial_approver', 'system_admin'];
 const MAX_ID = 2147483647;
@@ -36,10 +56,19 @@ export function parseVendorId(raw: string): number | null {
   return id >= 1 && id <= MAX_ID ? id : null;
 }
 
+/** Flattens the embedded confirmer to `confirmed_by_name` (null when RLS hides the user). */
+export function toPolicy(row: PolicyRow): Policy {
+  const { active_version: version, ...policy } = row;
+  if (!version) return { ...policy, active_version: null };
+  const { confirmer, ...rest } = version;
+  const one = Array.isArray(confirmer) ? (confirmer[0] ?? null) : confirmer;
+  return { ...policy, active_version: { ...rest, confirmed_by_name: one?.name ?? null } };
+}
+
 export function toPolicyVendor(row: PolicyVendorRow): PolicyVendor {
   const { policies, ...vendor } = row;
-  const policy = Array.isArray(policies) ? (policies[0] ?? null) : policies;
-  return { ...vendor, policy };
+  const one = Array.isArray(policies) ? (policies[0] ?? null) : policies;
+  return { ...vendor, policy: one ? toPolicy(one) : null };
 }
 
 /** Case-insensitive substring match on the vendor name and its policy's name and description. */

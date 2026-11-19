@@ -136,7 +136,8 @@ export function invalidDraftRequest(fields: string[]): DraftReply {
   };
 }
 
-export function staleDraft(draft: PolicyDraft): DraftReply {
+/** `draft` is the latest stored one, or null when it is gone. */
+export function staleDraft(draft: PolicyDraft | null): DraftReply {
   return {
     status: 409,
     body: {

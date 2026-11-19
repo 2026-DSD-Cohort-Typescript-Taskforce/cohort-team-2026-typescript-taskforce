@@ -7,10 +7,13 @@ import {
   POLICY_VENDOR_NOT_FOUND,
   SAVE_POLICY_FAILED,
   TOGGLE_POLICY_FAILED,
-  type Policy,
+  toPolicy,
+  type PolicyRow,
 } from '@/lib/policies';
 import { parseActiveFlag, POLICY_FIELDS, validatePolicyInput } from '@/lib/policy-validation';
 import { POLICY_SELECT, replyWithPolicyError, requirePolicyManager } from '@/lib/policy-routes';
+
+const asPolicy = (row: unknown) => toPolicy(row as PolicyRow);
 
 /** Adds a vendor's policy (201), or replaces its name and description (200). */
 export async function PUT(request: NextRequest, ctx: RouteContext<'/api/policies/[vendorId]'>) {
@@ -39,20 +42,20 @@ export async function PUT(request: NextRequest, ctx: RouteContext<'/api/policies
 
   const updated = await update();
   if (updated.error) return replyWithPolicyError(updated.error);
-  if (updated.data) return reply({ body: { policy: updated.data as Policy } });
+  if (updated.data) return reply({ body: { policy: asPolicy(updated.data) } });
 
   const inserted = await supabase
     .from('policies')
     .insert({ vendor_id: vendorId, name, description })
     .select(POLICY_SELECT)
     .single();
-  if (!inserted.error) return reply({ status: 201, body: { policy: inserted.data as Policy } });
+  if (!inserted.error) return reply({ status: 201, body: { policy: asPolicy(inserted.data) } });
   if (inserted.error.code !== '23505') return replyWithPolicyError(inserted.error);
 
   // Another manager added this vendor's policy a moment ago: update theirs once.
   const retried = await update();
   if (retried.error) return replyWithPolicyError(retried.error);
-  if (retried.data) return reply({ body: { policy: retried.data as Policy } });
+  if (retried.data) return reply({ body: { policy: asPolicy(retried.data) } });
   return replyWithPolicyError(inserted.error, SAVE_POLICY_FAILED);
 }
 
@@ -79,5 +82,5 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<'/api/polici
     .maybeSingle();
   if (error) return replyWithPolicyError(error, TOGGLE_POLICY_FAILED);
   if (!data) return reply(POLICY_NOT_FOUND);
-  return reply({ body: { policy: data as Policy } });
+  return reply({ body: { policy: asPolicy(data) } });
 }
