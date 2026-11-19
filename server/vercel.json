@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/server.ts": {
+      "includeFiles": "node_modules/@browserbasehq/stagehand/dist/assets/stagehand-extension.zip",
+      "maxDuration": 60
+    }
+  }
+}
