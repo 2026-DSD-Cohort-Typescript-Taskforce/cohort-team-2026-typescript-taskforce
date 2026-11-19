@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(57);
+select plan(62);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. Test vendors are seeded ones (fixtures insert no vendors):
@@ -90,7 +90,12 @@ select policies_are('public', 'policies',
   ARRAY['signed-in users can view policies', 'policy managers can add policies', 'policy managers can change policies'],
   'policies has the read policy and the two manager-only write policies');
 select table_privs_are('public', 'policies', 'anon', ARRAY[]::text[], 'anon has no privileges on policies');
-select table_privs_are('public', 'policies', 'authenticated', ARRAY['SELECT', 'INSERT', 'UPDATE'], 'authenticated has select, insert and update only (no delete)');
+select table_privs_are('public', 'policies', 'authenticated', ARRAY['SELECT'], 'authenticated has table-level select only; writes are column grants (no delete)');
+select column_privs_are('public', 'policies', 'vendor_id', 'authenticated', ARRAY['SELECT', 'INSERT'], 'authenticated can insert vendor_id but not update it');
+select column_privs_are('public', 'policies', 'name', 'authenticated', ARRAY['SELECT', 'INSERT', 'UPDATE'], 'authenticated can insert and update name');
+select column_privs_are('public', 'policies', 'description', 'authenticated', ARRAY['SELECT', 'INSERT', 'UPDATE'], 'authenticated can insert and update description');
+select column_privs_are('public', 'policies', 'is_active', 'authenticated', ARRAY['SELECT', 'UPDATE'], 'authenticated can update is_active but not insert it');
+select column_privs_are('public', 'policies', 'updated_at', 'authenticated', ARRAY['SELECT', 'UPDATE'], 'authenticated can update updated_at but not insert it');
 
 -- Constraints (as postgres, which skips RLS but not CHECKs or unique keys)
 select throws_ok($$insert into public.policies (vendor_id, name, description) values ((select vendor_id from public.vendors where name = 'Alder Creek Landscaping'), '  ', 'x')$$, '23514', null, 'a blank name is refused');
