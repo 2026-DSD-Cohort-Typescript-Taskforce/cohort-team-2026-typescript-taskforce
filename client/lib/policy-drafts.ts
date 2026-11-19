@@ -115,6 +115,33 @@ export function parseDraftBody(
   return { ok: true, body: { kind: 'continue', revision: revision as number, answers, sentence } };
 }
 
+/**
+ * What "Check policy" sends with the sentence. A continue keeps the draft's
+ * policy_updated_at, so once the policy has changed since the draft was made every confirm
+ * answers policy_changed: only a start, which reads it again, can be turned on.
+ */
+export function chooseDraftAction(state: {
+  hasDraft: boolean;
+  policyChanged: boolean;
+}): 'start' | 'continue' {
+  return state.hasDraft && !state.policyChanged ? 'continue' : 'start';
+}
+
+/**
+ * Whether the draft's policy_updated_at is not the policy's updated_at (both null when
+ * there is no policy), compared as instants. The confirm refuses such a draft with
+ * policy_changed.
+ */
+export function draftPolicyIsStale(
+  draftPolicyUpdatedAt: string | null,
+  policyUpdatedAt: string | null,
+): boolean {
+  if (draftPolicyUpdatedAt === policyUpdatedAt) return false;
+  if (draftPolicyUpdatedAt === null || policyUpdatedAt === null) return true;
+  const draftTime = Date.parse(draftPolicyUpdatedAt);
+  return Number.isNaN(draftTime) || draftTime !== Date.parse(policyUpdatedAt);
+}
+
 /** An HTTP reply for the draft route: a status and a JSON body. */
 export type DraftReply = { status: number; body: unknown };
 
@@ -136,7 +163,8 @@ export function invalidDraftRequest(fields: string[]): DraftReply {
   };
 }
 
-export function staleDraft(draft: PolicyDraft): DraftReply {
+/** `draft` is the latest stored one, or null when it is gone. */
+export function staleDraft(draft: PolicyDraft | null): DraftReply {
   return {
     status: 409,
     body: {

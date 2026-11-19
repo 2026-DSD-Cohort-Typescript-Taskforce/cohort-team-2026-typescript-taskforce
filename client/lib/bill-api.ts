@@ -10,6 +10,7 @@ import { SAVE_FAILED } from './bill-errors';
 import type { BillInput } from './bill-validation';
 import type { Bill, FormOptions } from './bill-view';
 import type { ExtractionResult } from './extraction';
+import type { PolicyDraft } from './policy-drafts';
 import { SUBMIT_FAILED } from './submit-errors';
 
 export const UNREACHABLE = 'Could not reach the server. Try again.';
@@ -23,6 +24,8 @@ export type ApiFailure = {
   fields?: string[];
   /** The bill's status now, with not_draft. */
   billStatus?: string;
+  /** The policy draft as it is now, with the draft routes' stale_draft, policy_changed, … replies. */
+  draft?: PolicyDraft | null;
 };
 
 export type ApiResult<T> = { ok: true; data: T } | ({ ok: false } & ApiFailure);
@@ -45,6 +48,7 @@ export async function call<T>(
       code: body?.code,
       fields: body?.fields,
       billStatus: body?.status,
+      draft: body?.draft,
     };
   } catch {
     return { ok: false, status: 0, error: UNREACHABLE };

@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { loadUserRole } from '@/lib/bill-api';
+import { loadProperties } from '@/lib/property-api';
 import { loadPolicyVendors, setPolicyActive } from '@/lib/policy-api';
+import type { PropertyRef } from '@/lib/policy-rule';
 import {
-  NOT_APPLIED_NOTICE,
   canManagePolicies,
   filterPolicyVendors,
   policyBanner,
@@ -87,6 +88,8 @@ export function PoliciesList() {
   const [loading, setLoading] = useState(true);
   /** null while the role loads; false if it can't manage policies or didn't load. */
   const [canManage, setCanManage] = useState<boolean | null>(null);
+  /** For the dialog's rule lines; loaded once. Empty if the load fails (lines show ids). */
+  const [properties, setProperties] = useState<PropertyRef[]>([]);
   const [query, setQuery] = useState('');
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
@@ -134,6 +137,16 @@ export function PoliciesList() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    loadProperties().then((result) => {
+      if (active && result?.ok) setProperties(result.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function reload() {
     setLoading(true);
     load();
@@ -162,12 +175,13 @@ export function PoliciesList() {
     else headingRef.current?.focus();
   }
 
-  function saved(vendorId: number, policy: Policy) {
+  function saved(vendorId: number, policy: Policy, how: 'saved' | 'on') {
     const vendor = dialog?.vendor;
     // Committed now, so closeDialog sees whether the row is still in the list.
     flushSync(() => {
       setVendors((current) => current && replacePolicy(current, vendorId, policy));
-      if (vendor)
+      if (how === 'on') setBanner(policyBanner('on', policy.name));
+      else if (vendor)
         setBanner(vendor.policy ? policyBanner('updated', '') : policyBanner('added', vendor.name));
     });
   }
@@ -307,7 +321,6 @@ export function PoliciesList() {
     <>
       <div className="flex flex-col gap-2">
         <h1 className="text-heading">Policies</h1>
-        <p className="text-body-sm text-secondary">{NOT_APPLIED_NOTICE}</p>
       </div>
       {/* The alerts bring their own margin, so no gap is left while they are empty. */}
       <div className="flex flex-col">
@@ -344,6 +357,7 @@ export function PoliciesList() {
         <PolicyDialog
           key={dialog.vendor.vendor_id}
           vendor={dialog.vendor}
+          properties={properties}
           onClose={closeDialog}
           onSaved={saved}
           onGone={gone}

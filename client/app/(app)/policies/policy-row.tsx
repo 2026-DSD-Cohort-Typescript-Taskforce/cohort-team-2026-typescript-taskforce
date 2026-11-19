@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { checkboxLabel, paymentLine, type PolicyVendor } from '@/lib/policies';
+import { appliedState, checkboxLabel, paymentLine, type PolicyVendor } from '@/lib/policies';
 import { colorTransition, focusRing } from '@/app/ui';
 
 /**
@@ -34,6 +34,13 @@ export function PolicyRow({
   const triggerId = useId();
   const menuId = useId();
   const payment = paymentLine(vendor);
+  const state = appliedState(policy);
+  const stateLine =
+    state === 'applied' && policy?.active_version
+      ? `Applied · version ${policy.active_version.version}`
+      : state === 'not_applied'
+        ? 'On · not applied yet (confirm a rule)'
+        : 'Inactive policy';
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -87,10 +94,11 @@ export function PolicyRow({
       <div className="col-span-3 row-start-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-3 sm:row-start-1">
         {policy ? (
           <>
-            <p className="text-body-sm text-secondary">
-              {policy.is_active ? 'Active policy' : 'Inactive policy'}
-            </p>
+            <p className="text-body-sm text-secondary">{stateLine}</p>
             <p className="font-medium break-words">{policy.name}</p>
+            {policy.active_version && (
+              <p className="text-body-sm break-words">{policy.active_version.interpretation}</p>
+            )}
             <p className="line-clamp-2 text-body-sm break-words text-secondary">
               {policy.description}
             </p>

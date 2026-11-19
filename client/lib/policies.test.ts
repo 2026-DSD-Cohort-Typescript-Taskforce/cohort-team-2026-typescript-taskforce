@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   LOAD_POLICIES_FAILED,
-  NOT_APPLIED_NOTICE,
+  appliedState,
   POLICY_FORBIDDEN,
   POLICY_NOT_FOUND,
   POLICY_VENDOR_NOT_FOUND,
@@ -18,6 +18,7 @@ import {
   policyBanner,
   replacePolicy,
   toPolicyErrorResponse,
+  toPolicy,
   toPolicyVendor,
   type Policy,
   type PolicyVendor,
@@ -29,6 +30,7 @@ const policy = (policy_id: number, name: string, description = 'd', is_active = 
   description,
   is_active,
   updated_at: '2026-11-10T00:00:00Z',
+  active_version: null,
 });
 
 const vendor = (
@@ -60,16 +62,31 @@ test('parseVendorId accepts positive integers up to the Postgres limit', () => {
 
 test('toPolicyVendor unwraps the embedded policy', () => {
   const p = policy(1, 'A');
+  const row = { ...p, active_version: null };
   const base = {
     vendor_id: 1,
     name: 'V',
     supported_payment_methods: null,
     payment_portal_url: null,
   };
-  assert.deepEqual(toPolicyVendor({ ...base, policies: p }), vendor(1, 'V', p));
-  assert.deepEqual(toPolicyVendor({ ...base, policies: [p] }), vendor(1, 'V', p));
+  assert.deepEqual(toPolicyVendor({ ...base, policies: row }), vendor(1, 'V', p));
+  assert.deepEqual(toPolicyVendor({ ...base, policies: [row] }), vendor(1, 'V', p));
   assert.equal(toPolicyVendor({ ...base, policies: [] }).policy, null);
   assert.equal(toPolicyVendor({ ...base, policies: null }).policy, null);
+});
+
+test('toPolicy flattens the confirmer name and keeps null when it is hidden', () => {
+  const version = { version_id: 5, version: 2, interpretation: 'I', confirmed_at: 't' };
+  const row = (confirmer: { name: string | null } | { name: string | null }[] | null) => ({
+    ...policy(1, 'A'),
+    active_version: { ...version, confirmer },
+  });
+  const named = { ...version, confirmed_by_name: 'Pat' };
+  assert.deepEqual(toPolicy(row({ name: 'Pat' })).active_version, named);
+  assert.deepEqual(toPolicy(row([{ name: 'Pat' }])).active_version, named);
+  assert.equal(toPolicy(row(null)).active_version?.confirmed_by_name, null);
+  assert.equal(toPolicy(row({ name: null })).active_version?.confirmed_by_name, null);
+  assert.deepEqual(toPolicy({ ...policy(1, 'A'), active_version: null }), policy(1, 'A'));
 });
 
 test('matchesPolicyVendor searches vendor name, policy name and description ignoring case', () => {
@@ -122,7 +139,6 @@ test('copy helpers', () => {
   assert.equal(policyBanner('added', 'Acme'), 'Policy added for Acme.');
   assert.equal(policyBanner('on', 'Early Pay'), 'Turned on Early Pay.');
   assert.equal(policyBanner('off', 'Early Pay'), 'Turned off Early Pay.');
-  assert.equal(NOT_APPLIED_NOTICE, "Policies are saved here but aren't applied to bills yet.");
   assert.equal(LOAD_POLICIES_FAILED, "Couldn't load policies. Try again.");
   assert.equal(SAVE_POLICY_FAILED, "Couldn't save the policy. Try again.");
   assert.equal(TOGGLE_POLICY_FAILED, "Couldn't change the policy. Try again.");
@@ -163,4 +179,19 @@ test('toPolicyErrorResponse maps database errors to replies', () => {
     toPolicyErrorResponse({ code: 'XX000' }, TOGGLE_POLICY_FAILED).body.error,
     TOGGLE_POLICY_FAILED,
   );
+});
+
+test('appliedState', () => {
+  const base = policy(1, 'P', 'd', true);
+  const version = {
+    version_id: 1,
+    version: 2,
+    interpretation: 'x',
+    confirmed_at: '2026-11-18T00:00:00Z',
+    confirmed_by_name: null,
+  };
+  assert.equal(appliedState({ ...base, active_version: version }), 'applied');
+  assert.equal(appliedState({ ...base, active_version: null }), 'not_applied');
+  assert.equal(appliedState({ ...base, is_active: false, active_version: version }), 'off');
+  assert.equal(appliedState(null), 'off');
 });
