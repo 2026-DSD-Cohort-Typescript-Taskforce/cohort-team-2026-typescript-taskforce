@@ -203,8 +203,8 @@ Server-only variables (never `NEXT_PUBLIC_`):
 
 | Not done                                                                              | Where |
 | ------------------------------------------------------------------------------------- | ----- |
-| Activating a draft, writing `policies.description`, deleting a draft after confirming | DC-91 |
-| Policy versions, effective time                                                       | later |
+| Activating a draft, writing `policies.description`, deleting a draft after confirming | DC-91, [ADR 0004](0004-policy-versions-and-enforcement.md) |
+| Policy versions, effective time                                                       | DC-91, [ADR 0004](0004-policy-versions-and-enforcement.md) |
 | Evaluating a bill against a rule                                                      | DC-92 |
 | Any UI                                                                                | later |
 | Audit of drafts or policy changes                                                     | DC-23 |

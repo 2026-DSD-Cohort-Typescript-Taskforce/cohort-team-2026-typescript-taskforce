@@ -2,7 +2,7 @@
 -- Synthetic data only; everything rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(119);
+select plan(175);
 
 -- Setup (as postgres): login A is a billing operator, B a financial approver, C a system
 -- admin, D has no profile. Vendors 91001 and 91002 are fixtures: 91001 has a policy and a
@@ -206,6 +206,139 @@ set local role anon;
 set local request.jwt.claims = '{"role":"anon"}';
 select throws_ok($$select * from public.policy_versions$$, '42501', null, 'anon cannot read versions');
 reset role;
+
+-- confirm_policy_draft. Fixtures (as postgres): a complete draft per vendor. 91010 is a new
+-- policy, 91011 an existing inactive one, 91012 a long revised sentence, 91017 the system
+-- admin's, 91018 the operator's; the others each break one check, and 91021 stays in place
+-- after the name failures. (policy_drafts refuses a blank revised_sentence, so the blank
+-- fallback to sentence has no row to test; the over-1000 case runs the same branch.)
+insert into public.vendors (vendor_id, name, email, address, phone)
+select v, 'DC91 Confirm ' || v, 'c' || v || '@example.test', '1 Test Way', '555-0100'
+from unnest(array[91010, 91011, 91012, 91013, 91014, 91015, 91016, 91017, 91018, 91019, 91020, 91021]) v;
+insert into public.policies (policy_id, vendor_id, name, description, is_active, updated_at) overriding system value values
+  (91011, 91011, 'Old name', 'Old description.', false, '2026-01-01 00:00:00+00'),
+  (91015, 91015, 'Changed policy', 'Policy.', false, '2026-01-02 00:00:00+00'),
+  (91016, 91016, 'Changed policy 2', 'Policy.', false, '2026-01-03 00:00:00+00');
+insert into public.policy_versions (version_id, policy_id, vendor_id, version, rule, original_sentence, sentence, revised_sentence, interpretation, answers, draft_revision, confirmed_by) overriding system value values
+  (91011, 91011, 91011, 1, '{"schema_version":1,"vendor_id":91011,"rules":[{"effect":"allow","when":{}}]}', 'o', 's', 'r', 'i', '[]', 1, 91102);
+insert into public.policy_drafts (vendor_id, status, original_sentence, sentence, revised_sentence, interpretation, not_covered, rule, answers, policy_updated_at)
+select v, case when v = 91013 then 'needs_clarification' else 'complete' end,
+  'Original ' || v, 'Sentence ' || v,
+  case when v = 91012 then repeat('x', 1001) else 'Revised ' || v end,
+  'Interpretation ' || v, 'Not covered ' || v,
+  case when v = 91019 then '{"schema_version":1,"vendor_id":91999,"rules":[{"effect":"block","when":{}}]}'::jsonb
+       else ('{"schema_version":1,"vendor_id":' || v || ',"rules":[{"effect":"block","when":{}}]}')::jsonb end,
+  '[{"q":"a"}]'::jsonb,
+  case when v = 91011 then '2026-01-01 00:00:00+00'::timestamptz
+       when v = 91016 then '2026-01-04 00:00:00+00'::timestamptz
+       else null end
+from unnest(array[91010, 91011, 91012, 91013, 91014, 91015, 91016, 91017, 91018, 91019, 91021]) v;
+-- 91014: a second write takes its revision to 2, so a request for 1 is stale.
+update public.policy_drafts set sentence = 'Sentence 91014 v2' where vendor_id = 91014;
+-- 91015 has a policy the draft never saw (policy_updated_at null); 91016's differs.
+
+-- The error detail, as raised.
+create function pg_temp.detail_of(p_sql text) returns text
+language plpgsql as $$
+declare
+  v_detail text;
+begin
+  execute p_sql;
+  return 'no error';
+exception when others then
+  get stacked diagnostics v_detail = pg_exception_detail;
+  return v_detail;
+end
+$$;
+
+select has_function('public', 'confirm_policy_draft', array['integer', 'integer', 'text'], 'confirm_policy_draft exists');
+select is(has_function_privilege('anon', 'public.confirm_policy_draft(integer,integer,text)', 'execute'), false, 'anon cannot execute confirm_policy_draft');
+select is(has_function_privilege('authenticated', 'public.confirm_policy_draft(integer,integer,text)', 'execute'), true, 'authenticated can execute confirm_policy_draft');
+select is(has_function_privilege('service_role', 'public.confirm_policy_draft(integer,integer,text)', 'execute'), false, 'service_role cannot execute confirm_policy_draft');
+select is((select prosecdef from pg_proc where oid = 'public.confirm_policy_draft(integer,integer,text)'::regprocedure), true, 'confirm_policy_draft is security definer');
+
+-- Financial approver B confirms a new policy (91010), an existing one (91011) and a long revised sentence (91012)
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000091a2","role":"authenticated"}';
+create temp table confirm_new as select public.confirm_policy_draft(91010, 1, '  DC91 New Name  ') as r;
+create temp table confirm_existing as select public.confirm_policy_draft(91011, 1, 'New name') as r;
+create temp table confirm_long as select public.confirm_policy_draft(91012, 1, 'Long') as r;
+reset role;
+
+select is((select (r -> 'version' ->> 'version')::int from confirm_new), 1, 'new policy: version 1');
+select is((select name from public.policies where vendor_id = 91010), 'DC91 New Name', 'new policy: name trimmed and stored');
+select is((select description from public.policies where vendor_id = 91010), 'Revised 91010', 'new policy: description is the revised sentence');
+select is((select is_active from public.policies where vendor_id = 91010), true, 'new policy: turned on');
+select is((select active_version_id from public.policies where vendor_id = 91010), (select (r -> 'version' ->> 'version_id')::int from confirm_new), 'new policy: active_version_id is the returned version');
+select is((select (r -> 'policy' ->> 'policy_id')::int from confirm_new), (select policy_id from public.policies where vendor_id = 91010), 'new policy: returned policy is the row');
+select is((select (r -> 'policy' ->> 'is_active')::boolean from confirm_new), true, 'new policy: returned policy json is active');
+select is((select count(*)::int from public.policy_drafts where vendor_id = 91010), 0, 'new policy: draft deleted');
+select is((select rule from public.policy_versions where vendor_id = 91010), '{"schema_version":1,"vendor_id":91010,"rules":[{"effect":"block","when":{}}]}'::jsonb, 'new policy: version copies rule');
+select is((select original_sentence from public.policy_versions where vendor_id = 91010), 'Original 91010', 'new policy: version copies original_sentence');
+select is((select sentence from public.policy_versions where vendor_id = 91010), 'Sentence 91010', 'new policy: version copies sentence');
+select is((select revised_sentence from public.policy_versions where vendor_id = 91010), 'Revised 91010', 'new policy: version copies revised_sentence');
+select is((select interpretation from public.policy_versions where vendor_id = 91010), 'Interpretation 91010', 'new policy: version copies interpretation');
+select is((select not_covered from public.policy_versions where vendor_id = 91010), 'Not covered 91010', 'new policy: version copies not_covered');
+select is((select answers from public.policy_versions where vendor_id = 91010), '[{"q":"a"}]'::jsonb, 'new policy: version copies answers');
+select is((select draft_revision from public.policy_versions where vendor_id = 91010), 1, 'new policy: version copies draft_revision');
+select is((select confirmed_by from public.policy_versions where vendor_id = 91010), 91102, 'new policy: confirmed_by is the approver');
+
+select is((select (r -> 'version' ->> 'version')::int from confirm_existing), 2, 'existing policy: version 2');
+select is((select is_active from public.policies where vendor_id = 91011), true, 'existing policy: turned on');
+select is((select name from public.policies where vendor_id = 91011), 'New name', 'existing policy: name replaced');
+select is((select description from public.policies where vendor_id = 91011), 'Revised 91011', 'existing policy: description replaced');
+select is((select active_version_id from public.policies where vendor_id = 91011), (select (r -> 'version' ->> 'version_id')::int from confirm_existing), 'existing policy: active_version_id is the new version');
+select is((select count(*)::int from public.policy_versions where policy_id = 91011), 2, 'existing policy: the old version is kept');
+select is((select policy_id from public.policies where vendor_id = 91011), 91011, 'existing policy: same policy row');
+select ok((select updated_at > '2026-01-01' from public.policies where vendor_id = 91011), 'existing policy: updated_at moved forward');
+select is((select count(*)::int from public.policy_drafts where vendor_id = 91011), 0, 'existing policy: draft deleted');
+
+select is((select description from public.policies where vendor_id = 91012), 'Sentence 91012', 'revised sentence over 1000 characters: description falls back to the sentence');
+select is((select revised_sentence from public.policy_versions where vendor_id = 91012), repeat('x', 1001), 'revised sentence over 1000 characters: version keeps the full revised sentence');
+
+-- Errors, as the approver
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000091a2","role":"authenticated"}';
+select throws_ok($$select public.confirm_policy_draft(91021, 1, '   ')$$, 'PT400', 'invalid_policy', 'blank name is invalid_policy');
+select is(pg_temp.detail_of($$select public.confirm_policy_draft(91021, 1, '   ')$$), '["name"]', 'invalid_policy details name the field');
+select throws_ok($$select public.confirm_policy_draft(91021, 1, null)$$, 'PT400', 'invalid_policy', 'null name is invalid_policy');
+select throws_ok($$select public.confirm_policy_draft(91021, 1, repeat('n', 101))$$, 'PT400', 'invalid_policy', 'name over 100 characters is invalid_policy');
+select throws_ok($$select public.confirm_policy_draft(91999, 1, 'Name')$$, 'PT404', 'vendor_not_found', 'unknown vendor is vendor_not_found');
+select throws_ok($$select public.confirm_policy_draft(91020, 1, 'Name')$$, 'PT404', 'draft_not_found', 'vendor without a draft is draft_not_found');
+select throws_ok($$select public.confirm_policy_draft(91014, 1, 'Name')$$, 'PT409', 'stale_draft', 'old revision is stale_draft');
+select throws_ok($$select public.confirm_policy_draft(91013, 1, 'Name')$$, 'PT409', 'draft_not_complete', 'unfinished draft is draft_not_complete');
+select is(pg_temp.detail_of($$select public.confirm_policy_draft(91013, 1, 'Name')$$), 'needs_clarification', 'draft_not_complete details are the status');
+select throws_ok($$select public.confirm_policy_draft(91015, 1, 'Name')$$, 'PT409', 'policy_changed', 'policy that appeared after the draft is policy_changed');
+select throws_ok($$select public.confirm_policy_draft(91016, 1, 'Name')$$, 'PT409', 'policy_changed', 'policy edited after the draft is policy_changed');
+select throws_ok($$select public.confirm_policy_draft(91019, 1, 'Name')$$, 'PT400', 'invalid_rule', 'rule for another vendor is invalid_rule');
+select lives_ok($$select public.confirm_policy_draft(91021, 1, repeat('n', 100))$$, 'name of exactly 100 characters is fine');
+reset role;
+
+select is((select status from public.policy_drafts where vendor_id = 91013), 'needs_clarification', 'refused: the draft is still there');
+select is((select count(*)::int from public.policy_versions where vendor_id in (91013, 91014, 91015, 91016, 91019)), 0, 'refused: no version written');
+select is((select count(*)::int from public.policies where vendor_id in (91013, 91014, 91019)), 0, 'refused: no policy written');
+select is((select is_active from public.policies where vendor_id = 91015), false, 'policy_changed: the policy is untouched');
+
+-- Billing operator A, a login with no profile (D) and anon are refused
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000091a1","role":"authenticated"}';
+select throws_ok($$select public.confirm_policy_draft(91018, 1, 'Name')$$, 'PT403', 'forbidden', 'billing operator is forbidden');
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000091a4","role":"authenticated"}';
+select throws_ok($$select public.confirm_policy_draft(91018, 1, 'Name')$$, 'PT403', 'forbidden', 'login without a profile is forbidden');
+reset role;
+set local role anon;
+set local request.jwt.claims = '{"role":"anon"}';
+select throws_ok($$select public.confirm_policy_draft(91018, 1, 'Name')$$, '42501', null, 'anon cannot call confirm_policy_draft');
+reset role;
+select is((select count(*)::int from public.policy_drafts where vendor_id = 91018), 1, 'refused callers: the draft is still there');
+
+-- System admin C can confirm
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-0000000091a3","role":"authenticated"}';
+create temp table confirm_admin as select public.confirm_policy_draft(91017, 1, 'Admin name') as r;
+reset role;
+select is((select confirmed_by from public.policy_versions where vendor_id = 91017), 91103, 'system admin can confirm');
+select is((select is_active from public.policies where vendor_id = 91017), true, 'system admin confirm turns the policy on');
 
 select * from finish();
 rollback;
