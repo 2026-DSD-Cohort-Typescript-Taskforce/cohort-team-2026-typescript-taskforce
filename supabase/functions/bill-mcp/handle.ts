@@ -49,7 +49,10 @@ export type BillMcpDeps = {
   authorizePayment: (attempt: PaymentAttempt) => Promise<{ error?: string }>;
   startSubmission: (paymentId: number) => Promise<{ error?: string }>;
   recordOutcome: (outcome: PaymentOutcome) => Promise<{ payment?: RecordedPayment; error?: string }>;
-  payApproved?: (userAuth: string, billId: number) => Promise<unknown>;
+  pendingBillIds?: () => Promise<number[]>;
+  billForAutomation?: (billId: number) => Promise<Bill | null>;
+  prepareAutomatedPayment?: (billId: number) => Promise<{ attempt?: PaymentAttempt; error?: string }>;
+  authorizeAutomatedPayment?: (attempt: PaymentAttempt) => Promise<{ error?: string }>;
 };
 
 type Bill = {
@@ -223,10 +226,20 @@ function transactionReference(execution: { receipt?: unknown } | null, fallback:
   return fallback;
 }
 
-async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
+async function executeApprovedPayment(
+  deps: BillMcpDeps,
+  userAuth: string,
+  args: Record<string, unknown>,
+  automated = false,
+) {
   const billId = integer(field(args, 'bill_id', 'billId'));
   if (billId === null) return { error: 'invalid arguments' };
-  const loaded = await loadBill(deps, userAuth, billId);
+  const automatedBill = automated ? await deps.billForAutomation?.(billId) : undefined;
+  const loaded = automated
+    ? automatedBill
+      ? { bill: automatedBill }
+      : { error: 'not_found' as const }
+    : await loadBill(deps, userAuth, billId);
   if ('error' in loaded) return loaded;
   const bill = loaded.bill;
   if (bill.status !== 'pending_payment') return { error: 'not_pending_payment' };
@@ -238,9 +251,15 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if (bill.vendor_id === null || bill.invoice_number === null || bill.amount === null || !deps.stagehandUrl || !deps.canRecord) {
     return { error: 'worker not configured' };
   }
-  const prepared = await deps.preparePayment(bill.bill_id);
+  const prepared = automated
+    ? await deps.prepareAutomatedPayment?.(bill.bill_id)
+    : await deps.preparePayment(bill.bill_id);
+  if (!prepared) return { error: 'automation not configured' };
   if (prepared.error || !prepared.attempt) return { error: prepared.error ?? 'prepare_payment failed' };
-  const authorized = await deps.authorizePayment(prepared.attempt);
+  const authorized = automated
+    ? await deps.authorizeAutomatedPayment?.(prepared.attempt)
+    : await deps.authorizePayment(prepared.attempt);
+  if (!authorized) return { error: 'automation not configured' };
   if (authorized.error) return { error: authorized.error };
   const started = await deps.startSubmission(prepared.attempt.paymentId);
   if (started.error) return { error: started.error };
@@ -292,16 +311,11 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
 }
 
 async function sweepApprovedPayments(deps: BillMcpDeps, userAuth: string) {
-  const listed: { bills?: { bill_id?: unknown; status?: unknown }[]; error?: unknown } = await appGet(deps, userAuth, '/api/bills');
-  if (!Array.isArray(listed.bills)) return listed;
+  if (!deps.pendingBillIds) return { error: 'automation not configured' };
+  const billIds = await deps.pendingBillIds();
   const results = [];
-  for (const entry of listed.bills) {
-    if (!entry || entry.status !== 'pending_payment') continue;
-    const billId = integer(entry.bill_id);
-    if (billId === null) continue;
-    const outcome = deps.payApproved
-      ? await deps.payApproved(userAuth, billId)
-      : await executeApprovedPayment(deps, userAuth, { bill_id: billId });
+  for (const billId of billIds) {
+    const outcome = await executeApprovedPayment(deps, userAuth, { bill_id: billId }, true);
     results.push({ bill_id: billId, outcome });
   }
   return { ok: true, results };
@@ -326,26 +340,6 @@ async function retryPaymentReceipt(deps: BillMcpDeps, userAuth: string, args: Re
   const receipt = await deps.persistReceipt(payment, { ...payment, idempotency_key: payment.idempotencyKey }, body.receipt)
     .catch(() => ({ status: 'failed', error: 'upload_failed' } as const));
   return { receipt };
-}
-
-export async function askAgentToPay(
-  fetchImpl: typeof fetch,
-  env: { agentUrl: string | undefined },
-  userAuth: string,
-  billId: number,
-) {
-  if (!env.agentUrl) return { error: 'agent not configured' };
-  const authorization = /^Bearer\s+/i.test(userAuth) ? userAuth : `Bearer ${userAuth}`;
-  const response = await fetchImpl(env.agentUrl, {
-    method: 'POST',
-    headers: { Authorization: authorization, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      task: `Pay bill ${billId}. Call execute_approved_payment with bill_id ${billId}. Do not pay any other bill.`,
-    }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) return { error: 'agent failed', body };
-  return body;
 }
 
 export async function handleBillMcp(

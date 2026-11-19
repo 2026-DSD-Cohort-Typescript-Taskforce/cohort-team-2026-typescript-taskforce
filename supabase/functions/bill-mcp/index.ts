@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { persistReceipt } from './receipt.ts';
-import { askAgentToPay, handleBillMcp } from './handle.ts';
+import { handleBillMcp } from './handle.ts';
 
 function paymentAttempt(row: Record<string, unknown>) {
   const paymentId = row.payment_id;
@@ -66,13 +66,25 @@ Deno.serve(async (req) => {
       // The attempt is claimed before /execute. canRecord stays off without the service
       // client, because prepare, start, and record_payment are service-role calls.
       canRecord: admin !== null,
-      payApproved: (userAuth, billId) =>
-        askAgentToPay(
-          fetch,
-          { agentUrl: Deno.env.get('AGENT_BILLS_URL') ?? `${supabaseUrl}/functions/v1/agent-bills` },
-          userAuth,
-          billId,
-        ),
+      pendingBillIds: async () => {
+        if (!admin) return [];
+        const { data, error } = await admin
+          .from('bills')
+          .select('bill_id')
+          .eq('status', 'pending_payment')
+          .order('bill_id');
+        if (error) throw error;
+        return data.map((bill) => bill.bill_id);
+      },
+      billForAutomation: async (billId) => {
+        if (!admin) return null;
+        const { data, error } = await admin
+          .from('bills')
+          .select('bill_id,status,amount,vendor_id,invoice_number')
+          .eq('bill_id', billId)
+          .maybeSingle();
+        return error ? null : data;
+      },
       receiptPayment: async (billId, paymentId) => {
         const { data, error } = await supabase.rpc('get_payment_receipt', { p_bill_id: billId, p_payment_id: paymentId });
         return error ? null : { ...data, bill_id: data.billId };
@@ -102,7 +114,7 @@ Deno.serve(async (req) => {
       },
       fetch,
       portalUrl: async (vendorId) => {
-        const { data } = await supabase
+        const { data } = await (admin ?? supabase)
           .from('vendors')
           .select('payment_portal_url')
           .eq('vendor_id', vendorId)
@@ -110,11 +122,12 @@ Deno.serve(async (req) => {
         return data?.payment_portal_url ?? null;
       },
       latestApproval: async (billId) => {
-        const { data } = await supabase
+        const { data } = await (admin ?? supabase)
           .from('approvals')
           .select('status')
           .eq('bill_id', billId)
           .order('created_at', { ascending: false })
+          .order('approval_id', { ascending: false })
           .limit(1)
           .maybeSingle();
         return data?.status ?? null;
@@ -138,12 +151,42 @@ Deno.serve(async (req) => {
         const attempt = paymentAttempt(data as Record<string, unknown>);
         return attempt ? { attempt } : { error: 'prepare_payment failed' };
       },
+      prepareAutomatedPayment: async (billId) => {
+        if (!admin) return { error: 'prepare_payment failed' };
+        const { data: approval, error: approvalError } = await admin
+          .from('approvals')
+          .select('approved_by,status')
+          .eq('bill_id', billId)
+          .order('created_at', { ascending: false })
+          .order('approval_id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (approvalError || approval?.status !== 'approved' || typeof approval.approved_by !== 'number') {
+          return { error: 'not_approved' };
+        }
+        const { data, error } = await admin.rpc('prepare_payment', {
+          p_bill_id: billId,
+          p_prepared_by: approval.approved_by,
+          p_fees_cents: 0,
+          p_payment_date: new Date().toISOString().slice(0, 10),
+        });
+        if (error || !data || typeof data !== 'object') return { error: 'prepare_payment failed' };
+        const attempt = paymentAttempt(data as Record<string, unknown>);
+        return attempt ? { attempt } : { error: 'prepare_payment failed' };
+      },
       authorizePayment: async (attempt) => {
         const { error } = await supabase.rpc('authorize_payment', {
           p_payment_id: attempt.paymentId,
           p_summary: attempt.summary,
         });
         return error ? { error: 'authorize_payment failed' } : {};
+      },
+      authorizeAutomatedPayment: async (attempt) => {
+        if (!admin) return { error: 'authorize_payment failed' };
+        const { error } = await admin.rpc('authorize_approved_payment', {
+          p_payment_id: attempt.paymentId,
+        });
+        return error ? { error: error.message || 'authorize_payment failed' } : {};
       },
       startSubmission: async (paymentId) => {
         if (!admin) return { error: 'start_payment_submission failed' };

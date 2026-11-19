@@ -556,7 +556,7 @@ Deno.serve(async (req) => {
 
   const { data: submitted, error: submitError } = await supabase.rpc("submit_bill", {
     p_bill_id: bill.bill_id,
-    p_auto_approve: true,
+    p_needs_approval: true,
   });
   if (submitError) {
     return reply("draft", `Saved as a draft. It couldn't be submitted: ${submitError.message}.`, { bill });

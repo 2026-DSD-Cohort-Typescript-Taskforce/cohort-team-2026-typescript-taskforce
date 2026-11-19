@@ -1,12 +1,12 @@
 # Hourly payment sweep
 
-Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261118150000_pay_approved_hourly.sql`
+Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261118160000_pay_approved_hourly.sql`, `supabase/migrations/20261118210000_authorize_approved_payment.sql`
 
 Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
 ## Current view
 
-The hourly sweep lists pending bills and asks agent-bills to pay each one. execute_approved_payment prepares, authorizes, and starts the attempt before /execute, then records the outcome. canRecord is on only when the service client exists. The model can skip the tool. The user token expires.
+The hourly cron authenticates only with bill-mcp's service secret. bill-mcp lists pending bills through the service client and deterministically runs the existing payment pipeline for each one; no model decides whether to call it. Each attempt is prepared for the latest real approver, and the service-only `authorize_approved_payment` function rechecks that the newest approval is approved before assigning that approver as `authorized_by`. No user access token is stored in Vault.
 
 ## Lessons
 
@@ -15,6 +15,7 @@ The hourly sweep lists pending bills and asks agent-bills to pay each one. execu
 ## History
 
 ### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
+
 **Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
 **Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
 **Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.

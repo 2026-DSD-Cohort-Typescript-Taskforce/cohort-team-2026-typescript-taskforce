@@ -1,5 +1,5 @@
 -- Hourly sweep through bill-mcp. The job reads vault secrets at run time:
--- project_url (https://<ref>.supabase.co), bill_mcp_token, and pay_user_authorization.
+-- project_url (https://<ref>.supabase.co) and bill_mcp_token.
 -- A database without pg_cron or pg_net skips the job so local reset can continue.
 
 do $schedule$
@@ -17,8 +17,7 @@ begin
       url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/bill-mcp',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'bill_mcp_token'),
-        'x-user-authorization', (select decrypted_secret from vault.decrypted_secrets where name = 'pay_user_authorization')
+        'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'bill_mcp_token')
       ),
       body := '{"method":"sweep_approved_payments"}'::jsonb
     );
