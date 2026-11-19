@@ -145,6 +145,8 @@ export class ExecutionStore implements ExecutionRepository {
   }
 
   private async syncDirectory(path: string) {
+    // Windows refuses fsync on a directory handle (EPERM); NTFS journals the rename/mkdir.
+    if (process.platform === 'win32') return;
     const directory = await open(path, 'r');
     try {
       await directory.sync();

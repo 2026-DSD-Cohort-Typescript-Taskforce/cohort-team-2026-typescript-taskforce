@@ -212,6 +212,12 @@ test('execution prepares login and checkout but leaves the final payment click t
   assert.ok(
     !preparationSteps(profile, 'execute').some((step) => step.selector === profile.paySelector),
   );
+  assert.ok(profile.pay!.some((step) => step.action === 'select' && step.value === 'success'));
+  assert.throws(() =>
+    parsePortalProfiles(
+      JSON.stringify([{ ...profile, pay: [{ action: 'select', selector: 'select' }] }]),
+    ),
+  );
 });
 
 test('exact decimal parsing never rounds or accepts ambiguous amounts', () => {

@@ -7,10 +7,11 @@ import type { PortalBrowser, PortalSession } from './worker';
 import { guardNavigation } from './navigation-guard';
 import { assertPaymentMatch } from './worker-input';
 const selector = z.string().min(1);
-const stepSchema = z.strictObject({
-  action: z.enum(['click', 'login', 'check', 'wait']),
-  selector,
-});
+const stepSchema = z.union([
+  z.strictObject({ action: z.enum(['click', 'login', 'check', 'wait']), selector }),
+  // Native <select> dropdowns. Custom/<details> menus are just `click` steps on their toggle.
+  z.strictObject({ action: z.literal('select'), selector, value: z.string() }),
+]);
 const profileSchema = z
   .strictObject({
     portalUrl: z.url().optional(),
@@ -63,10 +64,20 @@ export async function runCapture(page: CapturePage, steps: CaptureStep[]) {
     const started = Date.now();
     let outcome: 'missing' | 'ready' = 'missing';
     while (Date.now() - started < 10000) {
-      outcome = await page.evaluate(({ selector, action }) => {
+      outcome = await page.evaluate((step) => {
+        const { selector, action } = step;
         const node = document.querySelector(selector);
         if (!(node instanceof HTMLElement) || node.getClientRects().length === 0) return 'missing';
         if (action === 'wait') return 'ready';
+        if (step.action === 'select') {
+          if (!(node instanceof HTMLSelectElement)) return 'missing';
+          if (![...node.options].some((option) => option.value === step.value)) return 'missing';
+          node.value = step.value;
+          // Portals swap fieldsets/accounts on change, so fire the events a real pick would.
+          node.dispatchEvent(new Event('input', { bubbles: true }));
+          node.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'ready';
+        }
         if (action === 'login') {
           if (!(node instanceof HTMLFormElement)) return 'missing';
           const text = document.body.innerText;
