@@ -6,7 +6,6 @@ import type { ExecuteRequest, ObserveRequest } from './payment-contract';
 import type { PortalBrowser, PortalSession } from './worker';
 import { guardNavigation } from './navigation-guard';
 import { assertPaymentMatch } from './worker-input';
-
 const selector = z.string().min(1);
 const stepSchema = z.strictObject({
   action: z.enum(['click', 'login', 'check', 'wait']),
@@ -92,34 +91,41 @@ export async function runCapture(page: CapturePage, steps: CaptureStep[]) {
   }
 }
 
+export type StagehandBrowserOptions = {
+  profilesJson?: string;
+  provider?: 'local' | 'browserbase';
+  browserbaseApiKey?: string;
+};
+
 /** Selectors are trusted operator configuration, never accepted in HTTP requests. */
 export class StagehandBrowser implements PortalBrowser {
-  constructor(private readonly profilesFile: string | undefined) {}
+  constructor(
+    private readonly profilesFile: string | undefined,
+    private readonly options: StagehandBrowserOptions = {},
+  ) {}
 
   private async profiles(): Promise<PortalProfile[]> {
-    if (!this.profilesFile)
+    if (!this.options.profilesJson && !this.profilesFile)
       throw new HttpError(503, 'Portal execution is not configured.', 'portal_error');
     try {
-      return parsePortalProfiles(await readFile(this.profilesFile, 'utf8'));
+      const source = this.options.profilesJson ?? (await readFile(this.profilesFile!, 'utf8'));
+      return parsePortalProfiles(source);
     } catch {
       throw new HttpError(503, 'Portal configuration is invalid.', 'portal_error');
     }
   }
-
   private async profile(input: ObserveRequest) {
     const profile = (await this.profiles()).find((p) => p.portalUrl === input.portalUrl);
     if (!profile)
       throw new HttpError(422, 'Portal is not configured for execution.', 'invalid_request');
     return profile;
   }
-
   async prepareExecution(input: ExecuteRequest) {
     const profile = await this.profile(input);
     if (profile.vendorId !== input.vendorId)
       throw new HttpError(422, 'Portal vendor does not match.', 'payment_mismatch');
     return { unit: profile.amountUnit, open: () => this.open(input, 'execute', profile) };
   }
-
   async open(
     input: ObserveRequest,
     mode: 'observe' | 'execute',
@@ -132,9 +138,65 @@ export class StagehandBrowser implements PortalBrowser {
     if (mode === 'observe' && !profile)
       throw new HttpError(422, 'Portal is not configured for execution.', 'invalid_request');
     if (!profile) throw new HttpError(503, 'Execution profile was not validated.', 'portal_error');
-    const { localBrowser, Stagehand } = await import('@browserbasehq/stagehand');
-    // New temporary Chrome profile per request. No shared login/session state.
-    const browser = await localBrowser.launch({ headless: true });
+    const provider = this.options.provider ?? 'local';
+    const stagehandModule = await import('@browserbasehq/stagehand');
+    if (provider === 'browserbase' && !this.options.browserbaseApiKey) {
+      throw new HttpError(503, 'Browserbase is not configured.', 'portal_error');
+    }
+    const allowedUrls = [
+      input.portalUrl,
+      ...(mode === 'execute' && profile.confirmationUrl ? [profile.confirmationUrl] : []),
+    ];
+    // New temporary browser per request. No shared login/session state.
+    const launched = await (async () => {
+      if (provider === 'local') {
+        const browser = await stagehandModule.localBrowser.launch({
+          headless: process.env.STAGEHAND_DEBUG !== 'true' || process.env.NODE_ENV === 'production',
+        });
+        return { browser, guardCdpUrl: browser.cdpUrl, cleanupProvider: async () => undefined };
+      }
+
+      // Browserbase's native Stagehand handle intentionally hides its CDP URL. Create the
+      // session directly, restrict main-frame navigation at the provider, then attach through
+      // the returned CDP endpoint so our stricter exact-URL/request-method guard also applies.
+      const { default: Browserbase, toFile } = await import('@browserbasehq/sdk');
+      const client = new Browserbase({ apiKey: this.options.browserbaseApiKey! });
+      const extension = await client.extensions.create({
+        file: await toFile(await stagehandModule.getExtensionArchive(), 'stagehand-extension.zip'),
+      });
+      let session: Awaited<ReturnType<typeof client.sessions.create>>;
+      try {
+        session = await client.sessions.create({
+          api_timeout: 120,
+          extensionId: extension.id,
+          browserSettings: {
+            allowedDomains: [...new Set(allowedUrls.map((url) => new URL(url).hostname))],
+          },
+        });
+      } catch (error) {
+        await client.extensions.delete(extension.id).catch(() => undefined);
+        throw error;
+      }
+      try {
+        const browser = await stagehandModule.browserbase.connect({
+          apiKey: this.options.browserbaseApiKey!,
+          sessionId: session.id,
+        });
+        return {
+          browser,
+          guardCdpUrl: session.connectUrl,
+          cleanupProvider: () => client.extensions.delete(extension.id),
+        };
+      } catch (error) {
+        await client.sessions
+          .update(session.id, { status: 'REQUEST_RELEASE' })
+          .catch(() => undefined);
+        await client.extensions.delete(extension.id).catch(() => undefined);
+        throw error;
+      }
+    })();
+    const { browser, guardCdpUrl, cleanupProvider } = launched;
+    const { Stagehand } = stagehandModule;
     let guard: Awaited<ReturnType<typeof guardNavigation>> | undefined;
     let stagehand: Awaited<ReturnType<typeof Stagehand.create>> | undefined;
     try {
@@ -149,15 +211,8 @@ export class StagehandBrowser implements PortalBrowser {
           },
         },
       });
-      if (!browser.cdpUrl) throw new Error('Browser has no local CDP endpoint');
-      guard = await guardNavigation(
-        browser.cdpUrl,
-        [
-          input.portalUrl,
-          ...(mode === 'execute' && profile.confirmationUrl ? [profile.confirmationUrl] : []),
-        ],
-        mode === 'observe',
-      );
+      if (!guardCdpUrl) throw new Error('Browser CDP endpoint is unavailable');
+      guard = await guardNavigation(guardCdpUrl, allowedUrls, mode === 'observe');
       const [page] = await browser.context.pages();
       if (!page) throw new Error('Browser page unavailable');
       const response = await page.goto(input.portalUrl, { timeout: 30000 });
@@ -336,7 +391,11 @@ export class StagehandBrowser implements PortalBrowser {
             try {
               await browser.close();
             } finally {
-              guard!.close();
+              try {
+                await cleanupProvider();
+              } finally {
+                guard?.close();
+              }
             }
           }
         },
@@ -344,6 +403,7 @@ export class StagehandBrowser implements PortalBrowser {
     } catch (error) {
       await stagehand?.close().catch(() => {});
       await browser.close().catch(() => {});
+      await cleanupProvider().catch(() => {});
       guard?.close();
       if (error instanceof HttpError) throw error;
       const failure = new HttpError(

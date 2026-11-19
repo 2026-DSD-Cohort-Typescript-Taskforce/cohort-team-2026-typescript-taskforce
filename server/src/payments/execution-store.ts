@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, rename, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { HttpError } from '../middleware/errorHandler';
-import type { ExecuteRequest, ExecuteResponse } from './payment-contract';
+import type { ExecuteRequest, ExecuteResponse, PaymentReceipt } from './payment-contract';
 
 interface RecordData {
   fingerprint: string;
@@ -20,14 +20,17 @@ export interface ExecutionClaim {
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
-/** A single durable local volume shared by every process serving these routes. */
-export class ExecutionStore {
-  constructor(private readonly directory: string) {}
+export const executionKeyHash = (key: string) => hash(key);
 
-  async claim(input: ExecuteRequest, cents: number): Promise<ExecutionClaim> {
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const location = join(this.directory, hash(input.idempotencyKey));
-    const fingerprint = hash(
+export interface ExecutionRepository {
+  claim(input: ExecuteRequest, cents: number): Promise<ExecutionClaim>;
+  receipt(billId: number, key: string): Promise<PaymentReceipt | undefined>;
+}
+
+export function executionIdentity(input: ExecuteRequest, cents: number) {
+  return {
+    keyHash: executionKeyHash(input.idempotencyKey),
+    fingerprint: hash(
       JSON.stringify([
         input.billId,
         input.portalUrl,
@@ -36,7 +39,19 @@ export class ExecutionStore {
         input.invoiceNumber,
         cents,
       ]),
-    );
+    ),
+  };
+}
+
+/** A single durable local volume shared by every process serving these routes. */
+export class ExecutionStore implements ExecutionRepository {
+  constructor(private readonly directory: string) {}
+
+  async claim(input: ExecuteRequest, cents: number): Promise<ExecutionClaim> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const identity = executionIdentity(input, cents);
+    const location = join(this.directory, identity.keyHash);
+    const fingerprint = identity.fingerprint;
     const save = async (state: RecordData['state'], result?: ExecuteResponse) => {
       const file = await open(join(location, 'record.tmp'), 'w', 0o600);
       try {
