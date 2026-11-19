@@ -13,8 +13,13 @@ import { errorHandler, HttpError } from '../src/middleware/errorHandler';
 import { BrowserWorker, type PortalBrowser, type PortalSession } from '../src/payments/worker';
 import { ExecutionStore } from '../src/payments/execution-store';
 import { dollarsToCents, executeSchema } from '../src/payments/worker-input';
-import { StagehandBrowser } from '../src/payments/stagehand-browser';
-import { writeFile } from 'node:fs/promises';
+import {
+  parsePortalProfiles,
+  preparationSteps,
+  selectObserveProfile,
+  StagehandBrowser,
+} from '../src/payments/stagehand-browser';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const request = {
   billId: 7,
@@ -183,6 +188,30 @@ test('observation rejects a URL absent from operator portal profiles before Chro
   } finally {
     await rm(path, { recursive: true, force: true });
   }
+});
+
+test('checked-in portal profiles are pinned to exact vendor URLs', async () => {
+  const profiles = parsePortalProfiles(await readFile(join(__dirname, '../profiles.json'), 'utf8'));
+  assert.equal(profiles.length, 9);
+  assert.ok(profiles.every((profile) => profile.portalUrl && profile.vendorId));
+
+  const profile = selectObserveProfile(profiles, 'https://copper-ridge-utility-demo.vercel.app');
+  assert.ok(profile);
+  assert.equal(profile.vendorId, 3);
+  assert.equal(profile.capture?.[0]?.selector, "footer a[href='#signin/account']");
+  assert.equal(selectObserveProfile(profiles, 'https://unconfigured.example'), undefined);
+});
+
+test('execution prepares login and checkout but leaves the final payment click to submit', async () => {
+  const profiles = parsePortalProfiles(await readFile(join(__dirname, '../profiles.json'), 'utf8'));
+  const profile = selectObserveProfile(profiles, 'https://brightwater-utility-demo.vercel.app');
+  assert.ok(profile);
+
+  assert.deepEqual(preparationSteps(profile, 'observe'), profile.capture);
+  assert.deepEqual(preparationSteps(profile, 'execute'), [...profile.capture!, ...profile.pay!]);
+  assert.ok(
+    !preparationSteps(profile, 'execute').some((step) => step.selector === profile.paySelector),
+  );
 });
 
 test('exact decimal parsing never rounds or accepts ambiguous amounts', () => {

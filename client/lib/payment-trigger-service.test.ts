@@ -84,14 +84,25 @@ test('eligibility and worker failures are mapped without exposing upstream text'
     ['worker failed', 502, 'failed'],
     ['record_payment failed', 409, 'unknown'],
   ] as const;
+  const reasons: Record<string, string> = {
+    not_pending_payment: 'not pending payment',
+    not_approved: 'not approved',
+    snapshot_mismatch: 'invoice number or the amount',
+    'no portal url': 'no payment portal URL',
+  };
   for (const [error, status, outcome] of cases) {
     const reply = await runPaymentTrigger({
       billId: 12,
       role: 'system_admin',
-      invoke: async () => ({ ok: true, status: 200, body: { error, secret: 'hidden' } }),
+      invoke: async () => ({
+        ok: true,
+        status: 200,
+        body: { error, fields: ['invoice_number', 'amount'], secret: 'hidden' },
+      }),
     });
     assert.equal(reply.status, status, error);
     assert.equal(reply.body.outcome, outcome, error);
+    if (reasons[error]) assert.match(reply.body.message, new RegExp(reasons[error], 'i'));
     assert.equal(JSON.stringify(reply.body).includes('hidden'), false);
   }
 });
