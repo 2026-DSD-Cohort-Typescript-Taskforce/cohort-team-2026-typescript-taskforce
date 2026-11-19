@@ -12,6 +12,7 @@ function bill() {
     amount: 40.5,
     vendor_id: 3,
     invoice_number: 'INV-1',
+    payment_method_id: 5,
   };
 }
 
@@ -116,7 +117,16 @@ function call(body: unknown, authorization: string | null = `Bearer ${TOKEN}`, h
 }
 
 // What the DC-113 dialog showed the admin for bill 12.
-const shown = { bill_id: 12, vendor_id: 3, invoice_number: 'INV-1', amount: 40.5 };
+const shown = {
+  bill_id: 12,
+  vendor_id: 3,
+  invoice_number: 'INV-1',
+  payment_method_id: 5,
+  amount: 40.5,
+  fees: 0,
+  currency: 'USD',
+  payment_date: '2026-11-18',
+};
 
 function pay(built: ReturnType<typeof deps>, arguments_: Record<string, unknown> = shown) {
   return handleBillMcp(
@@ -270,12 +280,11 @@ test('success runs prepare, authorize, claim, execute and record in order', asyn
     ['service', 'user', 'service', 'service'],
   );
   const [prepare, authorize, start, record] = built.rpcCalls;
-  const { p_payment_date: paymentDate, ...prepareArgs } = prepare.args;
-  assert.match(String(paymentDate), /^\d{4}-\d{2}-\d{2}$/);
-  assert.deepEqual(prepareArgs, {
+  assert.deepEqual(prepare.args, {
     p_bill_id: 12,
     p_prepared_by: 7,
     p_fees_cents: 0,
+    p_payment_date: '2026-11-18',
     p_account_reference: null,
     p_policy_refs: [],
   });
@@ -367,10 +376,16 @@ test('values the admin saw that differ from the bill stop before preparing', asy
   assert.deepEqual(built.steps, ['/api/bills/12']);
 
   const all = deps();
-  const differs = await pay(all, { bill_id: 12, vendor_id: 4, invoice_number: 'INV-2', amount: 1 });
+  const differs = await pay(all, {
+    ...shown,
+    vendor_id: 4,
+    invoice_number: 'INV-2',
+    payment_method_id: 6,
+    amount: 1,
+  });
   assert.deepEqual(differs.body, {
     error: 'summary_mismatch',
-    fields: ['vendor_id', 'invoice_number', 'amount'],
+    fields: ['vendor_id', 'invoice_number', 'payment_method_id', 'amount'],
   });
   assert.equal(all.rpcCalls.length, 0);
 });
@@ -385,7 +400,7 @@ test('a prepared attempt that differs from what was shown is cancelled', async (
     },
   );
   const result = await pay(built);
-  assert.deepEqual(result.body, { error: 'summary_mismatch', fields: ['amount'] });
+  assert.deepEqual(result.body, { error: 'summary_mismatch', fields: ['amount', 'total'] });
   assert.deepEqual(rpcNames(built), ['prepare_payment', 'cancel_payment']);
   assert.deepEqual(built.rpcCalls[1], {
     name: 'cancel_payment',
@@ -393,6 +408,34 @@ test('a prepared attempt that differs from what was shown is cancelled', async (
     as: 'user',
   });
   assert.equal(executeCalls(built).length, 0);
+});
+
+test('every authorized value must be one the admin was shown', async () => {
+  const cases: [Record<string, unknown>, Record<string, unknown>, string[]][] = [
+    [{}, { payment_method_id: 6 }, ['payment_method_id']],
+    [{}, { fees_cents: 150, total_cents: 4200 }, ['fees', 'total']],
+    [{}, { currency: 'CAD' }, ['currency']],
+    [{}, { payment_date: '2026-11-19' }, ['payment_date']],
+    [{}, { account_reference: 'ACCT-9' }, ['account_reference']],
+    [{ fees: 1.5 }, {}, ['fees', 'total']],
+    [{ currency: 'EUR' }, {}, ['currency']],
+  ];
+  for (const [sent, prepared, fields] of cases) {
+    const built = deps({}, { rpc: { prepare_payment: () => ({ data: attempt(prepared), error: null }) } });
+    const result = await pay(built, { ...shown, ...sent });
+    const label = JSON.stringify([sent, prepared]);
+    assert.deepEqual(result.body, { error: 'summary_mismatch', fields }, label);
+    assert.deepEqual(rpcNames(built), ['prepare_payment', 'cancel_payment'], label);
+    assert.equal(executeCalls(built).length, 0, label);
+  }
+});
+
+test('the attempt is prepared for the payment date the admin was shown', async () => {
+  const built = deps({}, { rpc: { prepare_payment: () => ({ data: attempt({ payment_date: '2026-11-19' }), error: null }) } });
+  const result = await pay(built, { ...shown, payment_date: '2026-11-19' });
+  assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
+  assert.equal(built.rpcCalls[0].args.p_payment_date, '2026-11-19');
+  assert.equal((built.rpcCalls[1].args.p_summary as Record<string, unknown>).payment_date, '2026-11-19');
 });
 
 test('40.10 shown for a 40.1 bill counts as the same amount', async () => {
@@ -976,6 +1019,10 @@ test('camelCase bill fields count as the same snapshot', async () => {
     amount: '40.50',
     vendorId: '3',
     invoiceNumber: 'INV-1',
+    paymentMethodId: '5',
+    fees: '0',
+    currency: 'USD',
+    paymentDate: '2026-11-18',
     idempotencyKey: 'pay-1',
   });
   assert.equal((result.body as { payment: { status: string } }).payment.status, 'success');
@@ -983,14 +1030,19 @@ test('camelCase bill fields count as the same snapshot', async () => {
 });
 
 test('bill_id alone returns invalid arguments and calls nothing', async () => {
+  const without = (key: string) => Object.fromEntries(Object.entries(shown).filter(([name]) => name !== key));
   const missing = [
     { bill_id: 12 },
-    { vendor_id: 3, invoice_number: 'INV-1', amount: 40.5 },
-    { bill_id: 12, invoice_number: 'INV-1', amount: 40.5 },
-    { bill_id: 12, vendor_id: 3, amount: 40.5 },
-    { bill_id: 12, vendor_id: 3, invoice_number: 'INV-1' },
+    ...Object.keys(shown).map(without),
     { ...shown, amount: '40.555' },
     { ...shown, invoice_number: ' ' },
+    { ...shown, payment_method_id: 0 },
+    { ...shown, fees: -1 },
+    { ...shown, fees: '0.001' },
+    { ...shown, currency: 'usd' },
+    { ...shown, currency: 'US' },
+    { ...shown, payment_date: '2026-02-30' },
+    { ...shown, payment_date: '11/18/2026' },
   ];
   for (const arguments_ of missing) {
     const built = deps();

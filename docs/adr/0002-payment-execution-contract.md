@@ -24,7 +24,7 @@ Repeated `idempotencyKey` values must never submit another payment, including co
 Before calling `/execute`, bill-mcp checks:
 
 - The bill is `pending_payment` or `payment_failed`.
-- The vendor, invoice, and amount the admin confirmed equal the bill.
+- The payment summary the admin confirmed (vendor, invoice, payment method, amount, fees, total, currency, payment date) equals the bill and the prepared attempt; that shown summary is what `authorize_payment` receives.
 - The portal page shows the amount and invoice.
 - A prepared, authorized attempt was claimed with `start_payment_submission`.
 

@@ -14,21 +14,48 @@ export type BillMcpReply = {
   body: Record<string, unknown> | null;
 };
 
-/** The vendor, invoice and amount the admin saw in the confirm dialog. */
-export type ShownPayment = { vendor_id: number; invoice_number: string; amount: number | string };
+/** Every value of the payment summary the admin saw in the confirm dialog; bill-mcp authorizes exactly these. */
+export type ShownPayment = {
+  vendor_id: number;
+  invoice_number: string;
+  payment_method_id: number;
+  amount: number | string;
+  fees: number | string;
+  currency: string;
+  /** The admin's local date, e.g. 2026-11-18. */
+  payment_date: string;
+};
 
 const invalidRequest: PaymentTriggerReply = {
   status: 400,
   body: {
     code: 'invalid_request',
-    message: 'Send the vendor, invoice and amount you confirmed.',
+    message: 'Send the payment summary you confirmed.',
   },
 };
 
+const positiveInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0;
+
+// Dollars with at most two decimals; zero only where allowed.
+function money(value: unknown, allowZero: boolean): value is number | string {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && (allowZero ? value >= 0 : value > 0);
+  }
+  return typeof value === 'string' && /^\d+(\.\d{1,2})?$/.test(value);
+}
+
+function isoDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 function parseShown(value: unknown): ShownPayment | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const { vendor_id, invoice_number, amount } = value as Record<string, unknown>;
-  if (typeof vendor_id !== 'number' || !Number.isInteger(vendor_id) || vendor_id <= 0) return null;
+  const { vendor_id, invoice_number, payment_method_id, amount, fees, currency, payment_date } =
+    value as Record<string, unknown>;
+  if (!positiveInteger(vendor_id) || !positiveInteger(payment_method_id)) return null;
   if (
     typeof invoice_number !== 'string' ||
     invoice_number.trim() === '' ||
@@ -36,11 +63,10 @@ function parseShown(value: unknown): ShownPayment | null {
   ) {
     return null;
   }
-  const amountOk =
-    typeof amount === 'number'
-      ? Number.isFinite(amount) && amount > 0
-      : typeof amount === 'string' && /^\d+(\.\d{1,2})?$/.test(amount);
-  return amountOk ? { vendor_id, invoice_number, amount: amount as number | string } : null;
+  if (!money(amount, false) || !money(fees, true)) return null;
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) return null;
+  if (!isoDate(payment_date)) return null;
+  return { vendor_id, invoice_number, payment_method_id, amount, fees, currency, payment_date };
 }
 
 const forbidden: PaymentTriggerReply = {
@@ -137,6 +163,7 @@ export async function runPaymentTrigger(input: {
       return refused(409, 'ineligible', 'This bill is not eligible for automated payment.');
     case 'summary_mismatch':
     case 'summary_stale':
+    case 'invalid_payment':
       return refused(
         409,
         'ineligible',

@@ -2,7 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runPaymentTrigger, type ShownPayment } from './payment-trigger-service.ts';
 
-const shown: ShownPayment = { vendor_id: 3, invoice_number: 'INV-1', amount: 40.5 };
+const shown: ShownPayment = {
+  vendor_id: 3,
+  invoice_number: 'INV-1',
+  payment_method_id: 5,
+  amount: 40.5,
+  fees: 0,
+  currency: 'USD',
+  payment_date: '2026-11-18',
+};
 
 test('only system admins can reach bill-mcp', async () => {
   for (const role of [null, 'viewer', 'billing_operator', 'financial_approver']) {
@@ -103,6 +111,7 @@ test('bill-mcp result codes map to safe replies without exposing upstream text',
     ['already_paid', 409, 'ineligible', 'already_paid', ineligible],
     ['summary_mismatch', 409, 'ineligible', 'summary_mismatch', changed],
     ['summary_stale', 409, 'ineligible', 'summary_stale', changed],
+    ['invalid_payment', 409, 'ineligible', 'invalid_payment', changed],
     ['authorization_expired', 409, 'failed', 'authorization_expired', notStarted],
     ['not_authorized', 409, 'failed', 'not_authorized', notStarted],
     ['forbidden', 403, undefined, 'forbidden', 'Only system administrators can run a payment.'],
@@ -175,7 +184,18 @@ test('missing or malformed shown values are refused before bill-mcp', async () =
     { ...shown, amount: '-4' },
     { ...shown, amount: '' },
     { ...shown, amount: null },
-    { vendor_id: 3, invoice_number: 'INV-1' },
+    { ...shown, payment_method_id: 0 },
+    { ...shown, payment_method_id: '5' },
+    { ...shown, fees: -1 },
+    { ...shown, fees: '0.001' },
+    { ...shown, fees: null },
+    { ...shown, currency: 'usd' },
+    { ...shown, currency: 'US' },
+    { ...shown, payment_date: '2026-02-30' },
+    { ...shown, payment_date: '11/18/2026' },
+    ...Object.keys(shown).map((key) =>
+      Object.fromEntries(Object.entries(shown).filter(([name]) => name !== key)),
+    ),
   ];
   for (const value of bad) {
     let calls = 0;
@@ -191,16 +211,17 @@ test('missing or malformed shown values are refused before bill-mcp', async () =
     assert.equal(reply.status, 400, JSON.stringify(value));
     assert.deepEqual(reply.body, {
       code: 'invalid_request',
-      message: 'Send the vendor, invoice and amount you confirmed.',
+      message: 'Send the payment summary you confirmed.',
     });
     assert.equal(calls, 0);
   }
 });
 
-test('string amounts and a 255-character invoice are accepted', async () => {
+test('string amounts, a 255-character invoice and fees are accepted', async () => {
   for (const sent of [
-    { vendor_id: 3, invoice_number: 'x'.repeat(255), amount: '40.50' },
-    { vendor_id: 3, invoice_number: 'INV-1', amount: '40' },
+    { ...shown, invoice_number: 'x'.repeat(255), amount: '40.50' },
+    { ...shown, amount: '40', fees: '0' },
+    { ...shown, fees: 1.25 },
   ]) {
     let got: ShownPayment | null = null;
     const reply = await runPaymentTrigger({

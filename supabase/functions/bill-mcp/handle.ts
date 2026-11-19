@@ -43,6 +43,7 @@ type Bill = {
   amount: number | string | null;
   vendor_id: number | null;
   invoice_number: string | null;
+  payment_method_id: number | null;
 };
 
 // A payments row as the DC-89 functions return it.
@@ -55,8 +56,17 @@ type Attempt = {
   idempotency_key: string;
 } & Record<string, unknown>;
 
-// The vendor, invoice and amount the admin confirmed in the trigger dialog.
-type Shown = { billId: number; vendorId: number; invoiceNumber: string; cents: number };
+// The payment summary the admin confirmed in the trigger dialog. Money is in cents.
+type Shown = {
+  billId: number;
+  vendorId: number;
+  invoiceNumber: string;
+  paymentMethodId: number;
+  cents: number;
+  feesCents: number;
+  currency: string;
+  paymentDate: string;
+};
 
 type Outcome = {
   outcome: 'success' | 'failure' | 'unknown';
@@ -81,10 +91,14 @@ const RECORD_RETRY_DELAYS_MS = [250, 1_000];
 // authorize_payment's summary keys, as payment_summary() in the DC-89 migration builds them.
 const SUMMARY_KEYS = ['bill_id', 'vendor_id', 'invoice_number', 'account_reference', 'payment_method_id',
   'amount_cents', 'fees_cents', 'total_cents', 'currency', 'payment_date'];
+// The summary keys a bill holds too, checked before an attempt is prepared.
+const BILL_KEYS = ['vendor_id', 'invoice_number', 'payment_method_id', 'amount_cents'];
+// How a mismatched summary key is named in summary_mismatch fields: the dialog shows dollars.
+const FIELD_NAMES: Record<string, string> = { amount_cents: 'amount', fees_cents: 'fees', total_cents: 'total' };
 
 // Payment-function errors returned to the caller as they are. Any other error, including
-// authorize_payment's summary_mismatch (bill-mcp echoes the prepared row unchanged), is
-// payment_not_started.
+// authorize_payment's summary_mismatch (bill-mcp sends the shown summary only once it equals the
+// prepared row), is payment_not_started.
 const RPC_CODES = new Set(['forbidden', 'not_found', 'invalid_payment', 'payment_in_progress', 'already_paid',
   'not_payable', 'not_pending', 'not_prepared', 'summary_stale', 'not_authorized', 'authorization_expired',
   'worker not configured']);
@@ -245,23 +259,49 @@ async function readPortal(deps: BillMcpDeps, bill: Bill, timeoutMs: number) {
   return { portalUrl, text: pageText(observation) };
 }
 
+// A real calendar date written YYYY-MM-DD, else null.
+function isoDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
 function shownPayment(args: Record<string, unknown>): Shown | null {
   const billId = integer(field(args, 'bill_id', 'billId'));
   const vendorId = integer(field(args, 'vendor_id', 'vendorId'));
   const invoiceNumber = field(args, 'invoice_number', 'invoiceNumber');
+  const paymentMethodId = integer(field(args, 'payment_method_id', 'paymentMethodId'));
   const cents = moneyCents(args.amount);
-  if (billId === null || vendorId === null || cents === null) return null;
+  const feesCents = moneyCents(args.fees);
+  const currency = args.currency;
+  const paymentDate = isoDate(field(args, 'payment_date', 'paymentDate'));
+  if (billId === null || vendorId === null || paymentMethodId === null || cents === null) return null;
+  if (feesCents === null || feesCents < 0 || paymentDate === null) return null;
   if (typeof invoiceNumber !== 'string' || invoiceNumber.trim() === '') return null;
-  return { billId, vendorId, invoiceNumber, cents };
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) return null;
+  return { billId, vendorId, invoiceNumber, paymentMethodId, cents, feesCents, currency, paymentDate };
 }
 
-// The fields where a bill or a prepared attempt differs from what the admin was shown, in this order.
-function shownGaps(shown: Shown, vendorId: unknown, invoiceNumber: unknown, cents: unknown) {
-  const gaps: string[] = [];
-  if (vendorId !== shown.vendorId) gaps.push('vendor_id');
-  if (invoiceNumber !== shown.invoiceNumber) gaps.push('invoice_number');
-  if (cents !== shown.cents) gaps.push('amount');
-  return gaps;
+// What the admin was shown, as authorize_payment's summary. The trigger never sets an account
+// reference, so it is null.
+function shownSummary(shown: Shown): Record<string, unknown> {
+  return {
+    bill_id: shown.billId,
+    vendor_id: shown.vendorId,
+    invoice_number: shown.invoiceNumber,
+    account_reference: null,
+    payment_method_id: shown.paymentMethodId,
+    amount_cents: shown.cents,
+    fees_cents: shown.feesCents,
+    total_cents: shown.cents + shown.feesCents,
+    currency: shown.currency,
+    payment_date: shown.paymentDate,
+  };
+}
+
+// The fields where a bill or a prepared attempt differs from what the admin was shown, in summary order.
+function summaryGaps(summary: Record<string, unknown>, actual: Record<string, unknown>, keys: string[]) {
+  return keys.filter((key) => actual[key] !== summary[key]).map((key) => FIELD_NAMES[key] ?? key);
 }
 
 function policyRefsFor(_bill: Bill): number[] {
@@ -309,27 +349,29 @@ async function cancelAndStop<T extends { error: string }>(deps: BillMcpDeps, att
   return stop;
 }
 
-async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number, shown: Shown) {
+// Every triggered payment is prepared with no fees and the date the admin was shown; a different
+// shown fee is a summary_mismatch.
+async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number, summary: Record<string, unknown>) {
   const prepared = await callRpc(deps, 'prepare_payment', {
     p_bill_id: bill.bill_id,
     p_prepared_by: preparedBy,
     p_fees_cents: 0,
-    p_payment_date: new Date().toISOString().slice(0, 10),
+    p_payment_date: summary.payment_date,
     p_account_reference: null,
     p_policy_refs: policyRefsFor(bill),
   }, 'service');
   if (prepared.error) return rpcStop('prepare_payment', prepared.error);
   if (!isAttempt(prepared.data)) return rpcStop('prepare_payment', { message: 'no payment row returned' });
   const attempt = prepared.data;
-  const gaps = shownGaps(shown, attempt.vendor_id, attempt.invoice_number, attempt.amount_cents);
+  const gaps = summaryGaps(summary, attempt, SUMMARY_KEYS);
   if (gaps.length > 0) return cancelAndStop(deps, attempt, { error: 'summary_mismatch', fields: gaps });
   return { attempt };
 }
 
-// The admin's explicit yes on the prepared summary, then the atomic claim. A refusal cancels the
-// attempt and returns its code; nothing was charged. null means the attempt is claimed.
-async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt) {
-  const summary = Object.fromEntries(SUMMARY_KEYS.map((key) => [key, attempt[key]]));
+// The admin's explicit yes on the summary they were shown (equal to the prepared row), then the
+// atomic claim. A refusal cancels the attempt and returns its code; nothing was charged. null
+// means the attempt is claimed.
+async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: Record<string, unknown>) {
   const authorized = await callRpc(deps, 'authorize_payment', { p_payment_id: attempt.payment_id, p_summary: summary }, 'user');
   if (authorized.error) return cancelAndStop(deps, attempt, rpcStop('authorize_payment', authorized.error));
   const claimed = await callRpc(deps, 'start_payment_submission', { p_payment_id: attempt.payment_id }, 'service');
@@ -425,9 +467,10 @@ async function recordOutcome(deps: BillMcpDeps, attempt: Attempt, outcome: Outco
   return { payment, receipt };
 }
 
-// The values the admin confirmed must equal the bill and the portal page before an attempt is
-// prepared. Nothing reaches /execute unless start_payment_submission claimed the attempt, and
-// every claimed attempt ends in record_payment.
+// The summary the admin confirmed must equal the bill and the portal page before an attempt is
+// prepared, and the prepared attempt key for key before it is authorized. Nothing reaches
+// /execute unless start_payment_submission claimed the attempt, and every claimed attempt ends
+// in record_payment.
 async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args: Record<string, unknown>) {
   const now = deps.now ?? Date.now;
   const deadline = now() + (deps.deadlineMs ?? PAYMENT_DEADLINE_MS);
@@ -438,7 +481,8 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   if ('error' in loaded) return loaded;
   const bill = loaded.bill;
   if (!PAYABLE_STATUSES.includes(bill.status)) return { error: 'not_payable' };
-  const differs = shownGaps(shown, bill.vendor_id, bill.invoice_number, moneyCents(bill.amount));
+  const summary = shownSummary(shown);
+  const differs = summaryGaps(summary, { ...bill, amount_cents: moneyCents(bill.amount) }, BILL_KEYS);
   if (differs.length > 0) return { error: 'summary_mismatch', fields: differs };
   const portal = await readPortal(deps, bill, Math.min(OBSERVE_TIMEOUT_MS, left()));
   if ('error' in portal) return portal;
@@ -449,9 +493,9 @@ async function executeApprovedPayment(deps: BillMcpDeps, userAuth: string, args:
   const preparedBy = await deps.callerUserId();
   if (preparedBy === null) return { error: 'forbidden' };
   if (left() < PREPARE_MIN_LEFT_MS) return { error: 'payment_not_started' };
-  const prepared = await prepareAttempt(deps, bill, preparedBy, shown);
+  const prepared = await prepareAttempt(deps, bill, preparedBy, summary);
   if ('error' in prepared) return prepared;
-  const stopped = await authorizeAndClaim(deps, prepared.attempt);
+  const stopped = await authorizeAndClaim(deps, prepared.attempt, summary);
   if (stopped) return stopped;
   const executeMs = Math.min(deps.executeTimeoutMs ?? EXECUTE_TIMEOUT_MS, left());
   const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt, executeMs);
