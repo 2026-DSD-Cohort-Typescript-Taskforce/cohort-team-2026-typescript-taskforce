@@ -7,6 +7,7 @@
 import { apiFetch } from './api-fetch';
 import { DECISION_FAILED, type Decision } from './approvals';
 import { SAVE_FAILED } from './bill-errors';
+import { parsePolicyDecision } from './bill-policy';
 import type { BillInput } from './bill-validation';
 import type { Bill, FormOptions } from './bill-view';
 import type { ExtractionResult } from './extraction';
@@ -105,12 +106,15 @@ export function updateDraftBill(billId: number, input: Partial<BillInput>) {
   );
 }
 
-/** submit_bill() returns the bills row, without the embedded names. */
+/** submit_bill() returns the bills row, without the embedded names; `policy` is set when a vendor policy sent it to approval. */
 export function submitBill(billId: number, needsApproval = false) {
   return call(
     `/api/bills/${billId}/submit`,
     sendJson('POST', { needsApproval }),
-    (body: { bill: { status: string } }) => body.bill.status,
+    (body: { bill: { status: string }; policy?: unknown }) => ({
+      status: body.bill.status,
+      policy: parsePolicyDecision(body.policy) ?? undefined,
+    }),
     SUBMIT_FAILED,
   );
 }

@@ -60,6 +60,32 @@ test("not_draft is a 409 with the bill's current status", () => {
   );
 });
 
+test('policy_blocked is a 409 with the policy message', () => {
+  const details = JSON.stringify({
+    decision: 'block',
+    policy_id: 3,
+    version_id: 9,
+    version: 2,
+    rule_index: 0,
+    policy_name: 'Acme',
+    interpretation: 'Bills over $500 are blocked',
+  });
+  assert.deepEqual(toErrorResponse({ code: 'PT409', message: 'policy_blocked', details }), {
+    status: 409,
+    body: {
+      code: 'policy_blocked',
+      error: 'Blocked by the Acme policy: Bills over $500 are blocked',
+    },
+  });
+});
+
+test('policy_blocked with unreadable details is a generic 409', () => {
+  assert.deepEqual(toErrorResponse({ code: 'PT409', message: 'policy_blocked', details: 'nope' }), {
+    status: 409,
+    body: { code: 'policy_blocked', error: SUBMIT_FAILED },
+  });
+});
+
 test('an invalid, expired or missing JWT is a 401, so the browser refreshes the session', () => {
   for (const code of ['PGRST301', 'PGRST302', 'PGRST303']) {
     assert.deepEqual(toErrorResponse({ code, message: 'JWT expired', details: null }), SIGNED_OUT);

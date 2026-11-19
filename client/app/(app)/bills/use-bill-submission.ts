@@ -117,7 +117,7 @@ export function useBillSubmission({
       const result = await submitBill(saved.bill_id, needsApproval);
       if (!result) return;
       if (!result.ok) return dispatch({ type: 'failed', step: 'submit', failure: result });
-      dispatch({ type: 'submitted', status: result.data });
+      dispatch({ type: 'submitted', status: result.data.status, policy: result.data.policy });
       refresh();
     });
   }

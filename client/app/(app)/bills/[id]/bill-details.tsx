@@ -13,7 +13,9 @@ import { FIELD_LABELS, formatAmount, formatDate, type Bill } from '@/lib/bill-vi
 import { billMissing } from '@/lib/current-issues';
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from '@/app/ui';
 import { StatusChip } from '../status-chip';
+import { parsePolicyDecision } from '@/lib/bill-policy';
 import { submittedMessage } from '@/lib/bill-submission';
+import { BillPolicyLine } from '../bill-policy-line';
 import { BillEditForm } from './bill-edit-form';
 import { PaymentAutomationTrigger } from './payment-automation-trigger';
 
@@ -71,7 +73,7 @@ export function BillDetails({ id }: { id: string }) {
       const body = await res.json().catch(() => null);
       if (res.ok) {
         setBill({ ...bill, status: body.bill.status });
-        setSuccess(submittedMessage(body.bill.status));
+        setSuccess(submittedMessage(body.bill.status, parsePolicyDecision(body.policy)));
       } else if (body?.code === 'incomplete_bill' && body.fields.length > 0) {
         const labels = body.fields.map((field: string) => FIELD_LABELS[field] ?? field);
         setError(`This bill is missing: ${labels.join(', ')}.`);
@@ -187,6 +189,7 @@ export function BillDetails({ id }: { id: string }) {
               </div>
             ))}
           </dl>
+          <BillPolicyLine billId={bill.bill_id} />
         </section>
         <PaymentAutomationTrigger
           bill={bill}

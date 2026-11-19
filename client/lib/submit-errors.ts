@@ -1,6 +1,8 @@
 // Turns a Supabase error from the /api/bills route handlers into the reply the browser
 // gets, in Express's { error, code } shape. Raw Postgres and PostgREST text never reaches
-// the browser. No imports, so `npm test` (node --test) can load it on its own.
+// the browser. Only imports with a .ts extension, so `npm test` (node --test) can load it.
+
+import { blockedMessage, parsePolicyDecision } from './bill-policy.ts';
 
 /** The fields of a supabase-js PostgrestError that the mapping reads. */
 export type SupabaseError = {
@@ -53,7 +55,14 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
       };
     case 'PT404':
       return BILL_NOT_FOUND;
-    case 'PT409':
+    case 'PT409': {
+      if (error.message === 'policy_blocked') {
+        const policy = parsePolicyDecision(error.details);
+        return {
+          status: 409,
+          body: { code: 'policy_blocked', error: policy ? blockedMessage(policy) : fallback },
+        };
+      }
       return {
         status: 409,
         body: {
@@ -62,6 +71,7 @@ export function toErrorResponse(error: SupabaseError, fallback = SUBMIT_FAILED):
           ...(error.details ? { status: error.details } : {}),
         },
       };
+    }
     default:
       return { status: 500, body: { error: fallback } };
   }

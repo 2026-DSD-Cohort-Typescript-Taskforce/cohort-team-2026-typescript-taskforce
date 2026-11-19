@@ -114,6 +114,24 @@ test('a bill submitted for approval (asked for, or resubmitted after revision) s
   assert.equal(resubmitted.bill?.status, 'pending_approval');
   assert.equal(submittedMessage('pending_approval'), 'Bill submitted for approval.');
   assert.equal(submittedMessage('pending_payment'), 'Bill submitted for payment.');
+  const policy = {
+    decision: 'require_approval' as const,
+    policy_id: 3,
+    version_id: 9,
+    version: 2,
+    rule_index: 0,
+    policy_name: 'Acme',
+    interpretation: null,
+  };
+  assert.equal(
+    submittedMessage('pending_approval', policy),
+    'Bill sent for approval: the Acme policy needs approval.',
+  );
+  assert.equal(
+    submittedMessage('pending_approval', { ...policy, policy_name: null }),
+    'Bill submitted for approval.',
+  );
+  assert.equal(submittedMessage('pending_payment', policy), 'Bill submitted for payment.');
 });
 
 test('a refused submit after the draft saved is partial: the draft is kept', () => {

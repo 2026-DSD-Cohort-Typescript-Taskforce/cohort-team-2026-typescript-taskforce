@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { parsePolicyDecision } from '@/lib/bill-policy';
 import { parseBillId } from '@/lib/bill-view';
 import { BILL_NOT_FOUND } from '@/lib/submit-errors';
 import { createUserClient, reply, replyWithError } from '@/lib/supabase';
@@ -6,7 +7,8 @@ import { createUserClient, reply, replyWithError } from '@/lib/supabase';
 /**
  * Submits a draft bill for payment, or for approval first with { needsApproval: true }.
  * submit_bill() checks the role, status and required fields; its errors map to replies in
- * lib/submit-errors.ts.
+ * lib/submit-errors.ts. A bill that a vendor policy sends to approval comes back with
+ * `policy`, from evaluate_bill_policy().
  */
 export async function POST(request: NextRequest, ctx: RouteContext<'/api/bills/[id]/submit'>) {
   const supabase = createUserClient(request);
@@ -17,10 +19,18 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/bills/[
 
   // No body (older callers) means no approval step.
   const body = await request.json().catch(() => null);
+  const needsApproval = body?.needsApproval === true;
   const { data, error } = await supabase.rpc('submit_bill', {
     p_bill_id: billId,
-    p_needs_approval: body?.needsApproval === true,
+    p_needs_approval: needsApproval,
   });
   if (error) return replyWithError(error);
+
+  // Sent to approval without being asked to: a vendor policy did it, so the page can say so.
+  if (!needsApproval && data?.status === 'pending_approval') {
+    const { data: raw } = await supabase.rpc('evaluate_bill_policy', { p_bill_id: billId });
+    const policy = parsePolicyDecision(raw);
+    if (policy?.decision === 'require_approval') return reply({ body: { bill: data, policy } });
+  }
   return reply({ body: { bill: data } });
 }
