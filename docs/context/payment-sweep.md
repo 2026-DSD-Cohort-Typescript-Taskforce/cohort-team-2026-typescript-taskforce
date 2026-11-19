@@ -1,6 +1,6 @@
 # Hourly payment sweep
 
-Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261118160000_pay_approved_hourly.sql`, `supabase/migrations/20261118210000_authorize_approved_payment.sql`
+Covers: `supabase/functions/bill-mcp/handle.ts`, `supabase/functions/bill-mcp/index.ts`, `supabase/migrations/20261118230000_pay_approved_hourly.sql`, `supabase/migrations/20261118230200_authorize_approved_payment.sql`
 
 Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
