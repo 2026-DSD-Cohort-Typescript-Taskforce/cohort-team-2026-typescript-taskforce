@@ -105,6 +105,8 @@ export function PolicyDialog({
   }, []);
 
   // Focus follows the step, not the first render: the new step's heading, or the sentence.
+  // A new draft revision in step 2 remounts the review (dropping the focused button), so it
+  // refocuses the heading too.
   const firstStep = useRef(true);
   useEffect(() => {
     if (step === 'loading') return;
@@ -119,7 +121,7 @@ export function PolicyDialog({
     }
     // fieldId only reads the stable id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, draft?.revision]);
 
   // Chrome honours one cancel preventDefault per user activation, so a second Esc would
   // close a saving dialog: Esc is stopped at keydown instead, wherever focus is.
