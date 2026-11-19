@@ -16,6 +16,14 @@ export const isRole = (value: unknown): value is Role =>
 
 export const canManageUsers = (role: string | null | undefined): boolean => role === 'system_admin';
 
+/** Better define who may submit a bill, because it wasn't before. Matches submit_bill() (20261118184316). */
+export const canSubmitBills = (role: string | null | undefined): boolean =>
+  role === 'billing_operator' || role === 'financial_approver' || role === 'system_admin';
+
+/** Better define who may approve, deny or send back a bill. Matches decide_bill() (20261118184316). */
+export const canDecideBills = (role: string | null | undefined): boolean =>
+  role === 'financial_approver' || role === 'system_admin';
+
 /** A role for display: its label when known, the raw value otherwise, '—' when there is none. */
 export function roleLabel(role: string | null): string {
   if (role === null) return '—';

@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   APPROVALS_DEFAULT_SORT,
-  FINANCIAL_APPROVER,
   approvalRow,
   decisionBanner,
   type ApprovalRow,
   type Decision,
 } from '@/lib/approvals';
 import { loadApprovals, loadUserRole } from '@/lib/bill-api';
+import { canDecideBills } from '@/lib/roles';       //<- Added this to fix rules for permissions.
 import { formatDate, type Bill } from '@/lib/bill-view';
 import { ErrorAlert, SuccessAlert, colorTransition, focusRing } from '@/app/ui';
 import { LoadError } from '../bills/bills-list';
@@ -40,7 +40,7 @@ export function ApprovalsQueue() {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
-  /** null while the role loads; false if it isn't financial_approver or didn't load. */
+  /** null while the role loads; false if it can't decide bills or didn't load. */
   const [canDecide, setCanDecide] = useState<boolean | null>(null);
   const [reviewing, setReviewing] = useState<Bill | null>(null);
   const [success, setSuccess] = useState('');
@@ -70,11 +70,11 @@ export function ApprovalsQueue() {
     load();
   }, [load]);
 
-  // Never assumed: the form stays disabled until the role says financial_approver.
+  // Never assumed: the form stays disabled until the role says financial_approver or system_admin.
   useEffect(() => {
     let active = true;
     loadUserRole().then((result) => {
-      if (active && result) setCanDecide(result.ok && result.data === FINANCIAL_APPROVER);
+      if (active && result) setCanDecide(result.ok && canDecideBills(result.data));   //<- Now all the correct roles can do this, instead of just financial_approver.
     });
     return () => {
       active = false;

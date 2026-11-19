@@ -7,6 +7,7 @@ import {
   FINANCIAL_APPROVER,
   NOTE_MAX,
   approvalRow,
+  canDecideBills,
   decisionBanner,
   invalidDecision,
   noteLength,
@@ -50,6 +51,13 @@ test('the decisions, in order, with the mockup copy', () => {
   ]);
   assert.equal(FINANCIAL_APPROVER, 'financial_approver');
   assert.equal(NOTE_MAX, 500);
+});
+
+test('canDecideBills allows financial approvers and system admins only', () => {
+  assert.equal(canDecideBills('financial_approver'), true);
+  assert.equal(canDecideBills('system_admin'), true);
+  for (const role of ['billing_operator', 'viewer', '', null, undefined])
+    assert.equal(canDecideBills(role), false);
 });
 
 test('validation accepts a decision with an optional note', () => {
