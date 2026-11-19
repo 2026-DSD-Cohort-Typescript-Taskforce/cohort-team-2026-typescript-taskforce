@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  chooseDraftAction,
+  draftPolicyIsStale,
   interpretationFailed,
   invalidDraftRequest,
   parseDraftBody,
@@ -83,4 +85,25 @@ test('reply bodies carry the exact copy and codes', () => {
   assert.deepEqual((invalidDraftRequest(['sentence']).body as { fields: string[] }).fields, [
     'sentence',
   ]);
+});
+
+test('"Check policy" continues the draft only while the policy is unchanged', () => {
+  assert.equal(chooseDraftAction({ hasDraft: false, policyChanged: false }), 'start');
+  assert.equal(chooseDraftAction({ hasDraft: false, policyChanged: true }), 'start');
+  assert.equal(chooseDraftAction({ hasDraft: true, policyChanged: false }), 'continue');
+  // A continue keeps the draft's policy_updated_at, so every confirm would be policy_changed.
+  assert.equal(chooseDraftAction({ hasDraft: true, policyChanged: true }), 'start');
+});
+
+test('a draft is stale when its policy_updated_at is not the policy updated_at', () => {
+  const at = '2026-11-18T10:00:00.123456+00:00';
+  assert.equal(draftPolicyIsStale(at, at), false);
+  assert.equal(draftPolicyIsStale(null, null), false);
+  // The same instant written another way.
+  assert.equal(draftPolicyIsStale('2026-11-18T10:00:00+00:00', '2026-11-18T10:00:00.000Z'), false);
+  // A policy created after a no-policy draft, toggled or renamed after the draft.
+  assert.equal(draftPolicyIsStale(null, at), true);
+  assert.equal(draftPolicyIsStale(at, null), true);
+  assert.equal(draftPolicyIsStale(at, '2026-11-18T10:05:00.000001+00:00'), true);
+  assert.equal(draftPolicyIsStale('not a time', 'also not'), true);
 });
