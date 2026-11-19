@@ -39,3 +39,22 @@ Decisions:
 - **The description is the draft's `revised_sentence`.** It falls back to `sentence` when the revised sentence is blank or over 1000 characters (the length `policies.description` allows; the draft allows 2000).
 - **A name-only edit makes a draft stale.** The DC-85 route bumps `policies.updated_at`, so confirming an older draft answers `policy_changed` and the manager reviews it again.
 - **Confirming deletes the draft.** The version keeps its copy of everything the draft held.
+
+## Evaluating a bill
+
+`public.evaluate_bill_policy(p_bill_id integer) returns jsonb` reads the bill and its vendor's policy and answers, without changing anything: `{ decision, policy_id, version_id, version, rule_index, policy_name, interpretation }`. It is security definer, stable, and executable by `authenticated` and `service_role`. A bill that does not exist raises `PT404` `not_found`.
+
+| Situation | `decision` | Other fields |
+| --- | --- | --- |
+| Vendor has no policy, the policy is off, or it has no active version | `none` | all null |
+| Active version is missing, belongs to another policy, or fails `policy_rule_is_valid` | `block` | policy and version fields filled; `rule_index` null |
+| A rule has a condition on a fact the bill lacks | `block` | policy and version fields filled; `rule_index` null |
+| No rule matches | `none` | policy and version fields filled; `rule_index` null |
+| Otherwise | the strongest matching effect | `rule_index` = lowest zero-based index among matching rules with that effect |
+
+- **Precedence:** `block` over `require_approval` over `allow`. A matching `allow` has no effect on its own beyond naming the rule.
+- **Facts:** `amount_cents = round(bills.amount * 100)`; `property_id`; `payment_type` from `payment_methods` through `bills.payment_method_id`.
+- **Matching** follows ADR 0003 "Meaning": keys are ANDed, an absent key matches anything, bounds compare whole cents (`$500.00` is not `gt: 50000`, is `gte`/`lte: 50000`).
+- **Fail closed:** a present condition key whose fact is null (no amount, no property, no payment method) blocks, even when another key in the same rule would not have matched. An absent key never needs its fact, so a draft with nulls is fine under a rule that does not ask about them.
+
+`public.bill_has_qualifying_approval(p_bill_id integer) returns boolean` is true when the bill's newest approval (`created_at desc, approval_id desc`) is `approved` and `approved_by` is not null and differs from `submitted_by`. A self-approval or an auto-approve row never counts. It has the same security and grants.
