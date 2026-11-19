@@ -558,7 +558,28 @@ Deno.serve(async (req) => {
     p_bill_id: bill.bill_id,
   });
   if (submitError) {
+    if (submitError.message === "policy_blocked") {
+      let policyName: unknown = null;
+      let interpretation: unknown = null;
+      try {
+        const detail = JSON.parse(String(submitError.details));
+        policyName = detail?.policy_name;
+        interpretation = detail?.interpretation;
+      } catch {
+        // Unreadable detail: fall through to the generic message below.
+      }
+      if (typeof policyName === "string" && policyName.trim() !== "") {
+        const blocked =
+          typeof interpretation === "string" && interpretation.trim() !== ""
+            ? `Saved as a draft. Blocked by the ${policyName} policy: ${interpretation}.`
+            : `Saved as a draft. Blocked by the ${policyName} policy.`;
+        return reply("draft", blocked, { bill });
+      }
+    }
     return reply("draft", `Saved as a draft. It couldn't be submitted: ${submitError.message}.`, { bill });
+  }
+  if (submitted?.status === "pending_approval") {
+    return reply("submitted", "Bill sent for approval because of this vendor's policy.", { bill: submitted });
   }
   return reply("submitted", "Bill submitted for payment.", { bill: submitted });
 });
