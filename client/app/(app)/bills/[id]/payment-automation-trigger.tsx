@@ -2,16 +2,18 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { ErrorAlert, Spinner, SuccessAlert, primaryButton, secondaryButton } from '@/app/ui';
-import { formatAmount, type Bill } from '@/lib/bill-view';
 import { loadUserRole } from '@/lib/bill-api';
 import {
   canShowPaymentTrigger,
+  localDate,
+  paymentSummary,
   paymentTriggerNotice,
   triggerBillPayment,
+  type PaymentTriggerBill,
 } from '@/lib/payment-trigger';
 
 type Props = {
-  bill: Pick<Bill, 'bill_id' | 'status' | 'invoice_number' | 'amount' | 'vendor'>;
+  bill: PaymentTriggerBill;
   onCompleted?: () => void | Promise<void>;
 };
 
@@ -19,6 +21,8 @@ type Props = {
 export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
   const [role, setRole] = useState<string | null>();
   const [running, setRunning] = useState(false);
+  // Set when the dialog opens, so the date sent is the one shown.
+  const [paymentDate, setPaymentDate] = useState(localDate);
   const [notice, setNotice] = useState<{
     tone: 'success' | 'warning' | 'error';
     message: string;
@@ -37,19 +41,15 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
 
   if (!canShowPaymentTrigger(role)) return null;
 
-  const eligible = bill.status === 'pending_payment';
-  const summary: [string, string][] = [
-    ['Vendor', bill.vendor?.name ?? 'Missing'],
-    ['Invoice', bill.invoice_number ?? 'Missing'],
-    ['Amount', formatAmount(bill.amount)],
-  ];
+  const { rows: summary, shown } = paymentSummary(bill, paymentDate);
+  const eligible = shown !== null;
 
   async function execute() {
-    if (running) return;
+    if (running || shown === null) return;
     setRunning(true);
     setNotice(null);
     try {
-      const result = await triggerBillPayment(bill.bill_id);
+      const result = await triggerBillPayment(bill.bill_id, shown);
       if (result?.ok) {
         setNotice(paymentTriggerNotice(result.data));
         if (result.data.outcome === 'success') await onCompleted?.();
@@ -76,13 +76,16 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
           <p className="mt-1 text-body-sm text-secondary">
             {eligible
               ? 'Manually run the approved payment workflow for testing.'
-              : 'This bill must be pending payment before automation can run.'}
+              : 'This bill must be pending payment or payment failed, with its vendor, invoice, payment method and amount set, before automation can run.'}
           </p>
         </div>
         <button
           type="button"
           disabled={!eligible || running}
-          onClick={() => dialogRef.current?.showModal()}
+          onClick={() => {
+            setPaymentDate(localDate());
+            dialogRef.current?.showModal();
+          }}
           className={primaryButton}
         >
           Trigger payment

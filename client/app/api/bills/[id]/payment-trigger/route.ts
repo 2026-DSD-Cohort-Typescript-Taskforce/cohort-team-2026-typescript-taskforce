@@ -1,6 +1,10 @@
 import type { NextRequest } from 'next/server';
 import { parseBillId } from '@/lib/bill-view';
-import { runPaymentTrigger, type BillMcpReply } from '@/lib/payment-trigger-service';
+import {
+  runPaymentTrigger,
+  type BillMcpReply,
+  type ShownPayment,
+} from '@/lib/payment-trigger-service';
 import { SIGNED_OUT } from '@/lib/submit-errors';
 import { accessToken, createUserClient, reply } from '@/lib/supabase';
 
@@ -26,7 +30,11 @@ async function callerRole(
   return typeof data?.role === 'string' ? data.role : null;
 }
 
-async function callBillMcp(request: NextRequest, billId: number): Promise<BillMcpReply> {
+async function callBillMcp(
+  request: NextRequest,
+  billId: number,
+  shown: ShownPayment,
+): Promise<BillMcpReply> {
   const url = process.env.BILL_MCP_URL;
   const sharedToken = process.env.BILL_MCP_TOKEN;
   const userToken = accessToken(request);
@@ -43,7 +51,7 @@ async function callBillMcp(request: NextRequest, billId: number): Promise<BillMc
     },
     body: JSON.stringify({
       method: 'tools/call',
-      params: { name: 'execute_approved_payment', arguments: { bill_id: billId } },
+      params: { name: 'execute_approved_payment', arguments: { ...shown, bill_id: billId } },
     }),
     cache: 'no-store',
     signal: AbortSignal.timeout(140_000),
@@ -67,10 +75,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const billId = parseBillId((await ctx.params).id);
   const role = await callerRole(request, supabase);
   if (role instanceof Response) return role;
+  const shown: unknown = await request.json().catch(() => null);
   const result = await runPaymentTrigger({
     billId,
     role,
-    invoke: (id) => callBillMcp(request, id),
+    shown,
+    invoke: (id, confirmed) => callBillMcp(request, id, confirmed),
   });
   const body = result.status >= 400 ? { ...result.body, error: result.body.message } : result.body;
   return reply({ status: result.status, body });

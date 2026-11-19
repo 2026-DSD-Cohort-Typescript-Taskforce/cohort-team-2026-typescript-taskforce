@@ -2,11 +2,15 @@
 
 Covers: supabase/functions/agent-bills/index.ts, supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
 
-Last changed by AI: 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · files: supabase/functions/bill-mcp/handle.ts, supabase/functions/bill-mcp/index.ts
+Last changed by AI: 2026-11-18 · run 887b43da-df6b-47e8-b81c-2f122d4b161b · files: supabase/functions/agent-bills/index.ts
 
 ## Current view
 
-A start failure is logged before /execute. After a charge, outcome_unknown and other worker failures are recorded and logged.
+agent-bills and bill-mcp print failures with console.error. The lines show up in the edge-runtime container, not in the npm run dev window. agent-bills logs the request method, a missing env name, sign-in failure, a missing task, an OpenRouter status, a bill-mcp status, a disallowed tool name, an invalid tool-arguments string, and the four-round stop. A tool call whose arguments are not JSON returns { error: "invalid tool arguments" } to the model and does not call bill-mcp. Valid JSON is still sent. Empty or missing arguments stay {}. An arguments value that is already an object is forwarded. bill-mcp logs the method and, for any error body, the status plus the JSON error. A snapshot_mismatch body includes fields naming the page value that differed, amount or invoice_number. Tokens, secrets, and the raw arguments string are not written. Follow the container with docker logs -f supabase_edge_runtime_cohort-team-2026-typescript-taskforce. A gateway 401 still happens before either function runs.
+
+The hourly sweep logs `[bill-mcp] sweep bill <id>: <error>` for each bill it does not pay and `[bill-mcp] sweep could not list bills: <message>` when the bill list fails.
+
+bill-mcp also logs `[bill-mcp] <fn> failed: <message>` for a payment-function error it does not pass on, and `[bill-mcp] record_payment <outcome> for payment <id> failed: <message>` when record_payment still fails after its tries. Neither line includes the payment row.
 
 ## Lessons
 
@@ -14,19 +18,6 @@ A start failure is logged before /execute. After a charge, outcome_unknown and o
 - 2026-11-16 · run 5f5079db: Edge function console.error is visible in the edge-runtime container, and a JSON error response alone does not show there.
 
 ## History
-
-### 2026-11-18 · run b308e613-bf1c-4665-a079-b7baf9b3bbc6 · Make execute_approved_payment claim a payment attempt before charging, record the outcome with the…
-**Changed:** execute_approved_payment now prepares, authorizes, and starts an attempt before /execute, then records the outcome with the live record_payment. A confirmed receipt uses the attempt idempotency key. canRecord is on only when the service client exists. The hour still asks the agent. The signed-in user must be allowed to authorize, and a missing portal reference falls back to the attempt key.
-**Learned:** The charge waits for start_payment_submission. The receipt waits for a success row. The authorizing user must be a billing operator, financial approver, or system admin.
-**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run b308e613-bf1c-4665-a079-b7baf9b3bbc6 command receipts separately. Local receipts may not travel with source.
-**Files:** supabase/functions/bill-mcp/handle.ts@sha256:cae024a1ae6586b68b102fff6590cbf04465b3e94af184cbe95353409e0df297, supabase/functions/bill-mcp/index.ts@sha256:ce59ec08be5877bd781c967c0f68a2181d30d133a92936d89a215238a9e27fd8
-
-### 2026-11-18 · run 111388b7-1ae4-4138-9875-04ae50872341 · Make the hourly bill-mcp sweep ask agent-bills to pay each pending bill, so the agent calls execute…
-
-**Changed:** The hourly sweep now asks agent-bills to pay each pending bill. The agent is the caller of execute_approved_payment. canRecord stays false, so that call still does not charge. The model can skip the tool.
-**Learned:** The hour lists bills and the agent pays them. canRecord and the model remain limits.
-**Decisive check:** Planned commands: node --run lint; node --run typecheck; node --run format:check. Final outcomes are not yet claimed; inspect run 111388b7-1ae4-4138-9875-04ae50872341 command receipts separately. Local receipts may not travel with source.
-**Files:** supabase/functions/bill-mcp/handle.ts@sha256:2127fca435fece23060c9f1ded6c71f67c5d85e0b53e0ae6de1f633379333dbb, supabase/functions/bill-mcp/index.ts@sha256:f07686ed6879252378ab253f398e564f7215e0dc682328d2499dc2584fade4b3
 
 ### 2026-11-18 · run 887b43da-df6b-47e8-b81c-2f122d4b161b · Stop malformed model tool arguments from crashing the agent-bills request.
 
