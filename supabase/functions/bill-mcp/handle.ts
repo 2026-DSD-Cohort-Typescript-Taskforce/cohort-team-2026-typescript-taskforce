@@ -13,9 +13,10 @@ export type PaymentInput = {
 };
 
 // The DC-89 payment functions bill-mcp calls (supabase/migrations/20261117200000_payment_attempts.sql),
-// plus authorize_approved_payment for the hourly sweep (20261118230200_authorize_approved_payment.sql).
+// plus authorize_approved_payment for the hourly sweep (20261118230200_authorize_approved_payment.sql)
+// and the DC-92 policy functions evaluate_bill_policy and send_bill_for_approval.
 export type RpcName = 'prepare_payment' | 'authorize_payment' | 'authorize_approved_payment' | 'cancel_payment'
-  | 'start_payment_submission' | 'record_payment';
+  | 'start_payment_submission' | 'record_payment' | 'evaluate_bill_policy' | 'send_bill_for_approval';
 // error.code is the Postgres error code; a reply that never arrived (or a throw) has none.
 export type RpcReply = { data: unknown; error: { message: string; details?: string | null; code?: string | null } | null };
 
@@ -113,11 +114,33 @@ const FIELD_NAMES: Record<string, string> = { amount_cents: 'amount', fees_cents
 // prepared row), is payment_not_started.
 const RPC_CODES = new Set(['forbidden', 'not_found', 'invalid_payment', 'payment_in_progress', 'already_paid',
   'not_payable', 'not_pending', 'not_prepared', 'summary_stale', 'not_authorized', 'authorization_expired',
-  'not_approved', 'worker not configured']);
+  'not_approved', 'worker not configured', 'approval_not_required']);
 
 // start_payment_submission's own refusals: the claim did not happen.
 const CLAIM_CODES = new Set(['not_found', 'not_authorized', 'authorization_expired', 'forbidden', 'not_payable',
   'summary_stale']);
+
+// DC-92 refusals from prepare_payment and start_payment_submission. The evaluator's decision comes
+// in the error detail. policy_changed means the vendor's policy changed after the attempt was prepared.
+const POLICY_CODES = new Set(['policy_blocked', 'approval_required', 'policy_changed']);
+
+type PolicyReply = { error: string; policy?: unknown };
+
+// The evaluator's JSON from an error detail or a reply, or undefined when absent or garbled.
+function policyOf(raw: unknown): unknown {
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  return raw && typeof raw === 'object' ? raw : undefined;
+}
+
+function withPolicy(error: string, policy: unknown): PolicyReply {
+  return policy === undefined ? { error } : { error, policy };
+}
 
 const TOOLS = [
   { name: 'get_bill' },
@@ -316,11 +339,6 @@ function summaryGaps(summary: Record<string, unknown>, actual: Record<string, un
   return keys.filter((key) => actual[key] !== summary[key]).map((key) => FIELD_NAMES[key] ?? key);
 }
 
-function policyRefsFor(_bill: Bill): number[] {
-  // DC-92: return the ids of the policies evaluated for this bill.
-  return [];
-}
-
 function isAttempt(data: unknown): data is Attempt {
   if (!data || typeof data !== 'object') return false;
   const row = data as Record<string, unknown>;
@@ -364,18 +382,58 @@ async function cancelAndStop<T extends { error: string }>(deps: BillMcpDeps, att
   return stop;
 }
 
+// Sends the bill back for approval by someone other than the submitter. null means the bill needs
+// no approval after all (approval_not_required): the caller carries on and prepare_payment decides.
+async function sendBackOrContinue(deps: BillMcpDeps, bill: Bill, requestedBy: number, fallback: unknown) {
+  const sent = await callRpc(deps, 'send_bill_for_approval', { p_bill_id: bill.bill_id, p_requested_by: requestedBy }, 'service');
+  if (!sent.error) return withPolicy('sent_for_approval', policyOf(sent.data) ?? fallback) as PolicyReply;
+  if (sent.error.message === 'approval_not_required') return null;
+  return rpcStop('send_bill_for_approval', sent.error);
+}
+
+// A refusal from prepare or the claim that needs approval: the bill is sent back. If the database
+// then says no approval is needed the payment cannot proceed this call (payment_not_started).
+async function sendBack(deps: BillMcpDeps, bill: Bill, requestedBy: number, policy: unknown) {
+  const sent = await sendBackOrContinue(deps, bill, requestedBy, policy);
+  return sent ?? rpcStop('send_bill_for_approval', { message: 'approval_not_required after approval_required' });
+}
+
+// The policy check before any portal read: a block stops the payment; a policy needing approval
+// sends the bill back. Runs for the admin trigger and the hourly sweep alike. null means go on.
+async function policyGate(deps: BillMcpDeps, bill: Bill, preparedBy: () => Promise<number | null>) {
+  const evaluated = await callRpc(deps, 'evaluate_bill_policy', { p_bill_id: bill.bill_id }, 'service');
+  if (evaluated.error) return rpcStop('evaluate_bill_policy', evaluated.error);
+  const policy = policyOf(evaluated.data);
+  const decision = policy && typeof policy === 'object' ? (policy as { decision?: unknown }).decision : undefined;
+  if (decision === 'block') return withPolicy('policy_blocked', policy);
+  if (decision !== 'require_approval') return null;
+  const requestedBy = await preparedBy();
+  if (requestedBy === null) return { error: 'forbidden' };
+  return sendBackOrContinue(deps, bill, requestedBy, policy);
+}
+
 // Every payment is prepared with no fees and the summary's date (the one the admin was shown, or
 // today for the sweep); a different shown fee is a summary_mismatch.
-async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number, summary: Record<string, unknown>, by: Authorizer) {
+async function prepareAttempt(
+  deps: BillMcpDeps,
+  bill: Bill,
+  preparedBy: number,
+  summary: Record<string, unknown>,
+  by: Authorizer,
+) {
   const prepared = await callRpc(deps, 'prepare_payment', {
     p_bill_id: bill.bill_id,
     p_prepared_by: preparedBy,
     p_fees_cents: 0,
     p_payment_date: summary.payment_date,
     p_account_reference: null,
-    p_policy_refs: policyRefsFor(bill),
   }, 'service');
-  if (prepared.error) return rpcStop('prepare_payment', prepared.error);
+  if (prepared.error) {
+    const code = prepared.error.message;
+    if (code === 'policy_blocked') return withPolicy(code, policyOf(prepared.error.details));
+    if (code === 'approval_required') return sendBack(deps, bill, preparedBy, policyOf(prepared.error.details));
+    return rpcStop('prepare_payment', prepared.error);
+  }
   if (!isAttempt(prepared.data)) return rpcStop('prepare_payment', { message: 'no payment row returned' });
   const attempt = prepared.data;
   const gaps = summaryGaps(summary, attempt, SUMMARY_KEYS);
@@ -387,7 +445,14 @@ async function prepareAttempt(deps: BillMcpDeps, bill: Bill, preparedBy: number,
 // sweep authorize_approved_payment, which rechecks the newest approval. Then the atomic claim. A
 // refusal cancels the attempt and returns its code; nothing was charged. null means the attempt
 // is claimed.
-async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: Record<string, unknown>, by: Authorizer) {
+async function authorizeAndClaim(
+  deps: BillMcpDeps,
+  attempt: Attempt,
+  summary: Record<string, unknown>,
+  by: Authorizer,
+  bill: Bill,
+  requestedBy: number,
+) {
   const authorized = by.kind === 'admin'
     ? await callRpc(deps, 'authorize_payment', { p_payment_id: attempt.payment_id, p_summary: summary }, 'user')
     : await callRpc(deps, 'authorize_approved_payment', { p_payment_id: attempt.payment_id }, 'service');
@@ -396,6 +461,15 @@ async function authorizeAndClaim(deps: BillMcpDeps, attempt: Attempt, summary: R
   const claimed = await callRpc(deps, 'start_payment_submission', { p_payment_id: attempt.payment_id }, 'service');
   if (!claimed.error) return null;
   if (CLAIM_CODES.has(claimed.error.message)) return cancelAndStop(deps, attempt, { error: claimed.error.message }, by);
+  if (POLICY_CODES.has(claimed.error.message)) {
+    const code = claimed.error.message;
+    const policy = policyOf(claimed.error.details);
+    if (code === 'approval_required') {
+      await cancelAndStop(deps, attempt, { error: code }, by);
+      return sendBack(deps, bill, requestedBy, policy);
+    }
+    return cancelAndStop(deps, attempt, withPolicy(code, policy), by);
+  }
   // The claim may have committed with its reply lost. Close it as not submitted; if it never
   // committed, record_payment answers not_processing and the cancel withdraws it.
   console.error(`[bill-mcp] start_payment_submission failed: ${claimed.error.message}`);
@@ -498,18 +572,22 @@ async function payBill(
   by: Authorizer,
   left: () => number,
 ) {
+  let preparerLookup: Promise<number | null> | undefined;
+  const preparerOnce = () => (preparerLookup ??= preparedBy());
+  const gated = await policyGate(deps, bill, preparerOnce);
+  if (gated) return gated;
   const portal = await readPortal(deps, bill, Math.min(OBSERVE_TIMEOUT_MS, left()));
   if ('error' in portal) return portal;
   const gaps = snapshotGaps(bill, portal.text);
   if (gaps.length > 0) return { error: 'snapshot_mismatch', fields: gaps };
   const stagehandUrl = deps.stagehandUrl;
   if (!stagehandUrl) return { error: 'worker not configured' };
-  const preparer = await preparedBy();
+  const preparer = await preparerOnce();
   if (preparer === null) return { error: 'forbidden' };
   if (left() < PREPARE_MIN_LEFT_MS) return { error: 'payment_not_started' };
   const prepared = await prepareAttempt(deps, bill, preparer, summary, by);
   if ('error' in prepared) return prepared;
-  const stopped = await authorizeAndClaim(deps, prepared.attempt, summary, by);
+  const stopped = await authorizeAndClaim(deps, prepared.attempt, summary, by, bill, preparer);
   if (stopped) return stopped;
   const executeMs = Math.min(deps.executeTimeoutMs ?? EXECUTE_TIMEOUT_MS, left());
   const outcome = await runWorker(deps, stagehandUrl, portal.portalUrl, prepared.attempt, executeMs);

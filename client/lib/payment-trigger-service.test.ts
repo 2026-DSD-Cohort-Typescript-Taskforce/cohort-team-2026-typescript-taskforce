@@ -297,3 +297,70 @@ test('a bill-mcp 5xx is uncertain because it may have stopped after the portal c
     );
   }
 });
+
+const policy = {
+  decision: 'block',
+  policy_id: 4,
+  version_id: 9,
+  version: 2,
+  rule_index: 0,
+  policy_name: 'Power',
+  interpretation: 'Pay under $500 only',
+};
+
+async function triggerWith(body: Record<string, unknown>) {
+  return runPaymentTrigger({
+    billId: 12,
+    shown,
+    role: 'system_admin',
+    invoke: async () => ({ ok: true, status: 200, body }),
+  });
+}
+
+test('policy_blocked is ineligible with the block message', async () => {
+  const reply = await triggerWith({ error: 'policy_blocked', policy });
+  assert.equal(reply.status, 409);
+  assert.deepEqual(reply.body, {
+    outcome: 'ineligible',
+    code: 'policy_blocked',
+    message: 'Blocked by the Power policy: Pay under $500 only',
+  });
+});
+
+test('sent_for_approval is ineligible with the send-back message', async () => {
+  const reply = await triggerWith({
+    error: 'sent_for_approval',
+    policy: { ...policy, decision: 'require_approval' },
+  });
+  assert.equal(reply.status, 409);
+  assert.deepEqual(reply.body, {
+    outcome: 'ineligible',
+    code: 'sent_for_approval',
+    message:
+      'Sent for approval: the Power policy needs approval from someone other than the submitter.',
+  });
+});
+
+test('policy_changed is a failed outcome asking to trigger again', async () => {
+  const reply = await triggerWith({ error: 'policy_changed', policy });
+  assert.equal(reply.status, 409);
+  assert.deepEqual(reply.body, {
+    outcome: 'failed',
+    code: 'policy_changed',
+    message: "This vendor's policy changed. Trigger the payment again.",
+  });
+});
+
+test('a missing or garbled policy gets the generic wording', async () => {
+  for (const bad of [undefined, 'not json', { decision: 'maybe' }]) {
+    const blocked = await triggerWith({ error: 'policy_blocked', policy: bad });
+    assert.equal(blocked.body.outcome, 'ineligible');
+    assert.equal(blocked.body.message, "Blocked by this vendor's policy.");
+    const sent = await triggerWith({ error: 'sent_for_approval', policy: bad });
+    assert.equal(sent.body.outcome, 'ineligible');
+    assert.equal(
+      sent.body.message,
+      "Sent for approval: this vendor's policy needs approval from someone other than the submitter.",
+    );
+  }
+});

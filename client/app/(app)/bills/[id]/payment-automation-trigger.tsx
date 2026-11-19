@@ -52,11 +52,12 @@ export function PaymentAutomationTrigger({ bill, onCompleted }: Props) {
       const result = await triggerBillPayment(bill.bill_id, shown);
       if (result?.ok) {
         setNotice(paymentTriggerNotice(result.data));
-        if (result.data.outcome === 'success') await onCompleted?.();
       } else if (result) {
         const outcome = result.code === 'outcome_unknown' ? 'unknown' : 'failed';
         setNotice(paymentTriggerNotice({ outcome, message: result.error }));
       }
+      // A policy can send the bill back for approval, so the bill reloads after every answer.
+      if (result) await onCompleted?.();
     } catch {
       setNotice({ tone: 'error', message: 'The automated payment could not be completed.' });
     } finally {

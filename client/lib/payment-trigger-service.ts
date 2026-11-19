@@ -1,3 +1,22 @@
+import {
+  blockedMessage,
+  parsePolicyDecision,
+  sentBackMessage,
+  type Decision,
+  type PolicyDecision,
+} from './bill-policy.ts';
+
+// A decision with no names, for a reply whose policy is missing or garbled.
+const genericPolicy = (decision: Decision): PolicyDecision => ({
+  decision,
+  policy_id: null,
+  version_id: null,
+  version: null,
+  rule_index: null,
+  policy_name: null,
+  interpretation: null,
+});
+
 export type PaymentTriggerBody = {
   outcome?: 'success' | 'ineligible' | 'failed' | 'unknown';
   message: string;
@@ -169,6 +188,20 @@ export async function runPaymentTrigger(input: {
         'ineligible',
         'The bill changed. Reload it and check the details before paying.',
       );
+    case 'policy_blocked': {
+      const policy = parsePolicyDecision(upstream.body.policy);
+      return refused(409, 'ineligible', blockedMessage(policy ?? genericPolicy('block')));
+    }
+    case 'sent_for_approval': {
+      const policy = parsePolicyDecision(upstream.body.policy);
+      return refused(
+        409,
+        'ineligible',
+        sentBackMessage(policy ?? genericPolicy('require_approval')),
+      );
+    }
+    case 'policy_changed':
+      return refused(409, 'failed', "This vendor's policy changed. Trigger the payment again.");
     case 'authorization_expired':
     case 'not_authorized':
       return refused(409, 'failed', 'The payment did not start. Try again.');

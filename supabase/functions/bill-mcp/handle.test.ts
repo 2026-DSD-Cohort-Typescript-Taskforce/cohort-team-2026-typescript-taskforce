@@ -65,6 +65,8 @@ function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
     start_payment_submission: () => ({ data: { ...row, status: 'processing' }, error: null }),
     record_payment: (args) => ({ data: { ...row, status: args.p_outcome }, error: null }),
     cancel_payment: () => ({ data: { ...row, status: 'canceled' }, error: null }),
+    evaluate_bill_policy: () => ({ data: { decision: 'none' }, error: null }),
+    send_bill_for_approval: () => ({ data: { decision: 'require_approval' }, error: null }),
   };
   const base: BillMcpDeps = {
     mcpToken: TOKEN,
@@ -95,8 +97,12 @@ function deps(overrides: Partial<BillMcpDeps> = {}, script: Script = {}) {
     callerUserId: async () => 7,
     sleep: async () => {},
     rpc: async (name, args, as) => {
-      rpcCalls.push({ name, args, as });
-      steps.push(name);
+      // The default evaluator answer ('none') is not recorded, so the tests of the payment order stay
+      // as they were; a scripted evaluator is.
+      if (name !== 'evaluate_bill_policy' || script.rpc?.evaluate_bill_policy) {
+        rpcCalls.push({ name, args, as });
+        steps.push(name);
+      }
       const reply = (script.rpc?.[name] ?? answers[name])(args);
       if (name === 'prepare_payment' && reply.data) row = reply.data as Record<string, unknown>;
       return reply;
@@ -287,7 +293,6 @@ test('success runs prepare, authorize, claim, execute and record in order', asyn
     p_fees_cents: 0,
     p_payment_date: '2026-11-18',
     p_account_reference: null,
-    p_policy_refs: [],
   });
   assert.deepEqual(authorize.args, {
     p_payment_id: 31,
@@ -1233,4 +1238,96 @@ test('the hourly sweep defers bills that no longer fit its payment budget', asyn
   assert.deepEqual(body.results?.map((row) => row.bill_id), [12]);
   assert.deepEqual(body.deferred, [14]);
   assert.equal(executeCalls(built).length, 1);
+});
+
+// DC-92: the vendor policy check.
+const POLICY = { policy_id: 4, version_id: 9, version: 2, rule_index: 0, policy_name: 'Power', interpretation: 'Pay under $500 only' };
+const blockDecision = { decision: 'block', ...POLICY };
+const approvalDecision = { decision: 'require_approval', ...POLICY };
+const evaluates = (decision: Record<string, unknown>) => () => ({ data: decision, error: null }) as RpcReply;
+const refusal = (message: string, decision: Record<string, unknown>) => () => rpcError(message, JSON.stringify(decision), 'PT409');
+
+test('policy block stops before the portal and prepare', async () => {
+  const built = deps({}, { rpc: { evaluate_bill_policy: evaluates(blockDecision) } });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'policy_blocked', policy: blockDecision });
+  assert.deepEqual(rpcNames(built), ['evaluate_bill_policy']);
+  assert.deepEqual(built.rpcCalls[0].args, { p_bill_id: 12 });
+  assert.equal(built.rpcCalls[0].as, 'service');
+  assert.equal(built.calls.some((c) => c.url.endsWith('/observe') || c.url.endsWith('/execute')), false);
+});
+
+test('policy require_approval sends the bill back before the portal', async () => {
+  const built = deps({}, { rpc: { evaluate_bill_policy: evaluates(approvalDecision), send_bill_for_approval: evaluates(approvalDecision) } });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'sent_for_approval', policy: approvalDecision });
+  assert.deepEqual(rpcNames(built), ['evaluate_bill_policy', 'send_bill_for_approval']);
+  assert.deepEqual(built.rpcCalls[1].args, { p_bill_id: 12, p_requested_by: 7 });
+  assert.equal(built.rpcCalls[1].as, 'service');
+  assert.equal(built.calls.some((c) => c.url.endsWith('/observe')), false);
+});
+
+test('send-back answering approval_not_required continues the payment', async () => {
+  const built = deps({}, {
+    rpc: {
+      evaluate_bill_policy: evaluates(approvalDecision),
+      send_bill_for_approval: refusal('approval_not_required', approvalDecision),
+    },
+  });
+  const result = await pay(built);
+  assert.equal((result.body as { error?: string }).error, undefined);
+  assert.deepEqual(rpcNames(built).slice(0, 3), ['evaluate_bill_policy', 'send_bill_for_approval', 'prepare_payment']);
+  assert.equal(executeCalls(built).length, 1);
+});
+
+test('prepare_payment policy_blocked passes through', async () => {
+  const built = deps({}, { rpc: { prepare_payment: refusal('policy_blocked', blockDecision) } });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'policy_blocked', policy: blockDecision });
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('prepare_payment approval_required sends the bill back', async () => {
+  const built = deps({}, {
+    rpc: { prepare_payment: refusal('approval_required', approvalDecision), send_bill_for_approval: evaluates(approvalDecision) },
+  });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'sent_for_approval', policy: approvalDecision });
+  assert.equal(rpcNames(built).includes('send_bill_for_approval'), true);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('prepare_payment does not receive caller-made policy refs', async () => {
+  const built = deps();
+  await pay(built);
+  const prepare = built.rpcCalls.find((r) => r.name === 'prepare_payment');
+  assert.equal('p_policy_refs' in (prepare?.args ?? {}), false);
+});
+
+test('start_payment_submission policy_changed cancels and returns policy_changed', async () => {
+  const built = deps({}, { rpc: { start_payment_submission: refusal('policy_changed', approvalDecision) } });
+  const result = await pay(built);
+  assert.equal((result.body as { error: string }).error, 'policy_changed');
+  assert.equal(rpcNames(built).includes('cancel_payment'), true);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('start_payment_submission policy_blocked cancels and returns policy_blocked', async () => {
+  const built = deps({}, { rpc: { start_payment_submission: refusal('policy_blocked', blockDecision) } });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'policy_blocked', policy: blockDecision });
+  assert.equal(rpcNames(built).includes('cancel_payment'), true);
+  assert.equal(executeCalls(built).length, 0);
+});
+
+test('start_payment_submission approval_required cancels and sends the bill back', async () => {
+  const built = deps({}, {
+    rpc: { start_payment_submission: refusal('approval_required', approvalDecision), send_bill_for_approval: evaluates(approvalDecision) },
+  });
+  const result = await pay(built);
+  assert.deepEqual(result.body, { error: 'sent_for_approval', policy: approvalDecision });
+  const names = rpcNames(built);
+  assert.equal(names.includes('cancel_payment'), true);
+  assert.equal(names.includes('send_bill_for_approval'), true);
+  assert.equal(executeCalls(built).length, 0);
 });
